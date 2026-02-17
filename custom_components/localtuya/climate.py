@@ -134,7 +134,7 @@ HVAC_ACTION_SETS = {
     "heat/cool/idle": {
         HVACAction.HEATING: "heat",
         HVACAction.COOLING: "cool",
-        HVACAction.IDLE: "idle",
+        HVACAction.IDLE: "off",
     }
 }
 HVAC_FAN_MODE_SETS = {
