@@ -17,6 +17,7 @@ from homeassistant.components.climate.const import (
     PRESET_ECO,
     PRESET_HOME,
     PRESET_NONE,
+    PRESET_BOOST,
     ClimateEntityFeature,
     FAN_AUTO,
     FAN_LOW,
