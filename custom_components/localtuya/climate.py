@@ -103,6 +103,11 @@ HVAC_MODE_SETS = {
         HVACMode.HEAT: "1",
         HVACMode.AUTO: "0",
     },
+    "heatcool_heat/heatcool_cool/heatcool_heatcool":{
+        HVACMode.HEAT: "heatcool_heat",
+        HVACMode.COOL: "heatcool_cool",
+        HVACMode.HEAT_COOL: "heatcool_heatcool",
+    },
 }
 HVAC_ACTION_SETS = {
     "True/False": {
@@ -125,6 +130,11 @@ HVAC_ACTION_SETS = {
         HVACAction.HEATING: "heating",
         HVACAction.IDLE: "warming",
     },
+    "heat/cool/idle": {
+        HVACAction.HEATING: "heat",
+        HVACAction.COOLING: "cool",
+        HVACAction.IDLE: "idle",
+    }
 }
 HVAC_FAN_MODE_SETS = {
     "Auto/Low/Middle/High/Strong": {
@@ -152,6 +162,12 @@ PRESET_SETS = {
         PRESET_HOME: "smart",
         PRESET_NONE: "hold",
     },
+    "auto,manual,temporary,boost,holiday": {
+        PRESET_AWAY: 'holiday',
+        PRESET_HOME: 'manual',
+        PRESET_BOOST: 'boost',
+        PRESET_NONE: 'auto'
+    }
 }
 
 TEMPERATURE_CELSIUS = "celsius"
