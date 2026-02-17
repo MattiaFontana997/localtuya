@@ -163,7 +163,7 @@ PRESET_SETS = {
         PRESET_HOME: "smart",
         PRESET_NONE: "hold",
     },
-    "auto,manual,temporary,boost,holiday": {
+    "auto/manual/temporary/boost/holiday": {
         PRESET_AWAY: 'holiday',
         PRESET_HOME: 'manual',
         PRESET_BOOST: 'boost',
