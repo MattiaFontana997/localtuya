@@ -41,6 +41,7 @@ import binascii
 import hmac
 import json
 import logging
+import secrets
 import struct
 import time
 import weakref
@@ -333,7 +334,8 @@ def unpack_message(data, hmac_key=None, header=None, no_retcode=False, logger=No
         )
 
     if suffix != SUFFIX_VALUE:
-        logger.debug("Suffix prefix wrong! %08X != %08X", suffix, SUFFIX_VALUE)
+        logger.debug("Suffix wrong! %08X != %08X", suffix, SUFFIX_VALUE)
+        raise DecodeError("Invalid message suffix")
 
     if crc != have_crc:
         if hmac_key:
@@ -342,11 +344,13 @@ def unpack_message(data, hmac_key=None, header=None, no_retcode=False, logger=No
                 binascii.hexlify(have_crc),
                 binascii.hexlify(crc),
             )
-        else:
-            logger.debug("CRC wrong! %08X != %08X", have_crc, crc)
+            raise DecodeError("Invalid HMAC checksum")
+
+        logger.debug("CRC wrong! %08X != %08X", have_crc, crc)
+        raise DecodeError("Invalid CRC checksum")
 
     return TuyaMessage(
-        header.seqno, header.cmd, retcode, payload[:-end_len], crc, crc == have_crc
+        header.seqno, header.cmd, retcode, payload[:-end_len], crc, True
     )
 
 
@@ -588,7 +592,7 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         self.on_connected = on_connected
         self.heartbeater = None
         self.dps_cache = {}
-        self.local_nonce = b"0123456789abcdef"  # not-so-random random key
+        self.local_nonce = b""
         self.remote_nonce = b""
 
     def set_version(self, protocol_version):
@@ -670,7 +674,14 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
     def connection_lost(self, exc):
         """Disconnected from device."""
         self.debug("Connection lost: %s", exc)
-        self.real_local_key = self.local_key
+
+        # A protocol 3.4 session key is valid only for the current connection.
+        # Restore the permanent local key so the next connection negotiates
+        # a fresh session key.
+        self.local_key = self.real_local_key
+
+        if self.dispatcher is not None:
+            self.dispatcher.local_key = self.real_local_key
         try:
             listener = self.listener and self.listener()
             if listener is not None:
@@ -681,7 +692,12 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
     async def close(self):
         """Close connection and abort all outstanding listeners."""
         self.debug("Closing connection")
-        self.real_local_key = self.local_key
+
+        # Discard any temporary protocol 3.4 session key.
+        self.local_key = self.real_local_key
+
+        if self.dispatcher is not None:
+            self.dispatcher.local_key = self.real_local_key
         if self.heartbeater is not None:
             self.heartbeater.cancel()
             try:
@@ -713,9 +729,9 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
         try:
             self.transport.write(enc_payload)
-        except Exception:
-            # self._check_socket_close(True)
-            self.close()
+        except Exception as ex:
+            self.debug("Quick exchange write failed: %s", ex)
+            await self.close()
             return None
         while recv_retries:
             try:
@@ -744,8 +760,10 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         """Send and receive a message, returning response from device."""
         if self.version == 3.4 and self.real_local_key == self.local_key:
             self.debug("3.4 device: negotiating a new session key")
-            await self._negotiate_session_key()
-
+            if not await self._negotiate_session_key():
+                self.error("3.4 session key negotiation failed")
+                await self.close()
+                return None
         self.debug(
             "Sending command %s (device type: %s)",
             command,
@@ -968,66 +986,92 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         return json_payload
 
     async def _negotiate_session_key(self):
+        """Negotiate a fresh protocol 3.4 session key."""
         self.local_key = self.real_local_key
+        self.dispatcher.local_key = self.real_local_key
+
+        # A fresh cryptographically secure nonce must be used for every handshake.
+        self.local_nonce = secrets.token_bytes(16)
+        self.remote_nonce = b""
 
         rkey = await self.exchange_quick(
             MessagePayload(SESS_KEY_NEG_START, self.local_nonce), 2
         )
+
         if not rkey or not isinstance(rkey, TuyaMessage) or len(rkey.payload) < 48:
-            # error
-            self.debug("session key negotiation failed on step 1")
+            self.debug("Session key negotiation failed on step 1")
             return False
 
         if rkey.cmd != SESS_KEY_NEG_RESP:
             self.debug(
-                "session key negotiation step 2 returned wrong command: %d", rkey.cmd
+                "Session key negotiation returned unexpected command: %d",
+                rkey.cmd,
             )
             return False
 
         payload = rkey.payload
+
         try:
-            # self.debug("decrypting %r using %r", payload, self.real_local_key)
             cipher = AESCipher(self.real_local_key)
             payload = cipher.decrypt(payload, False, decode_text=False)
         except Exception as ex:
             self.debug(
-                "session key step 2 decrypt failed, payload=%r with len:%d (%s)",
-                payload,
-                len(payload),
+                "Session key negotiation response decrypt failed: %s",
                 ex,
             )
             return False
 
-        self.debug("decrypted session key negotiation step 2: payload=%r", payload)
-
         if len(payload) < 48:
-            self.debug("session key negotiation step 2 failed, too short response")
+            self.debug(
+                "Session key negotiation response is too short: %d bytes",
+                len(payload),
+            )
             return False
 
         self.remote_nonce = payload[:16]
-        hmac_check = hmac.new(self.local_key, self.local_nonce, sha256).digest()
 
-        if hmac_check != payload[16:48]:
-            self.debug(
-                "session key negotiation step 2 failed HMAC check! wanted=%r but got=%r",
-                binascii.hexlify(hmac_check),
-                binascii.hexlify(payload[16:48]),
+        expected_hmac = hmac.new(
+            self.real_local_key,
+            self.local_nonce,
+            sha256,
+        ).digest()
+
+        received_hmac = payload[16:48]
+
+        if not hmac.compare_digest(expected_hmac, received_hmac):
+            self.debug("Session key negotiation HMAC verification failed")
+            return False
+
+        response_hmac = hmac.new(
+            self.real_local_key,
+            self.remote_nonce,
+            sha256,
+        ).digest()
+
+        await self.exchange_quick(
+            MessagePayload(SESS_KEY_NEG_FINISH, response_hmac),
+            None,
+        )
+
+        session_seed = bytes(
+            a ^ b for a, b in zip(self.local_nonce, self.remote_nonce)
+        )
+
+        try:
+            cipher = AESCipher(self.real_local_key)
+            session_key = cipher.encrypt(
+                session_seed,
+                False,
+                pad=False,
             )
+        except Exception as ex:
+            self.debug("Session key derivation failed: %s", ex)
+            return False
 
-        # self.debug("session local nonce: %r remote nonce: %r", self.local_nonce, self.remote_nonce)
-        rkey_hmac = hmac.new(self.local_key, self.remote_nonce, sha256).digest()
-        await self.exchange_quick(MessagePayload(SESS_KEY_NEG_FINISH, rkey_hmac), None)
+        self.local_key = session_key
+        self.dispatcher.local_key = session_key
 
-        self.local_key = bytes(
-            [a ^ b for (a, b) in zip(self.local_nonce, self.remote_nonce)]
-        )
-        # self.debug("Session nonce XOR'd: %r" % self.local_key)
-
-        cipher = AESCipher(self.real_local_key)
-        self.local_key = self.dispatcher.local_key = cipher.encrypt(
-            self.local_key, False, pad=False
-        )
-        self.debug("Session key negotiate success! session key: %r", self.local_key)
+        self.debug("Session key negotiation succeeded")
         return True
 
     # adds protocol header (if needed) and encrypts
