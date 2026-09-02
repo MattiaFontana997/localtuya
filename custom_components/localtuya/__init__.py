@@ -1,5 +1,6 @@
 """The LocalTuya integration."""
 import asyncio
+import copy
 import logging
 import time
 from datetime import timedelta
@@ -30,7 +31,7 @@ from homeassistant.helpers.service import async_register_admin_service
 
 from .cloud_api import TuyaCloudApi
 from .common import TuyaDevice, async_config_entry_by_device_id
-from .config_flow import ENTRIES_VERSION, config_schema
+from .config_flow import ENTRIES_VERSION
 from .const import (
     ATTR_UPDATED_AT,
     CONF_NO_CLOUD,
@@ -45,11 +46,10 @@ from .discovery import TuyaDiscovery
 
 _LOGGER = logging.getLogger(__name__)
 
-UNSUB_LISTENER = "unsub_listener"
+LOADED_PLATFORMS = "loaded_platforms"
+LOADED_DEVICES = "loaded_devices"
 
 RECONNECT_INTERVAL = timedelta(seconds=60)
-
-CONFIG_SCHEMA = config_schema()
 
 CONF_DP = "dp"
 CONF_VALUE = "value"
@@ -119,7 +119,7 @@ async def async_setup(hass: HomeAssistant, config: dict):
 
         dev_entry = entry.data[CONF_DEVICES][device_id]
 
-        new_data = entry.data.copy()
+        new_data = copy.deepcopy(dict(entry.data))
         updated = False
 
         if device_cache[device_id] != device_ip:
@@ -204,20 +204,22 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
             new_data[CONF_USERNAME] = DOMAIN
             new_data[CONF_NO_CLOUD] = True
             new_data[CONF_DEVICES] = {
-                config_entry.data[CONF_DEVICE_ID]: config_entry.data.copy()
+                config_entry.data[CONF_DEVICE_ID]: config_copy.deepcopy(dict(entry.data))
             }
             new_data[ATTR_UPDATED_AT] = str(int(time.time() * 1000))
-            config_entry.version = new_version
             hass.config_entries.async_update_entry(
-                config_entry, title=DOMAIN, data=new_data
+                config_entry,
+                title=DOMAIN,
+                data=new_data,
+                version=new_version,
             )
         else:
             _LOGGER.debug(
                 "Merging the config entry %s into the main one", config_entry.entry_id
             )
-            new_data = stored_entries[0].data.copy()
+            new_data = copy.deepcopy(dict(stored_entries[0].data))
             new_data[CONF_DEVICES].update(
-                {config_entry.data[CONF_DEVICE_ID]: config_entry.data.copy()}
+                {config_entry.data[CONF_DEVICE_ID]: config_copy.deepcopy(dict(entry.data))}
             )
             new_data[ATTR_UPDATED_AT] = str(int(time.time() * 1000))
             hass.config_entries.async_update_entry(stored_entries[0], data=new_data)
@@ -264,6 +266,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     hass.data[DOMAIN][DATA_CLOUD] = tuya_api
 
     platforms = set()
+    device_ids = set(entry.data[CONF_DEVICES])
+
     for dev_id in entry.data[CONF_DEVICES].keys():
         entities = entry.data[CONF_DEVICES][dev_id][CONF_ENTITIES]
         platforms = platforms.union(
@@ -275,51 +279,52 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     # potential integration restarts while elements are still initialising.
     await hass.config_entries.async_forward_entry_setups(entry, platforms)
 
+    hass.data[DOMAIN][entry.entry_id] = {
+        LOADED_PLATFORMS: frozenset(platforms),
+        LOADED_DEVICES: frozenset(device_ids),
+    }
+
     async def setup_entities(device_ids):
         for dev_id in device_ids:
             hass.data[DOMAIN][TUYA_DEVICES][dev_id].async_connect()
 
-        await async_remove_orphan_entities(hass, entry)
-
     hass.async_create_task(setup_entities(entry.data[CONF_DEVICES].keys()))
 
-    unsub_listener = entry.add_update_listener(update_listener)
-    hass.data[DOMAIN][entry.entry_id] = {UNSUB_LISTENER: unsub_listener}
+    entry.async_on_unload(entry.add_update_listener(update_listener))
 
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_unload_entry(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> bool:
     """Unload a config entry."""
-    platforms = {}
+    runtime = hass.data[DOMAIN].get(entry.entry_id, {})
 
-    for dev_id, dev_entry in entry.data[CONF_DEVICES].items():
-        for entity in dev_entry[CONF_ENTITIES]:
-            platforms[entity[CONF_PLATFORM]] = True
+    platforms = runtime.get(LOADED_PLATFORMS, ())
+    device_ids = runtime.get(LOADED_DEVICES, ())
 
-    unload_ok = all(
-        await asyncio.gather(
-            *[
-                hass.config_entries.async_forward_entry_unload(entry, component)
-                for component in platforms
-            ]
-        )
+    unload_ok = await hass.config_entries.async_unload_platforms(
+        entry,
+        platforms,
     )
 
-    hass.data[DOMAIN][entry.entry_id][UNSUB_LISTENER]()
-    for dev_id, device in hass.data[DOMAIN][TUYA_DEVICES].items():
-        if device.connected:
+    if not unload_ok:
+        return False
+
+    for dev_id in device_ids:
+        device = hass.data[DOMAIN][TUYA_DEVICES].pop(dev_id, None)
+        if device is not None:
             await device.close()
 
-    if unload_ok:
-        hass.data[DOMAIN][TUYA_DEVICES] = {}
+    hass.data[DOMAIN].pop(entry.entry_id, None)
 
     return True
 
 
 async def update_listener(hass, config_entry):
-    """Update listener."""
-    await hass.config_entries.async_reload(config_entry.entry_id)
+    """Schedule a reload after the config entry changes."""
+    hass.config_entries.async_schedule_reload(config_entry.entry_id)
 
 
 async def async_remove_config_entry_device(
@@ -345,7 +350,7 @@ async def async_remove_config_entry_device(
 
     await hass.data[DOMAIN][TUYA_DEVICES][dev_id].close()
 
-    new_data = config_entry.data.copy()
+    new_data = config_copy.deepcopy(dict(entry.data))
     new_data[CONF_DEVICES].pop(dev_id)
     new_data[ATTR_UPDATED_AT] = str(int(time.time() * 1000))
 
@@ -357,22 +362,3 @@ async def async_remove_config_entry_device(
     _LOGGER.info("Device %s removed.", dev_id)
 
     return True
-
-
-async def async_remove_orphan_entities(hass, entry):
-    """Remove entities associated with config entry that has been removed."""
-    return
-    ent_reg = er.async_get(hass)
-    entities = {
-        ent.unique_id: ent.entity_id
-        for ent in er.async_entries_for_config_entry(ent_reg, entry.entry_id)
-    }
-    _LOGGER.info("ENTITIES ORPHAN %s", entities)
-    return
-
-    for entity in entry.data[CONF_ENTITIES]:
-        if entity[CONF_ID] in entities:
-            del entities[entity[CONF_ID]]
-
-    for entity_id in entities.values():
-        ent_reg.async_remove(entity_id)

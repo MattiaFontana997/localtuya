@@ -1,8 +1,8 @@
 """Config flow for LocalTuya integration integration."""
+import copy
 import errno
 import logging
 import time
-from importlib import import_module
 
 import homeassistant.helpers.config_validation as cv
 import homeassistant.helpers.entity_registry as er
@@ -24,6 +24,7 @@ from homeassistant.const import (
     CONF_USERNAME,
 )
 from homeassistant.core import callback
+from homeassistant.helpers.importlib import async_import_module
 
 from .cloud_api import TuyaCloudApi
 from .common import pytuya
@@ -182,22 +183,29 @@ def gen_dps_strings():
     return [f"{dp} (value: ?)" for dp in range(1, 256)]
 
 
-def platform_schema(platform, dps_strings, allow_id=True, yaml=False):
+async def platform_schema(
+    hass, platform, dps_strings, allow_id=True
+):
     """Generate input validation schema for a platform."""
     schema = {}
-    if yaml:
-        # In YAML mode we force the specified platform to match flow schema
-        schema[vol.Required(CONF_PLATFORM)] = vol.In([platform])
+
     if allow_id:
         schema[vol.Required(CONF_ID)] = vol.In(dps_strings)
+
     schema[vol.Required(CONF_FRIENDLY_NAME)] = str
-    return vol.Schema(schema).extend(flow_schema(platform, dps_strings))
+
+    return vol.Schema(schema).extend(
+        await flow_schema(hass, platform, dps_strings)
+    )
 
 
-def flow_schema(platform, dps_strings):
+async def flow_schema(hass, platform, dps_strings):
     """Return flow schema for a specific platform."""
-    integration_module = ".".join(__name__.split(".")[:-1])
-    return import_module("." + platform, integration_module).flow_schema(dps_strings)
+    module = await async_import_module(
+        hass,
+        f"{__package__}.{platform}",
+    )
+    return module.flow_schema(dps_strings)
 
 
 def strip_dps_values(user_input, dps_strings):
@@ -209,26 +217,6 @@ def strip_dps_values(user_input, dps_strings):
         else:
             stripped[field] = user_input[field]
     return stripped
-
-
-def config_schema():
-    """Build schema used for setting up component."""
-    entity_schemas = [
-        platform_schema(platform, range(1, 256), yaml=True) for platform in PLATFORMS
-    ]
-    return vol.Schema(
-        {
-            DOMAIN: vol.All(
-                cv.ensure_list,
-                [
-                    DEVICE_SCHEMA.extend(
-                        {vol.Required(CONF_ENTITIES): [vol.Any(*entity_schemas)]}
-                    )
-                ],
-            )
-        },
-        extra=vol.ALLOW_EXTRA,
-    )
 
 
 async def validate_input(hass: core.HomeAssistant, data):
@@ -426,7 +414,7 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         placeholders = {}
         if user_input is not None:
             if user_input.get(CONF_NO_CLOUD):
-                new_data = self.config_entry.data.copy()
+                new_data = copy.deepcopy(dict(self.config_entry.data))
                 new_data.update(user_input)
                 for i in [CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_USER_ID]:
                     new_data[i] = ""
@@ -441,7 +429,7 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
             cloud_api, res = await attempt_cloud_connection(self.hass, user_input)
 
             if not res:
-                new_data = self.config_entry.data.copy()
+                new_data = copy.deepcopy(dict(self.config_entry.data))
                 new_data.update(user_input)
                 cloud_devs = cloud_api.device_list
                 for dev_id, dev in new_data[CONF_DEVICES].items():
@@ -523,7 +511,7 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
             self.selected_device = user_input[SELECTED_DEVICE]
             dev_conf = self.config_entry.data[CONF_DEVICES][self.selected_device]
             self.dps_strings = dev_conf.get(CONF_DPS_STRINGS, gen_dps_strings())
-            self.entities = dev_conf[CONF_ENTITIES]
+            self.entities = copy.deepcopy(dev_conf[CONF_ENTITIES])
 
             return await self.async_step_configure_device()
 
@@ -584,10 +572,9 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                             int(entity.split(":")[0])
                             for entity in user_input[CONF_ENTITIES]
                         ]
-                        device_config = self.config_entry.data[CONF_DEVICES][dev_id]
                         self.entities = [
                             entity
-                            for entity in device_config[CONF_ENTITIES]
+                            for entity in self.entities
                             if entity[CONF_ID] in entity_ids
                         ]
                         return await self.async_step_configure_entity()
@@ -661,7 +648,7 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
 
                 dev_id = self.device_data.get(CONF_DEVICE_ID)
 
-                new_data = self.config_entry.data.copy()
+                new_data = copy.deepcopy(dict(self.config_entry.data))
                 new_data[ATTR_UPDATED_AT] = str(int(time.time() * 1000))
                 new_data[CONF_DEVICES].update({dev_id: config})
 
@@ -711,7 +698,8 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                 )
                 return self.async_create_entry(title="", data={})
 
-        schema = platform_schema(
+        schema = await platform_schema(
+            self.hass,
             self.current_entity[CONF_PLATFORM], self.dps_strings, allow_id=False
         )
         return self.async_show_form(
@@ -739,17 +727,29 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                 if len(self.entities) == len(self.device_data[CONF_ENTITIES]):
                     # finished editing device. Let's store the new config entry....
                     dev_id = self.device_data[CONF_DEVICE_ID]
-                    new_data = self.config_entry.data.copy()
+                    new_data = copy.deepcopy(dict(self.config_entry.data))
                     entry_id = self.config_entry.entry_id
-                    # removing entities from registry (they will be recreated)
-                    ent_reg = er.async_get(self.hass)
-                    reg_entities = {
-                        ent.unique_id: ent.entity_id
-                        for ent in er.async_entries_for_config_entry(ent_reg, entry_id)
-                        if dev_id in ent.unique_id
+
+                    old_entities = self.config_entry.data[CONF_DEVICES][dev_id][
+                        CONF_ENTITIES
+                    ]
+                    new_dp_ids = {
+                        entity[CONF_ID]
+                        for entity in self.device_data[CONF_ENTITIES]
                     }
-                    for entity_id in reg_entities.values():
-                        ent_reg.async_remove(entity_id)
+                    removed_unique_ids = {
+                        f"local_{dev_id}_{entity[CONF_ID]}"
+                        for entity in old_entities
+                        if entity[CONF_ID] not in new_dp_ids
+                    }
+
+                    if removed_unique_ids:
+                        ent_reg = er.async_get(self.hass)
+                        for reg_entity in er.async_entries_for_config_entry(
+                            ent_reg, entry_id
+                        ):
+                            if reg_entity.unique_id in removed_unique_ids:
+                                ent_reg.async_remove(reg_entity.entity_id)
 
                     new_data[CONF_DEVICES][dev_id] = self.device_data
                     new_data[ATTR_UPDATED_AT] = str(int(time.time() * 1000))
@@ -768,7 +768,8 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                 return await self.async_step_pick_entity_type(user_input)
 
         if self.editing_device:
-            schema = platform_schema(
+            schema = await platform_schema(
+                self.hass,
                 self.current_entity[CONF_PLATFORM], self.dps_strings, allow_id=False
             )
             schema = schema_defaults(schema, self.dps_strings, **self.current_entity)
@@ -778,7 +779,11 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
             }
         else:
             available_dps = self.available_dps_strings()
-            schema = platform_schema(self.selected_platform, available_dps)
+            schema = await platform_schema(
+                self.hass,
+                self.selected_platform,
+                available_dps,
+            )
             placeholders = {
                 "entity": "an entity",
                 "platform": self.selected_platform,
