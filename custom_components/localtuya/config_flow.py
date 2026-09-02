@@ -614,9 +614,8 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                 cloud_local_key = cloud_devs[dev_id].get(CONF_LOCAL_KEY)
                 if defaults[CONF_LOCAL_KEY] != cloud_local_key:
                     _LOGGER.info(
-                        "New local_key detected: new %s vs old %s",
-                        cloud_local_key,
-                        defaults[CONF_LOCAL_KEY],
+                        "New local_key detected for device %s",
+                        dev_id,
                     )
                     defaults[CONF_LOCAL_KEY] = cloud_devs[dev_id].get(CONF_LOCAL_KEY)
                     note = "\nNOTE: a new local_key has been retrieved using cloud API"
