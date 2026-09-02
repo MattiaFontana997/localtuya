@@ -237,7 +237,7 @@ async def validate_input(hass: core.HomeAssistant, data):
 
     interface = None
 
-    reset_ids = None
+    reset_ids = []
     try:
         interface = await pytuya.connect(
             data[CONF_HOST],
@@ -263,7 +263,7 @@ async def validate_input(hass: core.HomeAssistant, data):
                 _LOGGER.debug(
                     "Initial state update failed (%s), trying reset command", ex
                 )
-                if len(reset_ids) > 0:
+                if reset_ids:
                     await interface.reset(reset_ids)
                     detected_dps = await interface.detect_available_dps()
             except Exception as ex:
