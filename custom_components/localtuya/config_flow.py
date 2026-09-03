@@ -1,4 +1,5 @@
 """Config flow for LocalTuya integration integration."""
+import asyncio
 import copy
 import errno
 import logging
@@ -62,6 +63,21 @@ SELECTED_DEVICE = "selected_device"
 
 CUSTOM_DEVICE = "..."
 
+PROTOCOL_AUTO = "auto"
+
+SUPPORTED_PROTOCOL_VERSIONS = (
+    "3.4",
+    "3.3",
+    "3.2",
+    "3.1",
+)
+
+PROTOCOL_OPTIONS = (
+    PROTOCOL_AUTO,
+    *SUPPORTED_PROTOCOL_VERSIONS,
+)
+
+PROTOCOL_PROBE_TIMEOUT = 8.0
 CONF_ACTIONS = {
     CONF_ADD_DEVICE: "Add a new device",
     CONF_EDIT_DEVICE: "Edit a device",
@@ -92,9 +108,7 @@ DEVICE_SCHEMA = vol.Schema(
         vol.Required(CONF_HOST): cv.string,
         vol.Required(CONF_DEVICE_ID): cv.string,
         vol.Required(CONF_LOCAL_KEY): cv.string,
-        vol.Required(CONF_PROTOCOL_VERSION, default="3.3"): vol.In(
-            ["3.1", "3.2", "3.3", "3.4"]
-        ),
+        vol.Required(CONF_PROTOCOL_VERSION, default=PROTOCOL_AUTO): vol.In(PROTOCOL_OPTIONS),
         vol.Required(CONF_ENABLE_DEBUG, default=False): bool,
         vol.Optional(CONF_SCAN_INTERVAL): int,
         vol.Optional(CONF_MANUAL_DPS): cv.string,
@@ -138,9 +152,7 @@ def options_schema(entities):
             vol.Required(CONF_FRIENDLY_NAME): cv.string,
             vol.Required(CONF_HOST): cv.string,
             vol.Required(CONF_LOCAL_KEY): cv.string,
-            vol.Required(CONF_PROTOCOL_VERSION, default="3.3"): vol.In(
-                ["3.1", "3.2", "3.3", "3.4"]
-            ),
+            vol.Required(CONF_PROTOCOL_VERSION, default=PROTOCOL_AUTO): vol.In(PROTOCOL_OPTIONS),
             vol.Required(CONF_ENABLE_DEBUG, default=False): bool,
             vol.Optional(CONF_SCAN_INTERVAL): int,
             vol.Optional(CONF_MANUAL_DPS): cv.string,
@@ -219,75 +231,210 @@ def strip_dps_values(user_input, dps_strings):
     return stripped
 
 
-async def validate_input(hass: core.HomeAssistant, data):
-    """Validate the user input allows us to connect."""
-    detected_dps = {}
-
+async def _async_probe_protocol(
+    data,
+    protocol_version,
+    reset_ids,
+):
+    """Probe one Tuya LAN protocol and return detected datapoints."""
     interface = None
 
-    reset_ids = []
     try:
-        interface = await pytuya.connect(
-            data[CONF_HOST],
-            data[CONF_DEVICE_ID],
-            data[CONF_LOCAL_KEY],
-            float(data[CONF_PROTOCOL_VERSION]),
-            data[CONF_ENABLE_DEBUG],
+        async with asyncio.timeout(PROTOCOL_PROBE_TIMEOUT):
+            interface = await pytuya.connect(
+                data[CONF_HOST],
+                data[CONF_DEVICE_ID],
+                data[CONF_LOCAL_KEY],
+                float(protocol_version),
+                data.get(CONF_ENABLE_DEBUG, False),
+            )
+
+            try:
+                detected_dps = (
+                    await interface.detect_available_dps()
+                )
+
+            except Exception as ex:
+                if (
+                    protocol_version == "3.3"
+                    and reset_ids
+                ):
+                    _LOGGER.debug(
+                        "Initial DPS detection failed using "
+                        "protocol %s (%s); trying reset IDs %s",
+                        protocol_version,
+                        ex,
+                        reset_ids,
+                    )
+
+                    await interface.reset(reset_ids)
+
+                    detected_dps = (
+                        await interface.detect_available_dps()
+                    )
+                else:
+                    raise
+
+            return detected_dps or {}
+
+    finally:
+        if interface is not None:
+            try:
+                await interface.close()
+            except Exception as ex:
+                _LOGGER.debug(
+                    "Error closing protocol %s probe: %s",
+                    protocol_version,
+                    ex,
+                )
+
+
+async def validate_input(
+    hass: core.HomeAssistant,
+    data,
+):
+    """Validate input and resolve the Tuya LAN protocol."""
+    reset_ids = []
+
+    reset_ids_value = data.get(CONF_RESET_DPIDS)
+
+    if reset_ids_value:
+        try:
+            reset_ids = [
+                int(value.strip())
+                for value in reset_ids_value.split(",")
+                if value.strip()
+            ]
+        except ValueError as ex:
+            raise InvalidAuth from ex
+
+        _LOGGER.debug(
+            "Reset DPIDs configured: %s",
+            reset_ids,
         )
-        if CONF_RESET_DPIDS in data:
-            reset_ids_str = data[CONF_RESET_DPIDS].split(",")
-            reset_ids = []
-            for reset_id in reset_ids_str:
-                reset_ids.append(int(reset_id.strip()))
-            _LOGGER.debug(
-                "Reset DPIDs configured: %s (%s)",
-                data[CONF_RESET_DPIDS],
+
+    requested_protocol = data.get(
+        CONF_PROTOCOL_VERSION,
+        PROTOCOL_AUTO,
+    )
+
+    detected_dps = {}
+    resolved_protocol = None
+
+    if requested_protocol == PROTOCOL_AUTO:
+        _LOGGER.debug(
+            "Auto-detecting Tuya protocol for host %s",
+            data[CONF_HOST],
+        )
+
+        for protocol_version in SUPPORTED_PROTOCOL_VERSIONS:
+            try:
+                detected_dps = await _async_probe_protocol(
+                    data,
+                    protocol_version,
+                    reset_ids,
+                )
+
+            except Exception as ex:
+                _LOGGER.debug(
+                    "Protocol %s probe failed for host %s: %s: %s",
+                    protocol_version,
+                    data[CONF_HOST],
+                    type(ex).__name__,
+                    ex,
+                )
+                continue
+
+            if not detected_dps:
+                _LOGGER.debug(
+                    "Protocol %s connected but returned no DPS",
+                    protocol_version,
+                )
+                continue
+
+            resolved_protocol = protocol_version
+
+            _LOGGER.info(
+                "Detected Tuya protocol %s for device %s",
+                protocol_version,
+                data[CONF_DEVICE_ID],
+            )
+
+            break
+
+        if resolved_protocol is None:
+            raise CannotConnect
+
+    else:
+        if (
+            requested_protocol
+            not in SUPPORTED_PROTOCOL_VERSIONS
+        ):
+            raise CannotConnect
+
+        try:
+            detected_dps = await _async_probe_protocol(
+                data,
+                requested_protocol,
                 reset_ids,
             )
-        try:
-            detected_dps = await interface.detect_available_dps()
+
+        except (
+            ConnectionRefusedError,
+            ConnectionResetError,
+            OSError,
+            TimeoutError,
+        ) as ex:
+            raise CannotConnect from ex
+
+        except ValueError as ex:
+            raise InvalidAuth from ex
+
         except Exception as ex:
-            try:
-                _LOGGER.debug(
-                    "Initial state update failed (%s), trying reset command", ex
-                )
-                if reset_ids:
-                    await interface.reset(reset_ids)
-                    detected_dps = await interface.detect_available_dps()
-            except Exception as ex:
-                _LOGGER.debug("No DPS able to be detected: %s", ex)
-                detected_dps = {}
-
-        # if manual DPs are set, merge these.
-        _LOGGER.debug("Detected DPS: %s", detected_dps)
-        if CONF_MANUAL_DPS in data:
-            manual_dps_list = [dps.strip() for dps in data[CONF_MANUAL_DPS].split(",")]
             _LOGGER.debug(
-                "Manual DPS Setting: %s (%s)", data[CONF_MANUAL_DPS], manual_dps_list
+                "DPS detection failed using protocol %s: %s",
+                requested_protocol,
+                ex,
             )
-            # merge the lists
-            for new_dps in manual_dps_list + (reset_ids or []):
-                # If the DPS not in the detected dps list, then add with a
-                # default value indicating that it has been manually added
-                if str(new_dps) not in detected_dps:
-                    detected_dps[new_dps] = -1
+            detected_dps = {}
 
-    except (ConnectionRefusedError, ConnectionResetError) as ex:
-        raise CannotConnect from ex
-    except ValueError as ex:
-        raise InvalidAuth from ex
-    finally:
-        if interface:
-            await interface.close()
+        resolved_protocol = requested_protocol
 
-    # Indicate an error if no datapoints found as the rest of the flow
-    # won't work in this case
+    manual_dps_value = data.get(CONF_MANUAL_DPS)
+
+    if manual_dps_value:
+        manual_dps = [
+            value.strip()
+            for value in manual_dps_value.split(",")
+            if value.strip()
+        ]
+
+        _LOGGER.debug(
+            "Manual DPS configured: %s",
+            manual_dps,
+        )
+
+        for dp in manual_dps:
+            if str(dp) not in detected_dps:
+                detected_dps[str(dp)] = -1
+
+    for dp in reset_ids:
+        if str(dp) not in detected_dps:
+            detected_dps[str(dp)] = -1
+
     if not detected_dps:
         raise EmptyDpsList
 
-    _LOGGER.debug("Total DPS: %s", detected_dps)
+    _LOGGER.debug(
+        "Total DPS using protocol %s: %s",
+        resolved_protocol,
+        detected_dps,
+    )
 
-    return dps_string_list(detected_dps)
+    return (
+        dps_string_list(detected_dps),
+        resolved_protocol,
+    )
 
 
 async def attempt_cloud_connection(hass, user_input):
@@ -543,6 +690,31 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                         self.device_data[CONF_MODEL] = cloud_devs[dev_id].get(
                             CONF_PRODUCT_NAME
                         )
+                if (
+                    self.editing_device
+                    and self.device_data.get(
+                        CONF_PROTOCOL_VERSION
+                    ) == PROTOCOL_AUTO
+                ):
+                    probe_data = dict(self.device_data)
+                    probe_data[CONF_DEVICE_ID] = dev_id
+
+                    (
+                        self.dps_strings,
+                        resolved_protocol,
+                    ) = await validate_input(
+                        self.hass,
+                        probe_data,
+                    )
+
+                    self.device_data[
+                        CONF_PROTOCOL_VERSION
+                    ] = resolved_protocol
+
+                    user_input[
+                        CONF_PROTOCOL_VERSION
+                    ] = resolved_protocol
+
                 if self.editing_device:
                     if user_input[CONF_ENABLE_ADD_ENTITIES]:
                         self.editing_device = False
@@ -579,7 +751,17 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                         ]
                         return await self.async_step_configure_entity()
 
-                self.dps_strings = await validate_input(self.hass, user_input)
+                (
+                    self.dps_strings,
+                    resolved_protocol,
+                ) = await validate_input(
+                    self.hass,
+                    user_input,
+                )
+
+                self.device_data[
+                    CONF_PROTOCOL_VERSION
+                ] = resolved_protocol
                 return await self.async_step_pick_entity_type()
             except CannotConnect:
                 errors["base"] = "cannot_connect"
@@ -610,7 +792,7 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
             defaults[CONF_ENABLE_ADD_ENTITIES] = False
             schema = schema_defaults(options_schema(self.entities), **defaults)
         else:
-            defaults[CONF_PROTOCOL_VERSION] = "3.3"
+            defaults[CONF_PROTOCOL_VERSION] = PROTOCOL_AUTO
             defaults[CONF_HOST] = ""
             defaults[CONF_DEVICE_ID] = ""
             defaults[CONF_LOCAL_KEY] = ""
@@ -620,7 +802,21 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                 device = self.discovered_devices[dev_id]
                 defaults[CONF_HOST] = device.get("ip")
                 defaults[CONF_DEVICE_ID] = device.get("gwId")
-                defaults[CONF_PROTOCOL_VERSION] = device.get("version")
+                discovered_version = str(
+                    device.get("version") or ""
+                )
+
+                if (
+                    discovered_version
+                    in SUPPORTED_PROTOCOL_VERSIONS
+                ):
+                    defaults[
+                        CONF_PROTOCOL_VERSION
+                    ] = discovered_version
+                else:
+                    defaults[
+                        CONF_PROTOCOL_VERSION
+                    ] = PROTOCOL_AUTO
                 cloud_devs = self.hass.data[DOMAIN][DATA_CLOUD].device_list
                 if dev_id in cloud_devs:
                     defaults[CONF_LOCAL_KEY] = cloud_devs[dev_id].get(CONF_LOCAL_KEY)
