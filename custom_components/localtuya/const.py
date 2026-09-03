@@ -86,6 +86,10 @@ CONF_FAN_DPS_TYPE = "fan_dps_type"
 # sensor
 CONF_SCALING = "scaling"
 
+# binary sensor
+CONF_STATE_ON = "state_on"
+CONF_STATE_OFF = "state_off"
+
 # climate
 CONF_TARGET_TEMPERATURE_DP = "target_temperature_dp"
 CONF_CURRENT_TEMPERATURE_DP = "current_temperature_dp"

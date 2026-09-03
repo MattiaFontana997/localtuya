@@ -34,6 +34,8 @@ from .const import (
     CONF_PRESET_SET,
     CONF_RESTORE_ON_RECONNECT,
     CONF_SCALING,
+    CONF_STATE_OFF,
+    CONF_STATE_ON,
     CONF_STEPSIZE_VALUE,
     CONF_TARGET_PRECISION,
     CONF_TARGET_TEMPERATURE_DP,
@@ -127,6 +129,97 @@ _THERMOSTAT_PRESET_CODES = (
 THERMOSTAT_PRESET_AUTO_MANUAL_HOLIDAY = (
     "auto/manual/holiday"
 )
+
+_BINARY_SENSOR_RULES = {
+    # Contact/opening sensors
+    "doorcontact_state": (
+        "Door",
+        "door",
+    ),
+    "door_contact": (
+        "Door",
+        "door",
+    ),
+    "contact_state": (
+        "Opening",
+        "opening",
+    ),
+
+    # Motion / occupancy
+    "pir": (
+        "Motion",
+        "motion",
+    ),
+    "pir_state": (
+        "Motion",
+        "motion",
+    ),
+    "motion": (
+        "Motion",
+        "motion",
+    ),
+    "motion_state": (
+        "Motion",
+        "motion",
+    ),
+    "presence": (
+        "Occupancy",
+        "occupancy",
+    ),
+    "presence_state": (
+        "Occupancy",
+        "occupancy",
+    ),
+    "occupancy": (
+        "Occupancy",
+        "occupancy",
+    ),
+
+    # Safety sensors
+    "water_sensor_state": (
+        "Moisture",
+        "moisture",
+    ),
+    "water_leak": (
+        "Moisture",
+        "moisture",
+    ),
+    "smoke_sensor_state": (
+        "Smoke",
+        "smoke",
+    ),
+    "smoke_alarm": (
+        "Smoke",
+        "smoke",
+    ),
+    "gas_sensor_state": (
+        "Gas",
+        "gas",
+    ),
+    "gas_alarm": (
+        "Gas",
+        "gas",
+    ),
+
+    # Security / maintenance
+    "tamper": (
+        "Tamper",
+        "tamper",
+    ),
+    "tamper_alarm": (
+        "Tamper",
+        "tamper",
+    ),
+    "battery_low": (
+        "Battery Low",
+        "battery",
+    ),
+    "low_battery": (
+        "Battery Low",
+        "battery",
+    ),
+}
+
 
 _SENSOR_RULES = {
     "cur_voltage": (
@@ -797,6 +890,11 @@ def _build_switch_candidates(
         if dp.id in consumed_dps:
             continue
 
+        # A switch must be writable. Status-only boolean DPS
+        # must never become controllable entities.
+        if not dp.writable:
+            continue
+
         if dp.code == "switch_led":
             continue
 
@@ -834,6 +932,72 @@ def _build_switch_candidates(
                     CONF_ID: dp.id,
                     CONF_FRIENDLY_NAME: friendly_name,
                     CONF_PLATFORM: "switch",
+                },
+                matched_codes=(dp.code,),
+                referenced_dps=(dp.id,),
+            )
+        )
+
+    return candidates
+
+
+def _build_binary_sensor_candidates(
+    device: dict[str, Any],
+    metadata: dict[int, DpMetadata],
+    consumed_dps: set[int],
+) -> list[EntityCandidate]:
+    """Build high-confidence read-only boolean sensors."""
+    candidates: list[EntityCandidate] = []
+
+    device_name = _device_name(
+        device,
+        "Tuya Device",
+    )
+
+    for dp in metadata.values():
+        if dp.id in consumed_dps:
+            continue
+
+        # Automatic binary sensors must come from status-only
+        # metadata. A writable Boolean belongs to some control
+        # surface and must not be exposed as a sensor.
+        if (
+            not dp.readable
+            or dp.writable
+        ):
+            continue
+
+        if dp.type_name not in (
+            "",
+            "boolean",
+            "bool",
+        ):
+            continue
+
+        rule = _BINARY_SENSOR_RULES.get(
+            dp.code
+        )
+
+        if rule is None:
+            continue
+
+        label, device_class = rule
+
+        candidates.append(
+            EntityCandidate(
+                platform="binary_sensor",
+                primary_dp=dp.id,
+                confidence=MappingConfidence.HIGH,
+                config={
+                    CONF_ID: dp.id,
+                    CONF_FRIENDLY_NAME: (
+                        f"{device_name} {label}"
+                    ),
+                    CONF_PLATFORM: "binary_sensor",
+                    CONF_STATE_ON: "True",
+                    CONF_STATE_OFF: "False",
+                    CONF_DEVICE_CLASS:
+                        device_class,
                 },
                 matched_codes=(dp.code,),
                 referenced_dps=(dp.id,),
@@ -1300,6 +1464,24 @@ def build_entity_candidates(
                 candidate.referenced_dps
                 or (candidate.primary_dp,)
             )
+
+    binary_sensor_candidates = (
+        _build_binary_sensor_candidates(
+            device,
+            metadata,
+            consumed_dps,
+        )
+    )
+
+    candidates.extend(
+        binary_sensor_candidates
+    )
+
+    for candidate in binary_sensor_candidates:
+        consumed_dps.update(
+            candidate.referenced_dps
+            or (candidate.primary_dp,)
+        )
 
     sensor_candidates = (
         _build_sensor_candidates(
