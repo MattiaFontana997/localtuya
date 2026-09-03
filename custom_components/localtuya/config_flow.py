@@ -299,10 +299,10 @@ async def async_get_cloud_entity_candidates(
 
     # Remote catalog extends the built-in mapper.
     #
-    # Product-specific community mappings must never remove
-    # or replace behaviour already discovered by the built-in
-    # mapper. When both identify the same entity, the catalog
-    # may only fill configuration keys that are still missing.
+    # Product-specific community mappings preserve built-in
+    # behaviour by default. They may fill missing configuration
+    # and may replace an existing value only when the mapping
+    # explicitly declares that key in override_keys.
     catalog_client = domain_data.get(
         DATA_DEVICE_CATALOG
     )
@@ -326,6 +326,13 @@ async def async_get_cloud_entity_candidates(
             ):
                 config = copy.deepcopy(
                     remote_entity["config"]
+                )
+
+                override_keys = set(
+                    remote_entity.get(
+                        "override_keys",
+                        (),
+                    )
                 )
 
                 platform = remote_entity[
@@ -411,8 +418,11 @@ async def async_get_cloud_entity_candidates(
                         existing.config
                     )
 
-                    # Built-in behaviour wins. The remote
-                    # catalog may only add missing knowledge.
+                    # Built-in behaviour wins by default.
+                    # Only explicitly declared, validated keys
+                    # may replace an existing built-in value.
+                    override_applied = False
+
                     for config_key, config_value in (
                         config.items()
                     ):
@@ -421,6 +431,26 @@ async def async_get_cloud_entity_candidates(
                             CONF_PLATFORM,
                             CONF_FRIENDLY_NAME,
                         }:
+                            continue
+
+                        if (
+                            config_key
+                            in override_keys
+                            and config_key
+                            in merged_config
+                        ):
+                            if (
+                                merged_config[
+                                    config_key
+                                ]
+                                != config_value
+                            ):
+                                merged_config[
+                                    config_key
+                                ] = config_value
+
+                                override_applied = True
+
                             continue
 
                         merged_config.setdefault(
@@ -456,6 +486,33 @@ async def async_get_cloud_entity_candidates(
                             catalog_marker
                         )
 
+                    if (
+                        catalog_match.confidence
+                        in {
+                            "verified",
+                            "community",
+                        }
+                    ):
+                        # An exact product-specific catalog mapping,
+                        # already validated against the LAN-observed
+                        # DPS, can promote a generic suggestion.
+                        merged_confidence = (
+                            MappingConfidence.HIGH
+                        )
+
+                    elif override_applied:
+                        # Experimental mappings that replace
+                        # built-in knowledge require explicit
+                        # user approval.
+                        merged_confidence = (
+                            MappingConfidence.MEDIUM
+                        )
+
+                    else:
+                        merged_confidence = (
+                            existing.confidence
+                        )
+
                     candidates[
                         existing_index
                     ] = EntityCandidate(
@@ -464,7 +521,7 @@ async def async_get_cloud_entity_candidates(
                             existing.primary_dp
                         ),
                         confidence=(
-                            existing.confidence
+                            merged_confidence
                         ),
                         config=merged_config,
                         matched_codes=tuple(

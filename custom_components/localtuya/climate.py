@@ -169,10 +169,11 @@ PRESET_SETS = {
         PRESET_NONE: "hold",
     },
     "auto/manual/temporary/boost/holiday": {
-        PRESET_AWAY: 'holiday',
-        PRESET_HOME: 'manual',
-        PRESET_BOOST: 'boost',
-        PRESET_NONE: 'auto'
+        "auto": "auto",
+        PRESET_HOME: "manual",
+        "temporary": "temporary",
+        PRESET_BOOST: "boost",
+        PRESET_AWAY: "holiday",
     }
 }
 

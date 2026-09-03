@@ -180,5 +180,88 @@ class TestDeviceCatalog(unittest.TestCase):
         )
 
 
+    def test_valid_override_keys_preserved(self):
+        payload = {
+            "schema_version": 1,
+            "mappings": [
+                {
+                    "id": "thermostat-override",
+                    "confidence": "experimental",
+                    "match": {
+                        "product_id": "abc123",
+                        "required_dps": [
+                            1,
+                            2,
+                        ],
+                    },
+                    "entities": [
+                        {
+                            "platform": "climate",
+                            "override_keys": [
+                                "preset_set",
+                            ],
+                            "config": {
+                                "id": 1,
+                                "platform": "climate",
+                                "preset_dp": 2,
+                                "preset_set":
+                                    "auto/manual/temporary/boost/holiday",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+
+        catalog = validate_catalog(payload)
+
+        entity = (
+            catalog["mappings"][0]
+            ["entities"][0]
+        )
+
+        self.assertEqual(
+            entity["override_keys"],
+            ["preset_set"],
+        )
+
+    def test_protected_override_key_rejected(self):
+        payload = {
+            "schema_version": 1,
+            "mappings": [
+                {
+                    "id": "bad-override",
+                    "confidence": "experimental",
+                    "match": {
+                        "product_id": "abc123",
+                        "required_dps": [1],
+                    },
+                    "entities": [
+                        {
+                            "platform": "switch",
+                            "override_keys": [
+                                "friendly_name",
+                            ],
+                            "config": {
+                                "id": 1,
+                                "platform": "switch",
+                                "friendly_name":
+                                    "Remote Name",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+
+        catalog = validate_catalog(payload)
+
+        self.assertEqual(
+            catalog["mappings"],
+            [],
+        )
+
+
+
 if __name__ == "__main__":
     unittest.main()

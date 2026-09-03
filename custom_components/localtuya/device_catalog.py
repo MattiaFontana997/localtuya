@@ -58,6 +58,15 @@ _FORBIDDEN_CONFIG_KEYS = {
     "region",
 }
 
+# Remote mappings may explicitly override selected built-in
+# configuration keys, but identity and user-facing naming must
+# always remain under LocalTuya/local configuration control.
+_PROTECTED_OVERRIDE_KEYS = {
+    "id",
+    "platform",
+    "friendly_name",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class CatalogMatch:
@@ -147,6 +156,39 @@ def _validate_entity(
     if _contains_forbidden_keys(config):
         return None
 
+    raw_override_keys = entity.get(
+        "override_keys",
+        [],
+    )
+
+    if not isinstance(
+        raw_override_keys,
+        list,
+    ):
+        return None
+
+    override_keys: list[str] = []
+
+    for raw_key in raw_override_keys:
+        if not isinstance(raw_key, str):
+            return None
+
+        key = raw_key.strip()
+        normalized_key = key.lower()
+
+        if (
+            not key
+            or normalized_key
+            in _PROTECTED_OVERRIDE_KEYS
+            or normalized_key
+            in _FORBIDDEN_CONFIG_KEYS
+            or key not in config
+        ):
+            return None
+
+        if key not in override_keys:
+            override_keys.append(key)
+
     config = copy.deepcopy(config)
 
     configured_platform = config.get(
@@ -175,10 +217,17 @@ def _validate_entity(
     config["id"] = primary_dp
     config["platform"] = platform
 
-    return {
+    validated_entity = {
         "platform": platform,
         "config": config,
     }
+
+    if override_keys:
+        validated_entity[
+            "override_keys"
+        ] = override_keys
+
+    return validated_entity
 
 
 def validate_catalog(

@@ -326,5 +326,288 @@ class ConfigFlowMapperTests(
 
 
 
+    async def test_experimental_catalog_can_override_builtin_preset_set(
+        self,
+    ):
+        """Explicit experimental overrides require user approval."""
+
+        class FakeThermostatCloud:
+            device_list = {
+                DEVICE_ID: {
+                    "id": DEVICE_ID,
+                    "name": "Termostato",
+                    "category": "wk",
+                    "product_id":
+                        "wxmbjwpt8yea7bag",
+                }
+            }
+
+            async def async_get_device_specification(
+                self,
+                device_id,
+            ):
+                self.assert_device_id = device_id
+
+                specification = {
+                    "functions": [
+                        {
+                            "dp_id": 1,
+                            "code": "switch",
+                            "type": "Boolean",
+                            "values": "{}",
+                        },
+                        {
+                            "dp_id": 2,
+                            "code": "mode",
+                            "type": "Enum",
+                            "values": (
+                                '{"range":'
+                                '["auto","manual","holiday"]}'
+                            ),
+                        },
+                        {
+                            "dp_id": 16,
+                            "code": "temp_set",
+                            "type": "Integer",
+                            "values": (
+                                '{"unit":"℃","min":70,'
+                                '"max":350,"scale":1,"step":1}'
+                            ),
+                        },
+                    ],
+                    "status": [
+                        {
+                            "dp_id": 1,
+                            "code": "switch",
+                            "type": "Boolean",
+                            "values": "{}",
+                        },
+                        {
+                            "dp_id": 2,
+                            "code": "mode",
+                            "type": "Enum",
+                            "values": (
+                                '{"range":'
+                                '["auto","manual","holiday"]}'
+                            ),
+                        },
+                        {
+                            "dp_id": 16,
+                            "code": "temp_set",
+                            "type": "Integer",
+                            "values": (
+                                '{"unit":"℃","min":70,'
+                                '"max":350,"scale":1,"step":1}'
+                            ),
+                        },
+                        {
+                            "dp_id": 24,
+                            "code": "temp_current",
+                            "type": "Integer",
+                            "values": (
+                                '{"unit":"℃","scale":1}'
+                            ),
+                        },
+                    ],
+                }
+
+                return "ok", specification
+
+        class FakeThermostatCatalog:
+            def match(
+                self,
+                device,
+                available_dps,
+            ):
+                return CatalogMatch(
+                    mapping_id=(
+                        "wxmbjwpt8yea7bag-test"
+                    ),
+                    product_id=(
+                        "wxmbjwpt8yea7bag"
+                    ),
+                    confidence="experimental",
+                    required_dps=(
+                        1,
+                        2,
+                        16,
+                        24,
+                        103,
+                    ),
+                    entities=(
+                        {
+                            "platform": "climate",
+                            "override_keys": [
+                                "preset_set",
+                            ],
+                            "config": {
+                                "id": 1,
+                                "platform": "climate",
+                                "preset_dp": 2,
+                                "preset_set": (
+                                    "auto/manual/temporary/"
+                                    "boost/holiday"
+                                ),
+                                "hvac_mode_dp": 103,
+                                "hvac_mode_set": (
+                                    "heatcool_heat/"
+                                    "heatcool_cool/"
+                                    "heatcool_heatcool"
+                                ),
+                            },
+                        },
+                    ),
+                )
+
+        hass = SimpleNamespace(
+            data={
+                DOMAIN: {
+                    DATA_CLOUD:
+                        FakeThermostatCloud(),
+                    DATA_DEVICE_CATALOG:
+                        FakeThermostatCatalog(),
+                }
+            }
+        )
+
+        candidates = (
+            await async_get_cloud_entity_candidates(
+                hass,
+                {
+                    "device_id": DEVICE_ID,
+                    "friendly_name":
+                        "Termostato",
+                },
+                {},
+                [
+                    "1 (value: True)",
+                    "2 (value: auto)",
+                    "16 (value: 220)",
+                    "24 (value: 271)",
+                    "103 (value: heatcool_cool)",
+                ],
+            )
+        )
+
+        climate = next(
+            candidate
+            for candidate in candidates
+            if candidate.platform
+            == "climate"
+        )
+
+        self.assertEqual(
+            climate.config[
+                "preset_set"
+            ],
+            "auto/manual/temporary/boost/holiday",
+        )
+
+        self.assertEqual(
+            climate.config[
+                "hvac_mode_dp"
+            ],
+            103,
+        )
+
+        # Built-in HIGH is deliberately downgraded because
+        # an experimental mapping replaced an existing value.
+        self.assertEqual(
+            climate.confidence.value,
+            "medium",
+        )
+
+        self.assertIn(
+            "catalog:wxmbjwpt8yea7bag-test",
+            climate.matched_codes,
+        )
+
+        self.assertEqual(
+            set(
+                climate.referenced_dps
+            ),
+            {
+                1,
+                2,
+                16,
+                24,
+                103,
+            },
+        )
+
+    async def test_verified_catalog_promotes_generic_number_to_high(
+        self,
+    ):
+        """Verified exact mapping promotes a generic candidate."""
+
+        class VerifiedCatalog:
+            def match(
+                self,
+                device,
+                available_dps,
+            ):
+                return CatalogMatch(
+                    mapping_id="verified-number-test",
+                    product_id="catalog-test-product",
+                    confidence="verified",
+                    required_dps=(10,),
+                    entities=(
+                        {
+                            "platform": "number",
+                            "config": {
+                                "id": 10,
+                                "platform": "number",
+                            },
+                        },
+                    ),
+                )
+
+        hass = SimpleNamespace(
+            data={
+                DOMAIN: {
+                    DATA_CLOUD: FakeCloud(),
+                    DATA_DEVICE_CATALOG:
+                        VerifiedCatalog(),
+                }
+            }
+        )
+
+        candidates = (
+            await async_get_cloud_entity_candidates(
+                hass,
+                {
+                    "device_id": DEVICE_ID,
+                    "friendly_name":
+                        "Generic Device",
+                },
+                {},
+                [
+                    "1 (value: True)",
+                    "10 (value: 0)",
+                    "11 (value: memory)",
+                ],
+            )
+        )
+
+        number_candidate = next(
+            candidate
+            for candidate in candidates
+            if (
+                candidate.platform == "number"
+                and candidate.primary_dp == 10
+            )
+        )
+
+        self.assertEqual(
+            number_candidate.confidence.value,
+            "high",
+        )
+
+        self.assertIn(
+            "catalog:verified-number-test",
+            number_candidate.matched_codes,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
