@@ -36,6 +36,8 @@ from .const import (
     CONF_TEMP_MIN,
 )
 
+from .product_overrides import get_product_entity_overrides
+
 
 class MappingConfidence(str, Enum):
     """Confidence assigned to an automatically mapped entity."""
@@ -953,9 +955,91 @@ def _build_sensor_candidates(
     return candidates
 
 
+def _apply_product_overrides(
+    device: dict[str, Any],
+    candidates: list[EntityCandidate],
+    available_dps: set[int] | None,
+) -> list[EntityCandidate]:
+    """Apply verified product extensions to generic candidates.
+
+    Undocumented product DPS are only enabled when the LAN probe has
+    independently confirmed that those DPS exist on this device.
+    """
+    if available_dps is None:
+        return candidates
+
+    overrides = get_product_entity_overrides(
+        device
+    )
+
+    if not overrides:
+        return candidates
+
+    result = list(candidates)
+
+    for override in overrides:
+        if not set(
+            override.required_dps
+        ).issubset(available_dps):
+            continue
+
+        for index, candidate in enumerate(
+            result
+        ):
+            if (
+                candidate.platform
+                != override.platform
+                or candidate.primary_dp
+                != override.primary_dp
+            ):
+                continue
+
+            config = dict(
+                candidate.config
+            )
+
+            config.update(
+                dict(
+                    override.config_updates
+                )
+            )
+
+            referenced_dps = list(
+                candidate.referenced_dps
+                or (
+                    candidate.primary_dp,
+                )
+            )
+
+            for dp_id in override.required_dps:
+                if dp_id not in referenced_dps:
+                    referenced_dps.append(
+                        dp_id
+                    )
+
+            result[index] = EntityCandidate(
+                platform=candidate.platform,
+                primary_dp=candidate.primary_dp,
+                confidence=candidate.confidence,
+                config=config,
+                matched_codes=(
+                    candidate.matched_codes
+                ),
+                referenced_dps=tuple(
+                    referenced_dps
+                ),
+            )
+
+            break
+
+    return result
+
+
 def build_entity_candidates(
     device: dict[str, Any] | None = None,
     specification: dict[str, Any] | None = None,
+    *,
+    available_dps: set[int] | None = None,
 ) -> list[EntityCandidate]:
     """Build generic LocalTuya entity candidates from Tuya metadata."""
     device = device or {}
@@ -1020,6 +1104,12 @@ def build_entity_candidates(
             metadata,
             consumed_dps,
         )
+    )
+
+    candidates = _apply_product_overrides(
+        device,
+        candidates,
+        available_dps,
     )
 
     return sorted(

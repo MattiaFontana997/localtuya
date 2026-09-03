@@ -285,13 +285,14 @@ async def async_get_cloud_entity_candidates(
     if friendly_name:
         mapper_device["name"] = friendly_name
 
+    detected_ids = _detected_dp_ids(
+        dps_strings
+    )
+
     candidates = build_entity_candidates(
         mapper_device,
         specification,
-    )
-
-    detected_ids = _detected_dp_ids(
-        dps_strings
+        available_dps=detected_ids,
     )
 
     accepted = []
