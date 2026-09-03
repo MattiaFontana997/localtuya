@@ -591,6 +591,465 @@ class DeviceMapperTests(unittest.TestCase):
             1000,
         )
 
+    def test_standard_cover_mapping(self):
+        """Standard curtain DPS become one positional cover."""
+        device = {
+            "name": "Living Curtain",
+            "category": "cl",
+        }
+
+        specification = {
+            "functions": [
+                {
+                    "dp_id": 1,
+                    "code": "control",
+                    "type": "Enum",
+                    "values": (
+                        '{"range":'
+                        '["open","stop","close","continue"]}'
+                    ),
+                },
+                {
+                    "dp_id": 2,
+                    "code": "percent_control",
+                    "type": "Integer",
+                    "values": (
+                        '{"unit":"%","min":0,'
+                        '"max":100,"scale":0,"step":1}'
+                    ),
+                },
+            ],
+            "status": [
+                {
+                    "dp_id": 1,
+                    "code": "control",
+                    "type": "Enum",
+                    "values": (
+                        '{"range":'
+                        '["open","stop","close","continue"]}'
+                    ),
+                },
+                {
+                    "dp_id": 2,
+                    "code": "percent_control",
+                    "type": "Integer",
+                    "values": (
+                        '{"unit":"%","min":0,'
+                        '"max":100,"scale":0,"step":1}'
+                    ),
+                },
+                {
+                    "dp_id": 3,
+                    "code": "percent_state",
+                    "type": "Integer",
+                    "values": (
+                        '{"unit":"%","min":0,'
+                        '"max":100,"scale":0,"step":1}'
+                    ),
+                },
+            ],
+        }
+
+        candidates = build_entity_candidates(
+            device,
+            specification,
+            available_dps={1, 2, 3},
+        )
+
+        cover = self.candidate(
+            candidates,
+            "cover",
+            1,
+        )
+
+        self.assertEqual(
+            cover.confidence,
+            MappingConfidence.HIGH,
+        )
+        self.assertEqual(
+            cover.config["commands_set"],
+            "open_close_stop",
+        )
+        self.assertEqual(
+            cover.config["positioning_mode"],
+            "position",
+        )
+        self.assertEqual(
+            cover.config["set_position_dp"],
+            2,
+        )
+        self.assertEqual(
+            cover.config["current_position_dp"],
+            3,
+        )
+        self.assertEqual(
+            cover.referenced_dps,
+            (1, 2, 3),
+        )
+
+        # Position DPs are consumed by the cover and must not
+        # leak into generic number entities.
+        self.assertFalse(
+            any(
+                candidate.platform == "number"
+                and candidate.primary_dp in {2, 3}
+                for candidate in candidates
+            )
+        )
+
+    def test_standard_fan_mapping(self):
+        """Standard fan DPS become one composite fan."""
+        device = {
+            "name": "Bedroom Fan",
+            "category": "fs",
+        }
+
+        specification = {
+            "functions": [
+                {
+                    "dp_id": 1,
+                    "code": "switch",
+                    "type": "Boolean",
+                    "values": "{}",
+                },
+                {
+                    "dp_id": 2,
+                    "code": "mode",
+                    "type": "Enum",
+                    "values": (
+                        '{"range":'
+                        '["nature","sleep","fresh","smart"]}'
+                    ),
+                },
+                {
+                    "dp_id": 3,
+                    "code": "fan_speed_percent",
+                    "type": "Integer",
+                    "values": (
+                        '{"min":1,"max":100,'
+                        '"scale":0,"step":1}'
+                    ),
+                },
+                {
+                    "dp_id": 4,
+                    "code": "switch_horizontal",
+                    "type": "Boolean",
+                    "values": "{}",
+                },
+                {
+                    "dp_id": 5,
+                    "code": "switch_vertical",
+                    "type": "Boolean",
+                    "values": "{}",
+                },
+                {
+                    "dp_id": 6,
+                    "code": "fan_direction",
+                    "type": "Enum",
+                    "values": (
+                        '{"range":'
+                        '["forward","reverse"]}'
+                    ),
+                },
+            ],
+            "status": [
+                {
+                    "dp_id": 1,
+                    "code": "switch",
+                    "type": "Boolean",
+                    "values": "{}",
+                },
+                {
+                    "dp_id": 2,
+                    "code": "mode",
+                    "type": "Enum",
+                    "values": (
+                        '{"range":'
+                        '["nature","sleep","fresh","smart"]}'
+                    ),
+                },
+                {
+                    "dp_id": 3,
+                    "code": "fan_speed_percent",
+                    "type": "Integer",
+                    "values": (
+                        '{"min":1,"max":100,'
+                        '"scale":0,"step":1}'
+                    ),
+                },
+                {
+                    "dp_id": 4,
+                    "code": "switch_horizontal",
+                    "type": "Boolean",
+                    "values": "{}",
+                },
+                {
+                    "dp_id": 5,
+                    "code": "switch_vertical",
+                    "type": "Boolean",
+                    "values": "{}",
+                },
+                {
+                    "dp_id": 6,
+                    "code": "fan_direction",
+                    "type": "Enum",
+                    "values": (
+                        '{"range":'
+                        '["forward","reverse"]}'
+                    ),
+                },
+            ],
+        }
+
+        candidates = build_entity_candidates(
+            device,
+            specification,
+            available_dps={
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+            },
+        )
+
+        fan = self.candidate(
+            candidates,
+            "fan",
+            1,
+        )
+
+        self.assertEqual(
+            fan.confidence,
+            MappingConfidence.HIGH,
+        )
+        self.assertEqual(
+            fan.config["fan_speed_control"],
+            3,
+        )
+        self.assertEqual(
+            fan.config["fan_speed_min"],
+            1,
+        )
+        self.assertEqual(
+            fan.config["fan_speed_max"],
+            100,
+        )
+        self.assertEqual(
+            fan.config["fan_dps_type"],
+            "int",
+        )
+        self.assertEqual(
+            fan.config["fan_oscillating_control"],
+            4,
+        )
+        self.assertEqual(
+            fan.config["fan_direction"],
+            6,
+        )
+        self.assertEqual(
+            fan.config["fan_direction_forward"],
+            "forward",
+        )
+        self.assertEqual(
+            fan.config["fan_direction_reverse"],
+            "reverse",
+        )
+
+        # The unconsumed fan mode remains an optional select.
+        mode = self.candidate(
+            candidates,
+            "select",
+            2,
+        )
+
+        self.assertEqual(
+            mode.confidence,
+            MappingConfidence.MEDIUM,
+        )
+
+        # Fan power and swing controls must not leak out as
+        # generic switches.
+        self.assertFalse(
+            any(
+                candidate.platform == "switch"
+                and candidate.primary_dp in {
+                    1,
+                    4,
+                    5,
+                }
+                for candidate in candidates
+            )
+        )
+
+        # Speed and direction belong to the fan.
+        self.assertFalse(
+            any(
+                candidate.primary_dp in {
+                    3,
+                    6,
+                }
+                and candidate.platform
+                in {"number", "select"}
+                for candidate in candidates
+            )
+        )
+
+    def test_ceiling_fan_light_mapping(self):
+        """Ceiling fan light exposes separate light and fan entities."""
+        device = {
+            "name": "Ceiling Unit",
+            "category": "fsd",
+        }
+
+        specification = {
+            "functions": [
+                {
+                    "dp_id": 20,
+                    "code": "switch_led",
+                    "type": "Boolean",
+                    "values": "{}",
+                },
+                {
+                    "dp_id": 22,
+                    "code": "bright_value",
+                    "type": "Integer",
+                    "values": (
+                        '{"min":10,"max":1000,'
+                        '"scale":0,"step":1}'
+                    ),
+                },
+                {
+                    "dp_id": 23,
+                    "code": "temp_value",
+                    "type": "Integer",
+                    "values": (
+                        '{"min":0,"max":1000,'
+                        '"scale":0,"step":1}'
+                    ),
+                },
+                {
+                    "dp_id": 60,
+                    "code": "fan_switch",
+                    "type": "Boolean",
+                    "values": "{}",
+                },
+                {
+                    "dp_id": 61,
+                    "code": "fan_speed",
+                    "type": "Integer",
+                    "values": (
+                        '{"unit":"%","min":1,'
+                        '"max":100,"scale":0,"step":1}'
+                    ),
+                },
+                {
+                    "dp_id": 63,
+                    "code": "fan_direction",
+                    "type": "Enum",
+                    "values": (
+                        '{"range":'
+                        '["forward","reverse"]}'
+                    ),
+                },
+            ],
+            "status": [
+                {
+                    "dp_id": 20,
+                    "code": "switch_led",
+                    "type": "Boolean",
+                    "values": "{}",
+                },
+                {
+                    "dp_id": 22,
+                    "code": "bright_value",
+                    "type": "Integer",
+                    "values": (
+                        '{"min":10,"max":1000,'
+                        '"scale":0,"step":1}'
+                    ),
+                },
+                {
+                    "dp_id": 23,
+                    "code": "temp_value",
+                    "type": "Integer",
+                    "values": (
+                        '{"min":0,"max":1000,'
+                        '"scale":0,"step":1}'
+                    ),
+                },
+                {
+                    "dp_id": 60,
+                    "code": "fan_switch",
+                    "type": "Boolean",
+                    "values": "{}",
+                },
+                {
+                    "dp_id": 61,
+                    "code": "fan_speed",
+                    "type": "Integer",
+                    "values": (
+                        '{"unit":"%","min":1,'
+                        '"max":100,"scale":0,"step":1}'
+                    ),
+                },
+                {
+                    "dp_id": 63,
+                    "code": "fan_direction",
+                    "type": "Enum",
+                    "values": (
+                        '{"range":'
+                        '["forward","reverse"]}'
+                    ),
+                },
+            ],
+        }
+
+        candidates = build_entity_candidates(
+            device,
+            specification,
+            available_dps={
+                20,
+                22,
+                23,
+                60,
+                61,
+                63,
+            },
+        )
+
+        light = self.candidate(
+            candidates,
+            "light",
+            20,
+        )
+
+        fan = self.candidate(
+            candidates,
+            "fan",
+            60,
+        )
+
+        self.assertEqual(
+            light.confidence,
+            MappingConfidence.HIGH,
+        )
+        self.assertEqual(
+            fan.confidence,
+            MappingConfidence.HIGH,
+        )
+
+        self.assertEqual(
+            fan.config["fan_speed_control"],
+            61,
+        )
+        self.assertEqual(
+            fan.config["fan_direction"],
+            63,
+        )
+
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -24,16 +24,29 @@ from .const import (
     CONF_BRIGHTNESS_UPPER,
     CONF_COLOR,
     CONF_COLOR_MODE,
+    CONF_COMMANDS_SET,
+    CONF_CURRENT_POSITION_DP,
     CONF_CURRENT_TEMPERATURE_DP,
+    CONF_FAN_DIRECTION,
+    CONF_FAN_DIRECTION_FWD,
+    CONF_FAN_DIRECTION_REV,
+    CONF_FAN_DPS_TYPE,
+    CONF_FAN_ORDERED_LIST,
+    CONF_FAN_OSCILLATING_CONTROL,
+    CONF_FAN_SPEED_CONTROL,
+    CONF_FAN_SPEED_MAX,
+    CONF_FAN_SPEED_MIN,
     CONF_MAX_VALUE,
     CONF_MIN_VALUE,
     CONF_OPTIONS,
     CONF_PASSIVE_ENTITY,
+    CONF_POSITIONING_MODE,
     CONF_PRECISION,
     CONF_PRESET_DP,
     CONF_PRESET_SET,
     CONF_RESTORE_ON_RECONNECT,
     CONF_SCALING,
+    CONF_SET_POSITION_DP,
     CONF_STATE_OFF,
     CONF_STATE_ON,
     CONF_STEPSIZE_VALUE,
@@ -129,6 +142,72 @@ _THERMOSTAT_PRESET_CODES = (
 THERMOSTAT_PRESET_AUTO_MANUAL_HOLIDAY = (
     "auto/manual/holiday"
 )
+
+_COVER_CATEGORIES = {
+    "cl",
+    "clkg",
+}
+
+_COVER_CONTROL_CODES = (
+    "control",
+    "control_2",
+)
+
+_COVER_REQUIRED_COMMANDS = {
+    "open",
+    "stop",
+    "close",
+}
+
+_COVER_COMMANDS_OPEN_CLOSE_STOP = (
+    "open_close_stop"
+)
+
+_COVER_POSITION_MODE = "position"
+
+
+_FAN_CATEGORIES = {
+    "fs",
+    "fsd",
+}
+
+_FAN_POWER_CODES = {
+    "fs": (
+        "switch",
+    ),
+    "fsd": (
+        "fan_switch",
+    ),
+}
+
+_FAN_SPEED_CODES = {
+    "fs": (
+        "fan_speed_percent",
+        "fan_speed",
+    ),
+    "fsd": (
+        "fan_speed",
+        "fan_speed_percent",
+    ),
+}
+
+_FAN_OSCILLATION_CODES = (
+    "switch_horizontal",
+    "switch_vertical",
+)
+
+_FAN_DIRECTION_CODES = (
+    "fan_direction",
+)
+
+
+# These codes have specialized semantics and must not fall
+# through to the generic switch mapper.
+_GENERIC_SWITCH_BLOCKLIST = {
+    *_LIGHT_POWER_CODES,
+    *_FAN_OSCILLATION_CODES,
+}
+
 
 _BINARY_SENSOR_RULES = {
     # Contact/opening sensors
@@ -873,6 +952,513 @@ def _build_climate_candidate(
     )
 
 
+def _enum_options(
+    dp: DpMetadata | None,
+) -> list[str]:
+    """Return normalized non-empty enum options."""
+    if dp is None:
+        return []
+
+    raw_options = dp.values.get(
+        "range"
+    )
+
+    if not isinstance(
+        raw_options,
+        list,
+    ):
+        return []
+
+    return [
+        str(value).strip()
+        for value in raw_options
+        if str(value).strip()
+    ]
+
+
+def _is_percentage_dp(
+    dp: DpMetadata | None,
+    *,
+    require_readable: bool = False,
+    require_writable: bool = False,
+) -> bool:
+    """Return whether a DP is an unscaled 0..100 percentage."""
+    if dp is None:
+        return False
+
+    if (
+        require_readable
+        and not dp.readable
+    ):
+        return False
+
+    if (
+        require_writable
+        and not dp.writable
+    ):
+        return False
+
+    if dp.type_name not in {
+        "",
+        "integer",
+        "value",
+        "float",
+        "double",
+    }:
+        return False
+
+    factor = _tuya_scale_factor(
+        dp
+    )
+
+    if factor != 1.0:
+        return False
+
+    minimum = _numeric_value(
+        dp,
+        "min",
+    )
+    maximum = _numeric_value(
+        dp,
+        "max",
+    )
+
+    return (
+        minimum == 0
+        and maximum == 100
+    )
+
+
+def _build_cover_candidates(
+    device: dict[str, Any],
+    metadata: dict[int, DpMetadata],
+    consumed_dps: set[int],
+) -> list[EntityCandidate]:
+    """Build standard Tuya curtain/cover candidates."""
+    category = str(
+        device.get("category") or ""
+    ).strip().lower()
+
+    if category not in _COVER_CATEGORIES:
+        return []
+
+    candidates: list[EntityCandidate] = []
+
+    device_name = _device_name(
+        device,
+        "Tuya Cover",
+    )
+
+    for control_code in _COVER_CONTROL_CODES:
+        control = _find_by_codes(
+            metadata,
+            (control_code,),
+        )
+
+        if (
+            control is None
+            or control.id in consumed_dps
+            or not control.writable
+            or control.type_name != "enum"
+        ):
+            continue
+
+        command_values = {
+            option.lower()
+            for option in _enum_options(
+                control
+            )
+        }
+
+        if not (
+            _COVER_REQUIRED_COMMANDS
+            .issubset(command_values)
+        ):
+            continue
+
+        suffix = (
+            ""
+            if control_code == "control"
+            else control_code.removeprefix(
+                "control"
+            )
+        )
+
+        set_position = _find_by_codes(
+            metadata,
+            (
+                f"percent_control{suffix}",
+            ),
+        )
+
+        if (
+            set_position is not None
+            and (
+                set_position.id
+                in consumed_dps
+                or not _is_percentage_dp(
+                    set_position,
+                    require_writable=True,
+                )
+            )
+        ):
+            set_position = None
+
+        current_position = _find_by_codes(
+            metadata,
+            (
+                f"percent_state{suffix}",
+            ),
+        )
+
+        if (
+            current_position is not None
+            and (
+                current_position.id
+                in consumed_dps
+                or not _is_percentage_dp(
+                    current_position,
+                    require_readable=True,
+                )
+            )
+        ):
+            current_position = None
+
+        # Some curtain profiles report percent_control itself,
+        # so it can safely serve as current position when
+        # percent_state is absent.
+        if (
+            current_position is None
+            and set_position is not None
+            and set_position.readable
+        ):
+            current_position = (
+                set_position
+            )
+
+        friendly_name = device_name
+
+        if suffix:
+            friendly_name = (
+                f"{device_name} Cover "
+                f"{suffix.lstrip('_')}"
+            )
+
+        config: dict[str, Any] = {
+            CONF_ID: control.id,
+            CONF_FRIENDLY_NAME:
+                friendly_name,
+            CONF_PLATFORM: "cover",
+            CONF_COMMANDS_SET:
+                _COVER_COMMANDS_OPEN_CLOSE_STOP,
+        }
+
+        matched_codes = [
+            control.code
+        ]
+
+        referenced_dps = [
+            control.id
+        ]
+
+        # Only enable HA position support when both a writable
+        # target and readable position are available.
+        if (
+            set_position is not None
+            and current_position
+            is not None
+        ):
+            config[
+                CONF_POSITIONING_MODE
+            ] = _COVER_POSITION_MODE
+
+            config[
+                CONF_SET_POSITION_DP
+            ] = set_position.id
+
+            config[
+                CONF_CURRENT_POSITION_DP
+            ] = current_position.id
+
+            for dp in (
+                set_position,
+                current_position,
+            ):
+                if dp.code not in matched_codes:
+                    matched_codes.append(
+                        dp.code
+                    )
+
+                if dp.id not in referenced_dps:
+                    referenced_dps.append(
+                        dp.id
+                    )
+
+        candidates.append(
+            EntityCandidate(
+                platform="cover",
+                primary_dp=control.id,
+                confidence=MappingConfidence.HIGH,
+                config=config,
+                matched_codes=tuple(
+                    matched_codes
+                ),
+                referenced_dps=tuple(
+                    referenced_dps
+                ),
+            )
+        )
+
+    return candidates
+
+
+def _build_fan_candidate(
+    device: dict[str, Any],
+    metadata: dict[int, DpMetadata],
+    consumed_dps: set[int],
+) -> EntityCandidate | None:
+    """Build a standard Tuya fan candidate."""
+    category = str(
+        device.get("category") or ""
+    ).strip().lower()
+
+    if category not in _FAN_CATEGORIES:
+        return None
+
+    power = _find_by_codes(
+        metadata,
+        _FAN_POWER_CODES[
+            category
+        ],
+    )
+
+    if (
+        power is None
+        or power.id in consumed_dps
+        or not power.writable
+        or power.type_name not in {
+            "",
+            "boolean",
+            "bool",
+        }
+    ):
+        return None
+
+    config: dict[str, Any] = {
+        CONF_ID: power.id,
+        CONF_FRIENDLY_NAME:
+            _device_name(
+                device,
+                "Tuya Fan",
+            ),
+        CONF_PLATFORM: "fan",
+    }
+
+    matched_codes = [
+        power.code
+    ]
+
+    referenced_dps = [
+        power.id
+    ]
+
+    # --------------------------------------------------------
+    # Speed
+    # --------------------------------------------------------
+
+    speed = _find_by_codes(
+        metadata,
+        _FAN_SPEED_CODES[
+            category
+        ],
+    )
+
+    if (
+        speed is not None
+        and speed.id
+        not in consumed_dps
+        and speed.writable
+    ):
+        if speed.type_name in {
+            "integer",
+            "value",
+        }:
+            speed_range = _integer_range(
+                speed
+            )
+
+            if (
+                _tuya_scale_factor(speed)
+                == 1.0
+                and speed_range
+                is not None
+                and speed_range[0] >= 1
+            ):
+                config[
+                    CONF_FAN_SPEED_CONTROL
+                ] = speed.id
+
+                config[
+                    CONF_FAN_SPEED_MIN
+                ] = speed_range[0]
+
+                config[
+                    CONF_FAN_SPEED_MAX
+                ] = speed_range[1]
+
+                config[
+                    CONF_FAN_DPS_TYPE
+                ] = "int"
+
+        elif speed.type_name == "enum":
+            options = _enum_options(
+                speed
+            )
+
+            if (
+                len(options) > 1
+                and not any(
+                    "," in option
+                    for option in options
+                )
+            ):
+                config[
+                    CONF_FAN_SPEED_CONTROL
+                ] = speed.id
+
+                config[
+                    CONF_FAN_ORDERED_LIST
+                ] = ",".join(
+                    options
+                )
+
+                config[
+                    CONF_FAN_DPS_TYPE
+                ] = "str"
+
+        if (
+            config.get(
+                CONF_FAN_SPEED_CONTROL
+            )
+            == speed.id
+        ):
+            matched_codes.append(
+                speed.code
+            )
+            referenced_dps.append(
+                speed.id
+            )
+
+    # --------------------------------------------------------
+    # Oscillation
+    # LocalTuya currently supports one oscillation DP.
+    # Prefer horizontal, then vertical.
+    # --------------------------------------------------------
+
+    for oscillation_code in (
+        _FAN_OSCILLATION_CODES
+    ):
+        oscillation = _find_by_codes(
+            metadata,
+            (oscillation_code,),
+        )
+
+        if (
+            oscillation is None
+            or oscillation.id
+            in consumed_dps
+            or not oscillation.writable
+            or oscillation.type_name
+            not in {
+                "",
+                "boolean",
+                "bool",
+            }
+        ):
+            continue
+
+        config[
+            CONF_FAN_OSCILLATING_CONTROL
+        ] = oscillation.id
+
+        matched_codes.append(
+            oscillation.code
+        )
+
+        referenced_dps.append(
+            oscillation.id
+        )
+
+        break
+
+    # --------------------------------------------------------
+    # Direction
+    # --------------------------------------------------------
+
+    direction = _find_by_codes(
+        metadata,
+        _FAN_DIRECTION_CODES,
+    )
+
+    if (
+        direction is not None
+        and direction.id
+        not in consumed_dps
+        and direction.writable
+        and direction.type_name
+        == "enum"
+    ):
+        raw_options = _enum_options(
+            direction
+        )
+
+        option_map = {
+            option.lower(): option
+            for option in raw_options
+        }
+
+        if {
+            "forward",
+            "reverse",
+        }.issubset(option_map):
+            config[
+                CONF_FAN_DIRECTION
+            ] = direction.id
+
+            config[
+                CONF_FAN_DIRECTION_FWD
+            ] = option_map[
+                "forward"
+            ]
+
+            config[
+                CONF_FAN_DIRECTION_REV
+            ] = option_map[
+                "reverse"
+            ]
+
+            matched_codes.append(
+                direction.code
+            )
+
+            referenced_dps.append(
+                direction.id
+            )
+
+    return EntityCandidate(
+        platform="fan",
+        primary_dp=power.id,
+        confidence=MappingConfidence.HIGH,
+        config=config,
+        matched_codes=tuple(
+            matched_codes
+        ),
+        referenced_dps=tuple(
+            referenced_dps
+        ),
+    )
+
+
 def _build_switch_candidates(
     device: dict[str, Any],
     metadata: dict[int, DpMetadata],
@@ -895,7 +1481,7 @@ def _build_switch_candidates(
         if not dp.writable:
             continue
 
-        if dp.code == "switch_led":
+        if dp.code in _GENERIC_SWITCH_BLOCKLIST:
             continue
 
         if not (
@@ -1447,6 +2033,40 @@ def build_entity_candidates(
         consumed_dps.update(
             light.referenced_dps
             or (light.primary_dp,)
+        )
+
+    cover_candidates = (
+        _build_cover_candidates(
+            device,
+            metadata,
+            consumed_dps,
+        )
+    )
+
+    candidates.extend(
+        cover_candidates
+    )
+
+    for candidate in cover_candidates:
+        consumed_dps.update(
+            candidate.referenced_dps
+            or (candidate.primary_dp,)
+        )
+
+    fan = _build_fan_candidate(
+        device,
+        metadata,
+        consumed_dps,
+    )
+
+    if fan is not None:
+        candidates.append(
+            fan
+        )
+
+        consumed_dps.update(
+            fan.referenced_dps
+            or (fan.primary_dp,)
         )
 
     candidates.extend(
