@@ -1,4 +1,5 @@
 """Platform to locally control Tuya-based light devices."""
+
 import logging
 import textwrap
 from dataclasses import dataclass
@@ -8,12 +9,13 @@ import homeassistant.util.color as color_util
 import voluptuous as vol
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
+    ATTR_COLOR_TEMP_KELVIN,
     ATTR_EFFECT,
     ATTR_HS_COLOR,
     DOMAIN,
+    ColorMode,
     LightEntity,
     LightEntityFeature,
-    ColorMode,
 )
 from homeassistant.const import CONF_BRIGHTNESS, CONF_COLOR_TEMP, CONF_SCENE
 
@@ -23,16 +25,17 @@ from .const import (
     CONF_BRIGHTNESS_UPPER,
     CONF_COLOR,
     CONF_COLOR_MODE,
+    CONF_COLOR_MODE_SET,
     CONF_COLOR_TEMP_MAX_KELVIN,
     CONF_COLOR_TEMP_MIN_KELVIN,
     CONF_COLOR_TEMP_REVERSE,
-    CONF_MUSIC_MODE, CONF_COLOR_MODE_SET,
+    CONF_MUSIC_MODE,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-DEFAULT_MIN_KELVIN = 2700  # MIRED 370
-DEFAULT_MAX_KELVIN = 6500  # MIRED 153
+DEFAULT_MIN_KELVIN = 2700
+DEFAULT_MAX_KELVIN = 6500
 
 DEFAULT_COLOR_TEMP_REVERSE = False
 
@@ -48,7 +51,10 @@ MODE_WHITE = "white"
 SCENE_CUSTOM = "Custom"
 SCENE_MUSIC = "Music"
 
-MODES_SET = {"Colour, Music, Scene and White": 0, "Manual, Music, Scene and White": 1}
+MODES_SET = {
+    "Colour, Music, Scene and White": 0,
+    "Manual, Music, Scene and White": 1,
+}
 
 SCENE_LIST_RGBW_1000 = {
     "Night": "000e0d0000000000000000c80000",
@@ -56,13 +62,19 @@ SCENE_LIST_RGBW_1000 = {
     "Meeting": "020e0d0000000000000003e803e8",
     "Leasure": "030e0d0000000000000001f401f4",
     "Soft": "04464602007803e803e800000000464602007803e8000a00000000",
-    "Rainbow": "05464601000003e803e800000000464601007803e803e80000000046460100f003e803"
-    + "e800000000",
-    "Shine": "06464601000003e803e800000000464601007803e803e80000000046460100f003e803e8"
-    + "00000000",
-    "Beautiful": "07464602000003e803e800000000464602007803e803e80000000046460200f003e8"
-    + "03e800000000464602003d03e803e80000000046460200ae03e803e800000000464602011303e80"
-    + "3e800000000",
+    "Rainbow": (
+        "05464601000003e803e800000000464601007803e803e800000000"
+        "46460100f003e803e800000000"
+    ),
+    "Shine": (
+        "06464601000003e803e800000000464601007803e803e800000000"
+        "46460100f003e803e800000000"
+    ),
+    "Beautiful": (
+        "07464602000003e803e800000000464602007803e803e800000000"
+        "46460200f003e803e800000000464602003d03e803e800000000"
+        "46460200ae03e803e800000000464602011303e803e800000000"
+    ),
 }
 
 SCENE_LIST_RGBW_255 = {
@@ -82,39 +94,67 @@ SCENE_LIST_RGB_1000 = {
     "Working": "020e0d00001403e803e800000000",
     "Leisure": "030e0d0000e80383031c00000000",
     "Soft": "04464602007803e803e800000000464602007803e8000a00000000",
-    "Colorful": "05464601000003e803e800000000464601007803e803e80000000046460100f003e80"
-    + "3e800000000464601003d03e803e80000000046460100ae03e803e800000000464601011303e803"
-    + "e800000000",
-    "Dazzling": "06464601000003e803e800000000464601007803e803e80000000046460100f003e80"
-    + "3e800000000",
-    "Music": "07464602000003e803e800000000464602007803e803e80000000046460200f003e803e8"
-    + "00000000464602003d03e803e80000000046460200ae03e803e800000000464602011303e803e80"
-    + "0000000",
+    "Colorful": (
+        "05464601000003e803e800000000464601007803e803e800000000"
+        "46460100f003e803e800000000464601003d03e803e800000000"
+        "46460100ae03e803e800000000464601011303e803e800000000"
+    ),
+    "Dazzling": (
+        "06464601000003e803e800000000464601007803e803e800000000"
+        "46460100f003e803e800000000"
+    ),
+    "Music": (
+        "07464602000003e803e800000000464602007803e803e800000000"
+        "46460200f003e803e800000000464602003d03e803e800000000"
+        "46460200ae03e803e800000000464602011303e803e800000000"
+    ),
 }
+
 
 @dataclass(frozen=True)
 class Mode:
+    """Tuya work-mode values."""
+
     color: str = MODE_COLOR
     music: str = MODE_MUSIC
     scene: str = MODE_SCENE
     white: str = MODE_WHITE
 
-    def as_list(self) -> list:
+    def as_list(self) -> list[str]:
+        """Return all known work modes."""
         return [self.color, self.music, self.scene, self.white]
 
     def as_dict(self) -> dict[str, str]:
-        default = {"Default": self.white}
-        return {**default, "Mode Color": self.color, "Mode Scene": self.scene}
+        """Return work modes for configuration UI."""
+        return {
+            "Default": self.white,
+            "Mode Color": self.color,
+            "Mode Scene": self.scene,
+        }
 
-MAP_MODE_SET = {0: Mode(), 1: Mode(color=MODE_MANUAL)}
+
+MAP_MODE_SET = {
+    0: Mode(),
+    1: Mode(color=MODE_MANUAL),
+}
 
 
 def map_range(value, from_lower, from_upper, to_lower, to_upper):
-    """Map a value in one range to another."""
-    mapped = (value - from_lower) * (to_upper - to_lower) / (
-        from_upper - from_lower
-    ) + to_lower
-    return round(min(max(mapped, to_lower), to_upper))
+    """Map a value from one numeric range to another."""
+    if from_upper == from_lower:
+        return round(to_lower)
+
+    mapped = (
+        (value - from_lower)
+        * (to_upper - to_lower)
+        / (from_upper - from_lower)
+        + to_lower
+    )
+
+    low = min(to_lower, to_upper)
+    high = max(to_lower, to_upper)
+
+    return round(min(max(mapped, low), high))
 
 
 def flow_schema(dps):
@@ -122,19 +162,35 @@ def flow_schema(dps):
     return {
         vol.Optional(CONF_BRIGHTNESS): vol.In(dps),
         vol.Optional(CONF_COLOR_TEMP): vol.In(dps),
-        vol.Optional(CONF_BRIGHTNESS_LOWER, default=DEFAULT_LOWER_BRIGHTNESS): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=10000)
+        vol.Optional(
+            CONF_BRIGHTNESS_LOWER,
+            default=DEFAULT_LOWER_BRIGHTNESS,
+        ): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=0, max=10000),
         ),
-        vol.Optional(CONF_BRIGHTNESS_UPPER, default=DEFAULT_UPPER_BRIGHTNESS): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=10000)
+        vol.Optional(
+            CONF_BRIGHTNESS_UPPER,
+            default=DEFAULT_UPPER_BRIGHTNESS,
+        ): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=0, max=10000),
         ),
         vol.Optional(CONF_COLOR_MODE): vol.In(dps),
         vol.Optional(CONF_COLOR): vol.In(dps),
-        vol.Optional(CONF_COLOR_TEMP_MIN_KELVIN, default=DEFAULT_MIN_KELVIN): vol.All(
-            vol.Coerce(int), vol.Range(min=1500, max=8000)
+        vol.Optional(
+            CONF_COLOR_TEMP_MIN_KELVIN,
+            default=DEFAULT_MIN_KELVIN,
+        ): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=1500, max=8000),
         ),
-        vol.Optional(CONF_COLOR_TEMP_MAX_KELVIN, default=DEFAULT_MAX_KELVIN): vol.All(
-            vol.Coerce(int), vol.Range(min=1500, max=8000)
+        vol.Optional(
+            CONF_COLOR_TEMP_MAX_KELVIN,
+            default=DEFAULT_MAX_KELVIN,
+        ): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=1500, max=8000),
         ),
         vol.Optional(
             CONF_COLOR_TEMP_REVERSE,
@@ -143,7 +199,9 @@ def flow_schema(dps):
         ): bool,
         vol.Optional(CONF_SCENE): vol.In(dps),
         vol.Optional(
-            CONF_MUSIC_MODE, default=False, description={"suggested_value": False}
+            CONF_MUSIC_MODE,
+            default=False,
+            description={"suggested_value": False},
         ): bool,
     }
 
@@ -159,348 +217,682 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         **kwargs,
     ):
         """Initialize the Tuya light."""
-        super().__init__(device, config_entry, lightid, _LOGGER, **kwargs)
-        self._state = False
-        self._brightness = None
-        self._color_temp = None
-        self._lower_brightness = self._config.get(
-            CONF_BRIGHTNESS_LOWER, DEFAULT_LOWER_BRIGHTNESS
+        super().__init__(
+            device,
+            config_entry,
+            lightid,
+            _LOGGER,
+            **kwargs,
         )
-        self._upper_brightness = self._config.get(
-            CONF_BRIGHTNESS_UPPER, DEFAULT_UPPER_BRIGHTNESS
+
+        self._state = None
+        self._attr_is_on = None
+        self._attr_brightness = None
+        self._attr_hs_color = None
+        self._attr_color_temp_kelvin = None
+        self._attr_color_mode = None
+        self._attr_effect = None
+
+        self._lower_brightness = int(
+            self._config.get(
+                CONF_BRIGHTNESS_LOWER,
+                DEFAULT_LOWER_BRIGHTNESS,
+            )
         )
-        self._upper_color_temp = self._upper_brightness
-        self._max_mired = color_util.color_temperature_kelvin_to_mired(
-            self._config.get(CONF_COLOR_TEMP_MIN_KELVIN, DEFAULT_MIN_KELVIN)
+        self._upper_brightness = int(
+            self._config.get(
+                CONF_BRIGHTNESS_UPPER,
+                DEFAULT_UPPER_BRIGHTNESS,
+            )
         )
-        self._min_mired = color_util.color_temperature_kelvin_to_mired(
-            self._config.get(CONF_COLOR_TEMP_MAX_KELVIN, DEFAULT_MAX_KELVIN)
+
+        if self._upper_brightness <= self._lower_brightness:
+            self.warning(
+                "Invalid brightness range %s..%s; using defaults",
+                self._lower_brightness,
+                self._upper_brightness,
+            )
+            self._lower_brightness = DEFAULT_LOWER_BRIGHTNESS
+            self._upper_brightness = DEFAULT_UPPER_BRIGHTNESS
+
+        configured_min_kelvin = int(
+            self._config.get(
+                CONF_COLOR_TEMP_MIN_KELVIN,
+                DEFAULT_MIN_KELVIN,
+            )
         )
-        self._color_temp_reverse = self._config.get(
-            CONF_COLOR_TEMP_REVERSE, DEFAULT_COLOR_TEMP_REVERSE
+        configured_max_kelvin = int(
+            self._config.get(
+                CONF_COLOR_TEMP_MAX_KELVIN,
+                DEFAULT_MAX_KELVIN,
+            )
         )
-        self._modes = MAP_MODE_SET[int(self._config.get(CONF_COLOR_MODE_SET, 0))]
-        self._hs = None
-        self._effect = None
-        self._effect_list = []
+
+        self._min_kelvin = min(
+            configured_min_kelvin,
+            configured_max_kelvin,
+        )
+        self._max_kelvin = max(
+            configured_min_kelvin,
+            configured_max_kelvin,
+        )
+
+        if self._min_kelvin == self._max_kelvin:
+            self.warning(
+                "Invalid color temperature range %s..%s K; using defaults",
+                configured_min_kelvin,
+                configured_max_kelvin,
+            )
+            self._min_kelvin = DEFAULT_MIN_KELVIN
+            self._max_kelvin = DEFAULT_MAX_KELVIN
+
+        self._max_mired = (
+            color_util.color_temperature_kelvin_to_mired(
+                self._min_kelvin
+            )
+        )
+        self._min_mired = (
+            color_util.color_temperature_kelvin_to_mired(
+                self._max_kelvin
+            )
+        )
+
+        self._raw_color_temp_max = self._upper_brightness
+
+        self._color_temp_reverse = bool(
+            self._config.get(
+                CONF_COLOR_TEMP_REVERSE,
+                DEFAULT_COLOR_TEMP_REVERSE,
+            )
+        )
+
+        mode_set = self._config.get(CONF_COLOR_MODE_SET, 0)
+
+        if isinstance(mode_set, str) and mode_set in MODES_SET:
+            mode_set = MODES_SET[mode_set]
+
+        try:
+            mode_set = int(mode_set)
+        except (TypeError, ValueError):
+            mode_set = 0
+
+        self._modes = MAP_MODE_SET.get(mode_set, Mode())
+
+        self._color_uses_rgb_encoding = False
         self._scenes = {}
 
         if self.has_config(CONF_SCENE):
-            if self._config.get(CONF_SCENE) < 20:
+            try:
+                scene_dp = int(self._config[CONF_SCENE])
+            except (TypeError, ValueError):
+                scene_dp = 20
+
+            if scene_dp < 20:
                 self._scenes = SCENE_LIST_RGBW_255
-            elif self._config.get(CONF_BRIGHTNESS) is None:
+            elif not self.has_config(CONF_BRIGHTNESS):
                 self._scenes = SCENE_LIST_RGB_1000
             else:
                 self._scenes = SCENE_LIST_RGBW_1000
-            self._effect_list = list(self._scenes.keys())
 
-        if self._config.get(CONF_MUSIC_MODE):
-            self._effect_list.append(SCENE_MUSIC)
+        self._music_mode_enabled = bool(
+            self._config.get(CONF_MUSIC_MODE, False)
+        )
 
-    @property
-    def is_on(self):
-        """Check if Tuya light is on."""
-        return self._state
+        self._attr_supported_color_modes = (
+            self._build_supported_color_modes()
+        )
 
-    @property
-    def brightness(self):
-        """Return the brightness of the light."""
-        if self.is_color_mode or self.is_white_mode:
-            return map_range(
-                self._brightness, self._lower_brightness, self._upper_brightness, 0, 255
-            )
-        return None
+        features = LightEntityFeature(0)
 
-    @property
-    def hs_color(self):
-        """Return the hs color value."""
-        if self.is_color_mode:
-            return self._hs
-        if (
-                ColorMode.HS in self.supported_color_modes
-                and not ColorMode.COLOR_TEMP in self.supported_color_modes
-        ):
-            return [0, 0]
-        return None
+        if self._scenes or self._music_mode_enabled:
+            features |= LightEntityFeature.EFFECT
 
-    @property
-    def color_temp(self):
-        """Return the color_temp of the light."""
-        if self.has_config(CONF_COLOR_TEMP) and self.is_white_mode:
-            color_temp_value = (
-                self._upper_color_temp - self._color_temp
-                if self._color_temp_reverse
-                else self._color_temp
-            )
-            return int(
-                self._max_mired
-                - (
-                    ((self._max_mired - self._min_mired) / self._upper_color_temp)
-                    * color_temp_value
-                )
-            )
-        return None
+        self._attr_supported_features = features
 
-    @property
-    def min_mireds(self):
-        """Return color temperature min mireds."""
-        return self._min_mired
+        effects = list(self._scenes)
 
-    @property
-    def max_mireds(self):
-        """Return color temperature max mireds."""
-        return self._max_mired
+        if self._music_mode_enabled:
+            effects.append(SCENE_MUSIC)
 
-    @property
-    def effect(self):
-        """Return the current effect for this light."""
-        if self.is_scene_mode or self.is_music_mode:
-            return self._effect
-        return None
+        self._attr_effect_list = effects or None
 
-    @property
-    def effect_list(self):
-        """Return the list of supported effects for this light."""
-        if self.is_scene_mode or self.is_music_mode:
-            return self._effect
-        elif (color_mode := self.__get_color_mode()) in self._scenes.values():
-            return self.__find_scene_by_scene_data(color_mode)
-        return None
+        if ColorMode.COLOR_TEMP in self._attr_supported_color_modes:
+            self._attr_min_color_temp_kelvin = self._min_kelvin
+            self._attr_max_color_temp_kelvin = self._max_kelvin
 
-    @property
-    def supported_color_modes(self) -> set[ColorMode] | set[str] | None:
-        """Flag supported color modes."""
-        color_modes: set[ColorMode] = set()
+    def _build_supported_color_modes(self) -> set[ColorMode]:
+        """Return supported Home Assistant color modes."""
+        color_modes = set()
 
         if self.has_config(CONF_COLOR_TEMP):
             color_modes.add(ColorMode.COLOR_TEMP)
+
         if self.has_config(CONF_COLOR):
             color_modes.add(ColorMode.HS)
 
-        if not color_modes and self.has_config(CONF_BRIGHTNESS):
+        if color_modes:
+            return color_modes
+
+        if self.has_config(CONF_BRIGHTNESS):
             return {ColorMode.BRIGHTNESS}
 
-        if not color_modes:
-            return {ColorMode.ONOFF}
+        return {ColorMode.ONOFF}
 
-        return color_modes
+    def _raw_mode(self):
+        """Return the current raw Tuya work mode."""
+        if self.has_config(CONF_COLOR_MODE):
+            return self.dps_conf(CONF_COLOR_MODE)
 
-    @property
-    def supported_features(self) -> LightEntityFeature:
-        """Flag supported features."""
-        supports = LightEntityFeature(0)
-        if self.has_config(CONF_SCENE) or self.has_config(CONF_MUSIC_MODE):
-            supports |= LightEntityFeature.EFFECT
-        return supports
+        # A color-only lamp with no work-mode DP is always in color mode.
+        if (
+            self.has_config(CONF_COLOR)
+            and not self.has_config(CONF_COLOR_TEMP)
+        ):
+            return self._modes.color
 
-    @property
-    def color_mode(self) -> ColorMode:
-        """Return the color_mode of the light."""
-        if len(self.supported_color_modes) == 1:
-            return next(iter(self.supported_color_modes))
+        return self._modes.white
 
-        if self.is_color_mode:
+    def _is_white_mode(self, mode=None) -> bool:
+        """Return whether current Tuya mode is white."""
+        if mode is None:
+            mode = self._raw_mode()
+
+        return mode is None or mode == self._modes.white
+
+    def _is_color_mode(self, mode=None) -> bool:
+        """Return whether current Tuya mode is color."""
+        if mode is None:
+            mode = self._raw_mode()
+
+        return mode == self._modes.color
+
+    def _is_scene_mode(self, mode=None) -> bool:
+        """Return whether current Tuya mode is a scene."""
+        if mode is None:
+            mode = self._raw_mode()
+
+        return (
+            isinstance(mode, str)
+            and mode.startswith(self._modes.scene)
+        )
+
+    def _is_music_mode(self, mode=None) -> bool:
+        """Return whether current Tuya mode is music."""
+        if mode is None:
+            mode = self._raw_mode()
+
+        return mode == self._modes.music
+
+    def _determine_color_mode(self, mode) -> ColorMode:
+        """Translate Tuya work mode to a Home Assistant color mode."""
+        supported = self._attr_supported_color_modes
+
+        if len(supported) == 1:
+            return next(iter(supported))
+
+        if self._is_color_mode(mode) and ColorMode.HS in supported:
             return ColorMode.HS
-        if self.is_white_mode:
+
+        if (
+            self._is_white_mode(mode)
+            and ColorMode.COLOR_TEMP in supported
+        ):
             return ColorMode.COLOR_TEMP
-        if self._brightness:
+
+        if (
+            self._attr_color_mode is not None
+            and self._attr_color_mode in supported
+        ):
+            return self._attr_color_mode
+
+        if ColorMode.COLOR_TEMP in supported:
+            return ColorMode.COLOR_TEMP
+
+        if ColorMode.HS in supported:
+            return ColorMode.HS
+
+        if ColorMode.BRIGHTNESS in supported:
             return ColorMode.BRIGHTNESS
 
         return ColorMode.ONOFF
 
-    @property
-    def is_white_mode(self):
-        """Return true if the light is in white mode."""
-        color_mode = self.__get_color_mode()
-        return color_mode is None or color_mode == self._modes.white
+    def _raw_brightness_to_ha(self, value) -> int | None:
+        """Convert a Tuya brightness value to HA's 0..255 range."""
+        if value is None or isinstance(value, bool):
+            return None
 
-    @property
-    def is_color_mode(self):
-        """Return true if the light is in color mode."""
-        color_mode = self.__get_color_mode()
-        return color_mode is not None and color_mode == self._modes.color
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
 
-    @property
-    def is_scene_mode(self):
-        """Return true if the light is in scene mode."""
-        color_mode = self.__get_color_mode()
-        return color_mode is not None and color_mode.startswith(self._modes.scene)
-
-    @property
-    def is_music_mode(self):
-        """Return true if the light is in music mode."""
-        color_mode = self.__get_color_mode()
-        return color_mode is not None and color_mode == self._modes.music
-
-    def __is_color_rgb_encoded(self):
-        return len(self.dps_conf(CONF_COLOR)) > 12
-
-    def __find_scene_by_scene_data(self, data):
-        return next(
-            (item for item in self._effect_list if self._scenes.get(item) == data),
-            SCENE_CUSTOM,
+        return map_range(
+            value,
+            self._lower_brightness,
+            self._upper_brightness,
+            0,
+            255,
         )
 
-    def __get_color_mode(self):
+    def _ha_brightness_to_raw(self, value) -> int:
+        """Convert HA brightness to the Tuya brightness range."""
+        return map_range(
+            int(value),
+            0,
+            255,
+            self._lower_brightness,
+            self._upper_brightness,
+        )
+
+    def _raw_color_temp_to_kelvin(self, value) -> int | None:
+        """Convert a Tuya color-temperature DP to Kelvin."""
+        if value is None or isinstance(value, bool):
+            return None
+
+        try:
+            raw_value = float(value)
+        except (TypeError, ValueError):
+            return None
+
+        raw_value = min(
+            max(raw_value, 0),
+            self._raw_color_temp_max,
+        )
+
+        if self._color_temp_reverse:
+            raw_value = self._raw_color_temp_max - raw_value
+
+        ratio = raw_value / self._raw_color_temp_max
+
+        mired = (
+            self._max_mired
+            - ((self._max_mired - self._min_mired) * ratio)
+        )
+
+        kelvin = color_util.color_temperature_mired_to_kelvin(mired)
+
+        return min(
+            max(kelvin, self._min_kelvin),
+            self._max_kelvin,
+        )
+
+    def _kelvin_to_raw_color_temp(self, kelvin) -> int:
+        """Convert a Kelvin color temperature to Tuya DP format."""
+        kelvin = min(
+            max(int(kelvin), self._min_kelvin),
+            self._max_kelvin,
+        )
+
+        mired = color_util.color_temperature_kelvin_to_mired(kelvin)
+
+        ratio = (
+            (self._max_mired - mired)
+            / (self._max_mired - self._min_mired)
+        )
+
+        raw_value = round(
+            ratio * self._raw_color_temp_max
+        )
+
+        raw_value = min(
+            max(raw_value, 0),
+            self._raw_color_temp_max,
+        )
+
+        if self._color_temp_reverse:
+            raw_value = self._raw_color_temp_max - raw_value
+
+        return raw_value
+
+    def _decode_color(self, raw_color):
+        """Decode a Tuya HSV/RGB+HSV color payload."""
+        if not isinstance(raw_color, str):
+            return None
+
+        raw_color = raw_color.strip()
+
+        try:
+            if len(raw_color) > 12:
+                if len(raw_color) < 14:
+                    return None
+
+                self._color_uses_rgb_encoding = True
+
+                hue = int(raw_color[6:10], 16)
+                saturation = int(raw_color[10:12], 16)
+                value = int(raw_color[12:14], 16)
+
+                hs = (
+                    min(max(float(hue), 0.0), 360.0),
+                    min(
+                        max(saturation * 100.0 / 255.0, 0.0),
+                        100.0,
+                    ),
+                )
+
+                brightness = min(max(value, 0), 255)
+
+                return hs, brightness
+
+            if len(raw_color) < 12:
+                return None
+
+            self._color_uses_rgb_encoding = False
+
+            hue, saturation, value = [
+                int(chunk, 16)
+                for chunk in textwrap.wrap(raw_color[:12], 4)
+            ]
+
+            hs = (
+                min(max(float(hue), 0.0), 360.0),
+                min(max(saturation / 10.0, 0.0), 100.0),
+            )
+
+            brightness = self._raw_brightness_to_ha(value)
+
+            return hs, brightness
+
+        except ValueError:
+            return None
+
+    def _encode_color(self, hs, brightness) -> str:
+        """Encode HA HSV values into the Tuya color DP format."""
+        hue = min(max(float(hs[0]), 0.0), 360.0)
+        saturation = min(max(float(hs[1]), 0.0), 100.0)
+        brightness = min(max(int(brightness), 0), 255)
+
+        if self._color_uses_rgb_encoding:
+            rgb = color_util.color_hsv_to_RGB(
+                hue,
+                saturation,
+                brightness * 100.0 / 255.0,
+            )
+
+            return (
+                f"{round(rgb[0]):02x}"
+                f"{round(rgb[1]):02x}"
+                f"{round(rgb[2]):02x}"
+                f"{round(hue):04x}"
+                f"{round(saturation * 255.0 / 100.0):02x}"
+                f"{brightness:02x}"
+            )
+
+        raw_brightness = self._ha_brightness_to_raw(
+            brightness
+        )
+
         return (
-            self.dps_conf(CONF_COLOR_MODE)
-            if self.has_config(CONF_COLOR_MODE)
-            else self._modes.white
+            f"{round(hue):04x}"
+            f"{round(saturation * 10.0):04x}"
+            f"{raw_brightness:04x}"
         )
+
+    def _find_scene_by_scene_data(self, data) -> str:
+        """Find the friendly scene name for a Tuya scene payload."""
+        for name, scene_data in self._scenes.items():
+            if scene_data == data:
+                return name
+
+        return SCENE_CUSTOM
+
+    def _set_configured_dp(self, states, config_key, value):
+        """Add a DP write only when that DP is configured."""
+        if self.has_config(config_key):
+            states[self._config[config_key]] = value
 
     async def async_turn_on(self, **kwargs):
         """Turn on or control the light."""
         states = {}
-        if not self.is_on:
+
+        if self.is_on is not True:
             states[self._dp_id] = True
-        features = self.supported_features
-        brightness = None
-        if ATTR_EFFECT in kwargs and (features & LightEntityFeature.EFFECT):
-            scene = self._scenes.get(kwargs[ATTR_EFFECT])
-            if scene is not None:
-                if scene.startswith(MODE_SCENE):
-                    states[self._config.get(CONF_COLOR_MODE)] = scene
-                else:
-                    states[self._config.get(CONF_COLOR_MODE)] = MODE_SCENE
-                    states[self._config.get(CONF_SCENE)] = scene
-            elif kwargs[ATTR_EFFECT] == SCENE_MUSIC:
-                states[self._config.get(CONF_COLOR_MODE)] = MODE_MUSIC
 
-        if ATTR_BRIGHTNESS in kwargs and (
-            ColorMode.BRIGHTNESS in self.supported_color_modes
-            or self.has_config(CONF_BRIGHTNESS)
-            or self.has_config(CONF_COLOR)
+        requested_effect = kwargs.get(ATTR_EFFECT)
+
+        if (
+            requested_effect is not None
+            and self._attr_supported_features
+            & LightEntityFeature.EFFECT
         ):
-            brightness = map_range(
-                int(kwargs[ATTR_BRIGHTNESS]),
-                0,
-                255,
-                self._lower_brightness,
-                self._upper_brightness,
-            )
-            if self.is_white_mode:
-                states[self._config.get(CONF_BRIGHTNESS)] = brightness
-            else:
-                if self.__is_color_rgb_encoded():
-                    rgb = color_util.color_hsv_to_RGB(
-                        self._hs[0],
-                        self._hs[1],
-                        int(brightness * 100 / self._upper_brightness),
-                    )
-                    color = "{:02x}{:02x}{:02x}{:04x}{:02x}{:02x}".format(
-                        round(rgb[0]),
-                        round(rgb[1]),
-                        round(rgb[2]),
-                        round(self._hs[0]),
-                        round(self._hs[1] * 255 / 100),
-                        brightness,
+            scene = self._scenes.get(requested_effect)
+
+            if scene is not None:
+                if (
+                    isinstance(scene, str)
+                    and scene.startswith(MODE_SCENE)
+                ):
+                    self._set_configured_dp(
+                        states,
+                        CONF_COLOR_MODE,
+                        scene,
                     )
                 else:
-                    color = "{:04x}{:04x}{:04x}".format(
-                        round(self._hs[0]), round(self._hs[1] * 10.0), brightness
+                    self._set_configured_dp(
+                        states,
+                        CONF_COLOR_MODE,
+                        self._modes.scene,
                     )
-                states[self._config.get(CONF_COLOR)] = color
-                states[self._config.get(CONF_COLOR_MODE)] = MODE_COLOR
+                    self._set_configured_dp(
+                        states,
+                        CONF_SCENE,
+                        scene,
+                    )
 
-        if ATTR_HS_COLOR in kwargs and ColorMode.HS in self.supported_color_modes:
-            if brightness is None:
-                brightness = self._brightness
-            hs = kwargs[ATTR_HS_COLOR]
-            if hs[1] == 0 and self.has_config(CONF_BRIGHTNESS):
-                states[self._config.get(CONF_BRIGHTNESS)] = brightness
-                states[self._config.get(CONF_COLOR_MODE)] = MODE_WHITE
-            else:
-                if self.__is_color_rgb_encoded():
-                    rgb = color_util.color_hsv_to_RGB(
-                        hs[0], hs[1], int(brightness * 100 / self._upper_brightness)
-                    )
-                    color = "{:02x}{:02x}{:02x}{:04x}{:02x}{:02x}".format(
-                        round(rgb[0]),
-                        round(rgb[1]),
-                        round(rgb[2]),
-                        round(hs[0]),
-                        round(hs[1] * 255 / 100),
-                        brightness,
-                    )
-                else:
-                    color = "{:04x}{:04x}{:04x}".format(
-                        round(hs[0]), round(hs[1] * 10.0), brightness
-                    )
-                states[self._config.get(CONF_COLOR)] = color
-                states[self._config.get(CONF_COLOR_MODE)] = MODE_COLOR
+            elif (
+                requested_effect == SCENE_MUSIC
+                and self._music_mode_enabled
+            ):
+                self._set_configured_dp(
+                    states,
+                    CONF_COLOR_MODE,
+                    self._modes.music,
+                )
 
-        if ColorMode.COLOR_TEMP in kwargs and ColorMode.COLOR_TEMP in self.supported_color_modes:
-            if brightness is None:
-                brightness = self._brightness
-            mired = int(kwargs[ColorMode.COLOR_TEMP])
-            if self._color_temp_reverse:
-                mired = self._max_mired - (mired - self._min_mired)
-            if mired < self._min_mired:
-                mired = self._min_mired
-            elif mired > self._max_mired:
-                mired = self._max_mired
-            color_temp = int(
-                self._upper_color_temp
-                - (self._upper_color_temp / (self._max_mired - self._min_mired))
-                * (mired - self._min_mired)
+        requested_brightness = kwargs.get(ATTR_BRIGHTNESS)
+        requested_hs = kwargs.get(ATTR_HS_COLOR)
+        requested_kelvin = kwargs.get(ATTR_COLOR_TEMP_KELVIN)
+
+        if (
+            requested_hs is not None
+            and ColorMode.HS in self._attr_supported_color_modes
+        ):
+            brightness = (
+                int(requested_brightness)
+                if requested_brightness is not None
+                else self._attr_brightness
             )
-            states[self._config.get(CONF_COLOR_MODE)] = MODE_WHITE
-            states[self._config.get(CONF_BRIGHTNESS)] = brightness
-            states[self._config.get(CONF_COLOR_TEMP)] = color_temp
-        await self._device.set_dps(states)
+
+            if brightness is None:
+                brightness = 255
+
+            hue, saturation = requested_hs
+
+            # A zero-saturation request can use the dedicated white
+            # brightness DP on RGBW devices.
+            if (
+                saturation == 0
+                and self.has_config(CONF_BRIGHTNESS)
+                and self.has_config(CONF_COLOR_TEMP)
+            ):
+                self._set_configured_dp(
+                    states,
+                    CONF_BRIGHTNESS,
+                    self._ha_brightness_to_raw(brightness),
+                )
+                self._set_configured_dp(
+                    states,
+                    CONF_COLOR_MODE,
+                    self._modes.white,
+                )
+            else:
+                self._set_configured_dp(
+                    states,
+                    CONF_COLOR,
+                    self._encode_color(
+                        (hue, saturation),
+                        brightness,
+                    ),
+                )
+                self._set_configured_dp(
+                    states,
+                    CONF_COLOR_MODE,
+                    self._modes.color,
+                )
+
+        elif (
+            requested_kelvin is not None
+            and ColorMode.COLOR_TEMP
+            in self._attr_supported_color_modes
+        ):
+            self._set_configured_dp(
+                states,
+                CONF_COLOR_MODE,
+                self._modes.white,
+            )
+            self._set_configured_dp(
+                states,
+                CONF_COLOR_TEMP,
+                self._kelvin_to_raw_color_temp(
+                    requested_kelvin
+                ),
+            )
+
+            if (
+                requested_brightness is not None
+                and self.has_config(CONF_BRIGHTNESS)
+            ):
+                self._set_configured_dp(
+                    states,
+                    CONF_BRIGHTNESS,
+                    self._ha_brightness_to_raw(
+                        requested_brightness
+                    ),
+                )
+
+        elif requested_brightness is not None:
+            brightness = int(requested_brightness)
+            mode = self._raw_mode()
+
+            if (
+                self._is_color_mode(mode)
+                and self.has_config(CONF_COLOR)
+                and self._attr_hs_color is not None
+            ):
+                self._set_configured_dp(
+                    states,
+                    CONF_COLOR,
+                    self._encode_color(
+                        self._attr_hs_color,
+                        brightness,
+                    ),
+                )
+                self._set_configured_dp(
+                    states,
+                    CONF_COLOR_MODE,
+                    self._modes.color,
+                )
+
+            elif self.has_config(CONF_BRIGHTNESS):
+                self._set_configured_dp(
+                    states,
+                    CONF_BRIGHTNESS,
+                    self._ha_brightness_to_raw(brightness),
+                )
+
+        if states:
+            await self._device.set_dps(states)
 
     async def async_turn_off(self, **kwargs):
-        """Turn Tuya light off."""
+        """Turn the Tuya light off."""
         await self._device.set_dp(False, self._dp_id)
 
     def status_updated(self):
-        """Device status was updated."""
-        self._state = self.dps(self._dp_id)
-        supported = self.supported_features
-        self._effect = None
+        """Update the light from the latest Tuya status."""
+        super().status_updated()
 
-        if (ColorMode.BRIGHTNESS in self.supported_color_modes
-            or self.has_config(CONF_BRIGHTNESS)
-            or self.has_config(CONF_COLOR)
+        raw_power = self._state
+
+        if isinstance(raw_power, bool):
+            self._attr_is_on = raw_power
+        elif raw_power in (0, 1):
+            self._attr_is_on = bool(raw_power)
+        else:
+            self._attr_is_on = None
+
+        mode = self._raw_mode()
+        self._attr_color_mode = self._determine_color_mode(mode)
+        self._attr_effect = None
+
+        if self.has_config(CONF_BRIGHTNESS):
+            raw_brightness = self.dps_conf(CONF_BRIGHTNESS)
+            brightness = self._raw_brightness_to_ha(
+                raw_brightness
+            )
+
+            if brightness is not None:
+                self._attr_brightness = brightness
+
+        if (
+            ColorMode.HS in self._attr_supported_color_modes
+            and self.has_config(CONF_COLOR)
+            and (
+                self._is_color_mode(mode)
+                or ColorMode.COLOR_TEMP
+                not in self._attr_supported_color_modes
+            )
         ):
-            self._brightness = self.dps_conf(CONF_BRIGHTNESS)
+            decoded = self._decode_color(
+                self.dps_conf(CONF_COLOR)
+            )
 
-        if ColorMode.HS in self.supported_color_modes:
-            color = self.dps_conf(CONF_COLOR)
-            if color is not None and not self.is_white_mode:
-                if self.__is_color_rgb_encoded():
-                    hue = int(color[6:10], 16)
-                    sat = int(color[10:12], 16)
-                    value = int(color[12:14], 16)
-                    self._hs = [hue, (sat * 100 / 255)]
-                    self._brightness = value
-                else:
-                    hue, sat, value = [
-                        int(value, 16) for value in textwrap.wrap(color, 4)
-                    ]
-                    self._hs = [hue, sat / 10.0]
-                    self._brightness = value
+            if decoded is not None:
+                hs, brightness = decoded
+                self._attr_hs_color = hs
 
-        if ColorMode.COLOR_TEMP in self.supported_color_modes:
-            self._color_temp = self.dps_conf(CONF_COLOR_TEMP)
+                if brightness is not None:
+                    self._attr_brightness = brightness
 
-        if self.is_scene_mode and supported & LightEntityFeature.EFFECT:
-            if self.dps_conf(CONF_COLOR_MODE) != MODE_SCENE:
-                self._effect = self.__find_scene_by_scene_data(
-                    self.dps_conf(CONF_COLOR_MODE)
-                )
+        if (
+            ColorMode.COLOR_TEMP
+            in self._attr_supported_color_modes
+            and self._is_white_mode(mode)
+        ):
+            kelvin = self._raw_color_temp_to_kelvin(
+                self.dps_conf(CONF_COLOR_TEMP)
+            )
+
+            if kelvin is not None:
+                self._attr_color_temp_kelvin = kelvin
+
+        if (
+            self._is_scene_mode(mode)
+            and self._attr_supported_features
+            & LightEntityFeature.EFFECT
+        ):
+            if mode != self._modes.scene:
+                scene_data = mode
             else:
-                self._effect = self.__find_scene_by_scene_data(
-                    self.dps_conf(CONF_SCENE)
-                )
-                if self._effect == SCENE_CUSTOM:
-                    if SCENE_CUSTOM not in self._effect_list:
-                        self._effect_list.append(SCENE_CUSTOM)
-                elif SCENE_CUSTOM in self._effect_list:
-                    self._effect_list.remove(SCENE_CUSTOM)
+                scene_data = self.dps_conf(CONF_SCENE)
 
-        if self.is_music_mode and supported & LightEntityFeature.EFFECT:
-            self._effect = SCENE_MUSIC
+            self._attr_effect = (
+                self._find_scene_by_scene_data(scene_data)
+            )
+
+        elif (
+            self._is_music_mode(mode)
+            and self._music_mode_enabled
+        ):
+            self._attr_effect = SCENE_MUSIC
+
+    def entity_default_value(self):
+        """Return the default light power value."""
+        return False
 
 
-async_setup_entry = partial(async_setup_entry, DOMAIN, LocaltuyaLight, flow_schema)
+async_setup_entry = partial(
+    async_setup_entry,
+    DOMAIN,
+    LocaltuyaLight,
+    flow_schema,
+)
