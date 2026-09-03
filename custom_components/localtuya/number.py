@@ -1,10 +1,18 @@
 """Platform to present any Tuya DP as a number."""
+
 import logging
 from functools import partial
 
 import voluptuous as vol
-from homeassistant.components.number import DOMAIN, NumberEntity
-from homeassistant.const import CONF_DEVICE_CLASS, STATE_UNKNOWN
+from homeassistant.components.number import (
+    DOMAIN,
+    NumberDeviceClass,
+    NumberEntity,
+)
+from homeassistant.const import (
+    CONF_DEVICE_CLASS,
+    CONF_UNIT_OF_MEASUREMENT,
+)
 
 from .common import LocalTuyaEntity, async_setup_entry
 from .const import (
@@ -18,8 +26,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-DEFAULT_MIN = 0
-DEFAULT_MAX = 100000
+DEFAULT_MIN = 0.0
+DEFAULT_MAX = 100000.0
 DEFAULT_STEP = 1.0
 
 
@@ -38,6 +46,10 @@ def flow_schema(dps):
             vol.Coerce(float),
             vol.Range(min=0.0, max=1000000.0),
         ),
+        vol.Optional(CONF_UNIT_OF_MEASUREMENT): str,
+        vol.Optional(CONF_DEVICE_CLASS): vol.In(
+            [device_class.value for device_class in NumberDeviceClass]
+        ),
         vol.Required(CONF_RESTORE_ON_RECONNECT): bool,
         vol.Required(CONF_PASSIVE_ENTITY): bool,
         vol.Optional(CONF_DEFAULT_VALUE): str,
@@ -45,7 +57,7 @@ def flow_schema(dps):
 
 
 class LocaltuyaNumber(LocalTuyaEntity, NumberEntity):
-    """Representation of a Tuya Number."""
+    """Representation of a Tuya number."""
 
     def __init__(
         self,
@@ -54,60 +66,76 @@ class LocaltuyaNumber(LocalTuyaEntity, NumberEntity):
         sensorid,
         **kwargs,
     ):
-        """Initialize the Tuya sensor."""
+        """Initialize the Tuya number."""
         super().__init__(device, config_entry, sensorid, _LOGGER, **kwargs)
-        self._state = STATE_UNKNOWN
 
-        self._min_value = DEFAULT_MIN
-        if CONF_MIN_VALUE in self._config:
-            self._min_value = self._config.get(CONF_MIN_VALUE)
+        self._state = None
 
-        self._max_value = DEFAULT_MAX
-        if CONF_MAX_VALUE in self._config:
-            self._max_value = self._config.get(CONF_MAX_VALUE)
+        self._attr_native_min_value = float(
+            self._config.get(CONF_MIN_VALUE, DEFAULT_MIN)
+        )
+        self._attr_native_max_value = float(
+            self._config.get(CONF_MAX_VALUE, DEFAULT_MAX)
+        )
+        self._attr_native_step = float(
+            self._config.get(CONF_STEPSIZE_VALUE, DEFAULT_STEP)
+        )
+        self._attr_native_unit_of_measurement = self._config.get(
+            CONF_UNIT_OF_MEASUREMENT
+        )
 
-        self._step_size = DEFAULT_STEP
-        if CONF_STEPSIZE_VALUE in self._config:
-            self._step_size = self._config.get(CONF_STEPSIZE_VALUE)
+        device_class = self._config.get(CONF_DEVICE_CLASS)
+        self._attr_device_class = (
+            NumberDeviceClass(device_class)
+            if device_class
+            else None
+        )
 
-        # Override standard default value handling to cast to a float
         default_value = self._config.get(CONF_DEFAULT_VALUE)
         if default_value is not None:
             self._default_value = float(default_value)
 
     @property
-    def native_value(self) -> float:
-        """Return sensor state."""
+    def native_value(self) -> float | None:
+        """Return the native number value."""
         return self._state
 
-    @property
-    def native_min_value(self) -> float:
-        """Return the minimum value."""
-        return self._min_value
+    def status_updated(self):
+        """Update the number value from the Tuya DP."""
+        raw_state = self.dps(self._dp_id)
 
-    @property
-    def native_max_value(self) -> float:
-        """Return the maximum value."""
-        return self._max_value
+        if raw_state is None or isinstance(raw_state, bool):
+            self._state = None
+            return
 
-    @property
-    def native_step(self) -> float:
-        """Return the maximum value."""
-        return self._step_size
+        try:
+            value = float(raw_state)
+        except (TypeError, ValueError):
+            self._state = None
+            self.warning(
+                "Number entity %s received non-numeric value %r",
+                self.entity_id,
+                raw_state,
+            )
+            return
 
-    @property
-    def device_class(self):
-        """Return the class of this device."""
-        return self._config.get(CONF_DEVICE_CLASS)
+        self._state = value
+
+        if not self._device.is_connecting:
+            self._last_state = value
 
     async def async_set_native_value(self, value: float) -> None:
         """Update the current value."""
         await self._device.set_dp(value, self._dp_id)
 
-    # Default value is the minimum value
     def entity_default_value(self):
-        """Return the minimum value as the default for this entity type."""
-        return self._min_value
+        """Return the minimum value as the default value."""
+        return self._attr_native_min_value
 
 
-async_setup_entry = partial(async_setup_entry, DOMAIN, LocaltuyaNumber, flow_schema)
+async_setup_entry = partial(
+    async_setup_entry,
+    DOMAIN,
+    LocaltuyaNumber,
+    flow_schema,
+)

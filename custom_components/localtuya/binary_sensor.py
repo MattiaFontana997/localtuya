@@ -1,4 +1,5 @@
 """Platform to present any Tuya DP as a binary sensor."""
+
 import logging
 from functools import partial
 
@@ -6,6 +7,7 @@ import voluptuous as vol
 from homeassistant.components.binary_sensor import (
     DEVICE_CLASSES_SCHEMA,
     DOMAIN,
+    BinarySensorDeviceClass,
     BinarySensorEntity,
 )
 from homeassistant.const import CONF_DEVICE_CLASS
@@ -39,38 +41,45 @@ class LocaltuyaBinarySensor(LocalTuyaEntity, BinarySensorEntity):
     ):
         """Initialize the Tuya binary sensor."""
         super().__init__(device, config_entry, sensorid, _LOGGER, **kwargs)
-        self._is_on = False
 
-    @property
-    def is_on(self):
-        """Return sensor state."""
-        return self._is_on
+        self._attr_is_on = None
 
-    @property
-    def device_class(self):
-        """Return the class of this device."""
-        return self._config.get(CONF_DEVICE_CLASS)
+        device_class = self._config.get(CONF_DEVICE_CLASS)
+        self._attr_device_class = (
+            BinarySensorDeviceClass(device_class)
+            if device_class
+            else None
+        )
 
     def status_updated(self):
-        """Device status was updated."""
-        super().status_updated()
+        """Update binary sensor state."""
+        raw_state = self.dps(self._dp_id)
 
-        state = str(self.dps(self._dp_id)).lower()
+        if raw_state is None:
+            self._attr_is_on = None
+            return
+
+        state = str(raw_state).lower()
+
         if state == self._config[CONF_STATE_ON].lower():
-            self._is_on = True
+            self._attr_is_on = True
         elif state == self._config[CONF_STATE_OFF].lower():
-            self._is_on = False
+            self._attr_is_on = False
         else:
+            self._attr_is_on = None
             self.warning(
-                "State for entity %s did not match state patterns", self.entity_id
+                "State for entity %s did not match configured state patterns",
+                self.entity_id,
             )
 
-    # No need to restore state for a sensor
     async def restore_state_when_connected(self):
-        """Do nothing for a sensor."""
+        """Binary sensors do not restore values to the Tuya device."""
         return
 
 
 async_setup_entry = partial(
-    async_setup_entry, DOMAIN, LocaltuyaBinarySensor, flow_schema
+    async_setup_entry,
+    DOMAIN,
+    LocaltuyaBinarySensor,
+    flow_schema,
 )
