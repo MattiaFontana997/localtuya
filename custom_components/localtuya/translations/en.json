@@ -63,13 +63,13 @@
             },
             "add_device": {
                 "title": "Add a new device",
-                "description": "Pick one of the automatically discovered devices or `...` to manually to add a device.",
+                "description": "Pick one of the automatically discovered devices or `...` to add a device manually.",
                 "data": {
                     "selected_device": "Discovered Devices"
                 }
             },
             "edit_device": {
-                "title": "Edit a new device",
+                "title": "Edit a device",
                 "description": "Pick the configured device you wish to edit.",
                 "data": {
                     "selected_device": "Configured Devices",

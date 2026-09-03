@@ -1,43 +1,146 @@
-![logo](https://github.com/rospogrigio/localtuya-homeassistant/blob/master/img/logo-small.png)
+# LocalTuya
 
-A Home Assistant custom Integration for local handling of Tuya-based devices.
+![LocalTuya](img/logo-small.png)
 
-This custom integration updates device status via pushing updates instead of polling, so status updates are fast (even when manually operated).
-The integration also supports the Tuya IoT Cloud APIs, for the retrieval of info and of the local_keys of the devices. 
+A Home Assistant custom integration for controlling Tuya devices directly over the local network.
 
+This repository is a maintained modernization fork of the original
+[LocalTuya project](https://github.com/rospogrigio/localtuya), focused on
+current Home Assistant releases, safer protocol handling and easier device
+configuration.
 
-**NOTE: The Cloud API account configuration is not mandatory (LocalTuya can work also without it) but is strongly suggested for easy retrieval (and auto-update after re-pairing a device) of local_keys. Cloud API calls are performed only at startup, and when a local_key update is needed.**
+## Current target
 
+- Home Assistant **2026.9 or newer**
+- Python **3.14**
+- Tuya LAN protocols **3.1, 3.2, 3.3 and 3.4**
+- Local push updates
+- Optional Tuya Cloud metadata
+- Automatic entity suggestions
+- Manual entity configuration remains available
 
-The following Tuya device types are currently supported:
-* Switches
-* Lights
-* Covers
-* Fans
-* Climates
-* Vacuums
+> Protocol 3.5 is not included in the stable release yet. Experimental work
+> exists separately but will not be merged until it has been validated with
+> real protocol 3.5 hardware.
 
-Energy monitoring (voltage, current, watts, etc.) is supported for compatible devices.
+## Supported platforms
 
-> **Currently, Tuya protocols from 3.1 to 3.4 are supported.**
+LocalTuya currently supports:
 
-This repository's development began as code from [@NameLessJedi](https://github.com/NameLessJedi), [@mileperhour](https://github.com/mileperhour) and [@TradeFace](https://github.com/TradeFace). Their code was then deeply refactored to provide proper integration with Home Assistant environment, adding config flow and other features. Refer to the "Thanks to" section below.
+- Switches
+- Lights
+- Covers
+- Fans
+- Climate devices
+- Vacuums
+- Binary sensors
+- Sensors
+- Numbers
+- Selects
 
+Energy monitoring such as voltage, current and power is supported on
+compatible devices.
 
-# Installation:
+## Automatic entity detection
 
-The easiest way, if you are using [HACS](https://hacs.xyz/), is to install LocalTuya through HACS.
+When Tuya Cloud metadata is available, LocalTuya can suggest entities from
+the device specification.
 
-For manual installation, copy the localtuya folder and all of its contents into your Home Assistant's custom_components folder. This folder is usually inside your `/config` folder. If you are running Hass.io, use SAMBA to copy the folder over. If you are running Home Assistant Supervised, the custom_components folder might be located at `/usr/share/hassio/homeassistant`. You may need to create the `custom_components` folder and then copy the localtuya folder and all of its contents into it.
+Suggestions are deliberately confidence-based:
 
+- **High confidence** entities are preselected.
+- **Medium confidence** entities are shown for review but are not selected
+  automatically.
+- Uncertain metadata is ignored rather than creating potentially incorrect
+  entities.
 
-# Usage:
+Current automatic mapping includes common Tuya switches, lights, climate
+devices, covers, fans, sensors, binary sensors, numbers and selects.
 
-**NOTE: You must have your Tuya device's Key and ID in order to use LocalTuya. The easiest way is to configure the Cloud API account in the integration. If you choose not to do it, there are several ways to obtain the local_keys depending on your environment and the devices you own. A good place to start getting info is https://github.com/codetheweb/tuyapi/blob/master/docs/SETUP.md  or https://pypi.org/project/tinytuya/.**
+Manual configuration remains available after reviewing the suggestions.
 
+## Reliability and testing
 
-**NOTE 2: If you plan to integrate these devices on a network that has internet and blocking their internet access, you must also block DNS requests (to the local DNS server, e.g. 192.168.1.1). If you only block outbound internet, then the device will sit in a zombie state; it will refuse / not respond to any connections with the localkey. Therefore, you must first connect the devices with an active internet connection, grab each device localkey, and implement the block.**
+The modernization fork includes regression coverage for:
 
+- Protocol framing and CRC validation
+- Tuya 3.4 HMAC/session handling
+- Protocol payload decoding from 3.1 through 3.4
+- UDP discovery
+- Legacy AES-ECB discovery
+- Tuya 55AA discovery frames
+- Tuya 6699 AES-GCM discovery frames
+- Tuya Cloud API signing and specification fallback
+- Automatic entity mapping
+- Numeric scaling
+- Diagnostics secret redaction
+- Config-entry setup, migration and unload lifecycle
+
+The current suite contains **41 automated tests** and runs in CI against
+Python 3.14 and Home Assistant 2026.
+
+## Tuya Cloud
+
+A Tuya Cloud account is **optional**.
+
+LocalTuya communicates with devices locally. Cloud access is used to retrieve
+device information, local keys and Tuya DP metadata that can improve automatic
+configuration.
+
+If Cloud access is not configured, devices can still be added manually when
+their device ID and local key are known.
+
+## Installation with HACS
+
+This fork must be added as a **custom HACS repository**.
+
+1. Open HACS.
+2. Open **Integrations**.
+3. Open the menu and choose **Custom repositories**.
+4. Add:
+
+   `https://github.com/MattiaFontana997/localtuya`
+
+5. Select **Integration** as the repository type.
+6. Install LocalTuya.
+7. Restart Home Assistant.
+
+> Do not install this fork and the upstream LocalTuya integration at the same
+> time. Both use the `localtuya` integration domain.
+
+## Manual installation
+
+Copy:
+
+`custom_components/localtuya`
+
+into:
+
+`/config/custom_components/localtuya`
+
+and restart Home Assistant.
+
+## Upgrading from LocalTuya 5.x
+
+The integration domain remains `localtuya`, so existing config entries are
+intended to be retained.
+
+Before replacing an existing installation, make a Home Assistant backup.
+Because Tuya hardware varies considerably, review automatically generated
+entities rather than assuming every Cloud specification is correct.
+
+## Credits
+
+This fork builds on the work of the original LocalTuya maintainers and
+contributors. Upstream project:
+
+https://github.com/rospogrigio/localtuya
+
+The modernization work in this fork includes Home Assistant 2026 compatibility,
+Cloud metadata mapping, discovery/protocol hardening and expanded regression
+testing.
+
+---
 
 # Adding the Integration
 
