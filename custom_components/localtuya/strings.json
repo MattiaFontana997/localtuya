@@ -132,6 +132,13 @@
             "yaml_import": {
                 "title": "Not Supported",
                 "description": "Options cannot be edited when configured via YAML."
+            },
+            "review_auto_entities": {
+                "title": "Review automatically detected entities",
+                "description": "Tuya Cloud metadata produced high-confidence entity suggestions. Select the entities to add automatically. You can still add more entities manually afterwards.",
+                "data": {
+                    "auto_entity_selection": "Automatically detected entities"
+                }
             }
         }
     },

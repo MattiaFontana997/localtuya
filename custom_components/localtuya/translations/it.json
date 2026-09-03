@@ -164,7 +164,7 @@
                     "fan_speed_min": "Velocità del ventilatore minima",
                     "fan_speed_max": "Velocità del ventilatore massima",
                     "fan_speed_ordered_list": "Elenco delle modalità di velocità del ventilatore (sovrascrive velocità min/max)",
-                    "fan_direction":"DP di direzione del ventilatore",
+                    "fan_direction": "DP di direzione del ventilatore",
                     "fan_direction_forward": "Stringa del DP per avanti",
                     "fan_direction_reverse": "Stringa del DP per indietro",
                     "current_temperature_dp": "Temperatura attuale",
@@ -184,6 +184,13 @@
                     "eco_dp": "DP per Eco (opzionale)",
                     "eco_value": "Valore Eco (opzionale)",
                     "heuristic_action": "Abilita azione euristica (opzionale)"
+                }
+            },
+            "review_auto_entities": {
+                "title": "Verifica delle entity rilevate automaticamente",
+                "description": "I metadati Tuya Cloud hanno prodotto suggerimenti ad alta affidabilità. Seleziona le entity da aggiungere automaticamente. Potrai comunque aggiungerne altre manualmente.",
+                "data": {
+                    "auto_entity_selection": "Entity rilevate automaticamente"
                 }
             }
         }

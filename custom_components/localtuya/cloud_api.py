@@ -286,10 +286,16 @@ class TuyaCloudApi:
         self,
         device_id: str,
     ) -> tuple[str, dict[str, Any] | None]:
-        """Get Tuya function/status specification for one device."""
+        """Get Tuya DP specification for one device.
+
+        Prefer the v1.1 endpoint because it exposes numeric DP IDs.
+        The older iot-03 specification endpoint may return semantic
+        function properties without the DP identifiers required for
+        LocalTuya automatic mapping.
+        """
         endpoints = (
-            f"/v1.0/iot-03/devices/{device_id}/specification",
             f"/v1.1/devices/{device_id}/specifications",
+            f"/v1.0/iot-03/devices/{device_id}/specification",
         )
 
         last_error = (
@@ -319,8 +325,54 @@ class TuyaCloudApi:
                 )
                 continue
 
+            if not self._specification_has_dp_ids(result):
+                last_error = (
+                    "Tuya Cloud specification did not "
+                    "contain numeric DP identifiers"
+                )
+                continue
+
             self.device_specifications[device_id] = result
 
             return SUCCESS, result
 
         return last_error, None
+
+    @staticmethod
+    def _specification_has_dp_ids(
+        specification: dict[str, Any],
+    ) -> bool:
+        """Return whether a Cloud specification contains usable DP IDs."""
+        for collection_name in (
+            "functions",
+            "status",
+        ):
+            collection = specification.get(
+                collection_name
+            )
+
+            if not isinstance(collection, list):
+                continue
+
+            for entry in collection:
+                if not isinstance(entry, dict):
+                    continue
+
+                dp_id = (
+                    entry.get("dp_id")
+                    if "dp_id" in entry
+                    else entry.get("id")
+                )
+
+                if isinstance(dp_id, bool):
+                    continue
+
+                try:
+                    dp_id = int(dp_id)
+                except (TypeError, ValueError):
+                    continue
+
+                if dp_id > 0:
+                    return True
+
+        return False

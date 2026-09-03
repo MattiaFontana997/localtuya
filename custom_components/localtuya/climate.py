@@ -153,6 +153,11 @@ HVAC_SWING_MODE_SETS = {
     }
 }
 PRESET_SETS = {
+    "auto/manual/holiday": {
+        PRESET_AWAY: "holiday",
+        PRESET_HOME: "manual",
+        PRESET_NONE: "auto",
+    },
     "Manual/Holiday/Program": {
         PRESET_AWAY: "Holiday",
         PRESET_HOME: "Program",

@@ -52,6 +52,10 @@ from .const import (
     PLATFORMS,
 )
 from .discovery import discover
+from .device_mapper import (
+    MappingConfidence,
+    build_entity_candidates,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,6 +64,7 @@ ENTRIES_VERSION = 2
 PLATFORM_TO_ADD = "platform_to_add"
 NO_ADDITIONAL_ENTITIES = "no_additional_entities"
 SELECTED_DEVICE = "selected_device"
+AUTO_ENTITY_SELECTION = "auto_entity_selection"
 
 CUSTOM_DEVICE = "..."
 
@@ -193,6 +198,134 @@ def dps_string_list(dps_data):
 def gen_dps_strings():
     """Generate list of DPS values."""
     return [f"{dp} (value: ?)" for dp in range(1, 256)]
+
+
+def _detected_dp_ids(dps_strings):
+    """Return integer DP ids from LocalTuya friendly DPS strings."""
+    result = set()
+
+    for dp_string in dps_strings:
+        try:
+            result.add(int(str(dp_string).split(" ", 1)[0]))
+        except (TypeError, ValueError):
+            continue
+
+    return result
+
+
+async def async_get_cloud_entity_candidates(
+    hass,
+    device_data,
+    discovered_devices,
+    dps_strings,
+):
+    """Build high-confidence entity suggestions using Tuya Cloud metadata."""
+    domain_data = hass.data.get(DOMAIN, {})
+    cloud_api = domain_data.get(DATA_CLOUD)
+
+    if cloud_api is None:
+        return []
+
+    device_id = device_data.get(CONF_DEVICE_ID)
+
+    if not device_id:
+        return []
+
+    cloud_device = cloud_api.device_list.get(device_id)
+
+    if not isinstance(cloud_device, dict):
+        return []
+
+    try:
+        result, specification = (
+            await cloud_api.async_get_device_specification(
+                device_id
+            )
+        )
+    except Exception as ex:
+        _LOGGER.debug(
+            "Unable to retrieve Tuya Cloud specification "
+            "for device %s: %s",
+            device_id,
+            ex,
+        )
+        return []
+
+    if (
+        result != "ok"
+        or not isinstance(specification, dict)
+    ):
+        _LOGGER.debug(
+            "No usable Tuya Cloud specification for "
+            "device %s: %s",
+            device_id,
+            result,
+        )
+        return []
+
+    discovered = discovered_devices.get(
+        device_id,
+        {},
+    )
+
+    if not isinstance(discovered, dict):
+        discovered = {}
+
+    # Discovery contributes LAN/product information while Cloud
+    # contributes the canonical name/category/product metadata.
+    mapper_device = {
+        **discovered,
+        **cloud_device,
+    }
+
+    friendly_name = device_data.get(
+        CONF_FRIENDLY_NAME
+    )
+
+    if friendly_name:
+        mapper_device["name"] = friendly_name
+
+    candidates = build_entity_candidates(
+        mapper_device,
+        specification,
+    )
+
+    detected_ids = _detected_dp_ids(
+        dps_strings
+    )
+
+    accepted = []
+
+    for candidate in candidates:
+        if (
+            candidate.confidence
+            != MappingConfidence.HIGH
+        ):
+            continue
+
+        referenced_dps = (
+            candidate.referenced_dps
+            or (candidate.primary_dp,)
+        )
+
+        # Cloud metadata can theoretically be stale. For the
+        # first automatic mapper version only accept candidates
+        # whose referenced DPs were also observed over LAN.
+        if not set(referenced_dps).issubset(
+            detected_ids
+        ):
+            _LOGGER.debug(
+                "Ignoring Cloud mapping candidate %s DP %s: "
+                "referenced DPS %s not all detected over LAN",
+                candidate.platform,
+                candidate.primary_dp,
+                referenced_dps,
+            )
+            continue
+
+        accepted.append(candidate)
+
+    return accepted
 
 
 async def platform_schema(
@@ -538,6 +671,7 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         self.selected_platform = None
         self.discovered_devices = {}
         self.entities = []
+        self.auto_candidates = []
 
     async def async_step_init(self, user_input=None):
         """Manage basic options."""
@@ -762,6 +896,21 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                 self.device_data[
                     CONF_PROTOCOL_VERSION
                 ] = resolved_protocol
+
+                self.auto_candidates = (
+                    await async_get_cloud_entity_candidates(
+                        self.hass,
+                        self.device_data,
+                        self.discovered_devices,
+                        self.dps_strings,
+                    )
+                )
+
+                if self.auto_candidates:
+                    return await (
+                        self.async_step_review_auto_entities()
+                    )
+
                 return await self.async_step_pick_entity_type()
             except CannotConnect:
                 errors["base"] = "cannot_connect"
@@ -832,6 +981,61 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
             description_placeholders=placeholders,
         )
 
+    async def async_step_review_auto_entities(
+        self,
+        user_input=None,
+    ):
+        """Review high-confidence entities suggested from Cloud metadata."""
+        options = {
+            str(index): (
+                f"{candidate.config.get(CONF_FRIENDLY_NAME, 'Tuya entity')} "
+                f"— {candidate.platform} "
+                f"(DP {candidate.primary_dp}; "
+                f"{', '.join(candidate.matched_codes)})"
+            )
+            for index, candidate
+            in enumerate(self.auto_candidates)
+        }
+
+        if user_input is not None:
+            selected = set(
+                user_input.get(
+                    AUTO_ENTITY_SELECTION,
+                    [],
+                )
+            )
+
+            for index, candidate in enumerate(
+                self.auto_candidates
+            ):
+                if str(index) not in selected:
+                    continue
+
+                self.entities.append(
+                    copy.deepcopy(
+                        candidate.config
+                    )
+                )
+
+            # Suggestions are only temporary flow state.
+            self.auto_candidates = []
+
+            return await (
+                self.async_step_pick_entity_type()
+            )
+
+        return self.async_show_form(
+            step_id="review_auto_entities",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        AUTO_ENTITY_SELECTION,
+                        default=list(options),
+                    ): cv.multi_select(options),
+                }
+            ),
+        )
+
     async def async_step_pick_entity_type(self, user_input=None):
         """Handle asking if user wants to add another entity."""
         if user_input is not None:
@@ -860,7 +1064,7 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         # Add a checkbox that allows bailing out from config flow if at least one
         # entity has been added
         schema = PICK_ENTITY_SCHEMA
-        if self.selected_platform is not None:
+        if self.entities:
             schema = schema.extend(
                 {vol.Required(NO_ADDITIONAL_ENTITIES, default=True): bool}
             )
