@@ -38,6 +38,7 @@ from homeassistant.const import (
 
 from .common import LocalTuyaEntity, async_setup_entry
 from .const import (
+    CONF_AWAY_TEMPERATURE_DP,
     CONF_CURRENT_TEMPERATURE_DP,
     CONF_TEMP_MAX,
     CONF_TEMP_MIN,
@@ -190,6 +191,7 @@ def flow_schema(dps):
     """Return schema used in config flow."""
     return {
         vol.Optional(CONF_TARGET_TEMPERATURE_DP): vol.In(dps),
+        vol.Optional(CONF_AWAY_TEMPERATURE_DP): vol.In(dps),
         vol.Optional(CONF_CURRENT_TEMPERATURE_DP): vol.In(dps),
         vol.Optional(CONF_TEMPERATURE_STEP, default=PRECISION_WHOLE): vol.In(
             [PRECISION_WHOLE, PRECISION_HALVES, PRECISION_TENTHS]
@@ -422,17 +424,47 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             return None
         return list(self._conf_hvac_swing_mode_set)
 
+    def _active_target_temperature_dp(self):
+        """Return the target-temperature DP for the active preset."""
+        target_dp = self._config.get(
+            CONF_TARGET_TEMPERATURE_DP
+        )
+
+        away_dp = self._config.get(
+            CONF_AWAY_TEMPERATURE_DP
+        )
+
+        away_value = self._conf_preset_set.get(
+            PRESET_AWAY
+        )
+
+        if (
+            away_dp is not None
+            and self._conf_preset_dp is not None
+            and away_value is not None
+            and self.dps(
+                self._conf_preset_dp
+            ) == away_value
+        ):
+            return away_dp
+
+        return target_dp
+
     async def async_set_temperature(self, **kwargs):
         """Set a new target temperature."""
-        if (
-            ATTR_TEMPERATURE not in kwargs
-            or not self.has_config(CONF_TARGET_TEMPERATURE_DP)
-        ):
+        if ATTR_TEMPERATURE not in kwargs:
             return
 
         requested = kwargs[ATTR_TEMPERATURE]
 
         if requested is None:
+            return
+
+        target_dp = (
+            self._active_target_temperature_dp()
+        )
+
+        if target_dp is None:
             return
 
         temperature = round(
@@ -441,7 +473,7 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
 
         await self._device.set_dp(
             temperature,
-            self._config[CONF_TARGET_TEMPERATURE_DP],
+            target_dp,
         )
 
     async def async_set_fan_mode(self, fan_mode):
@@ -559,12 +591,28 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
         """Update climate state from Tuya datapoints."""
         super().status_updated()
 
-        if self.has_config(CONF_TARGET_TEMPERATURE_DP):
-            value = self.dps_conf(CONF_TARGET_TEMPERATURE_DP)
+        target_dp = (
+            self._active_target_temperature_dp()
+        )
 
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if target_dp is not None:
+            value = self.dps(
+                target_dp
+            )
+
+            if (
+                isinstance(
+                    value,
+                    (int, float),
+                )
+                and not isinstance(
+                    value,
+                    bool,
+                )
+            ):
                 self._target_temperature = (
-                    value * self._target_precision
+                    value
+                    * self._target_precision
                 )
             else:
                 self._target_temperature = None
