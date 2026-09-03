@@ -373,26 +373,88 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
 
     async def set_dp(self, state, dp_index):
         """Change value of a DP of the Tuya device."""
-        if self._interface is not None:
+        interface = self._interface
+
+        if interface is not None:
             try:
-                await self._interface.set_dp(state, dp_index)
+                await interface.set_dp(
+                    state,
+                    dp_index,
+                )
             except Exception:  # pylint: disable=broad-except
-                self.exception("Failed to set DP %d to %s", dp_index, str(state))
+                self.exception(
+                    "Failed to set DP %d to %s",
+                    dp_index,
+                    str(state),
+                )
+                return
+
+            # Tuya devices frequently acknowledge CONTROL with an
+            # empty payload and do not immediately publish the new
+            # DPS value. Keep HA's local cache in sync after a
+            # successful write; a later device status report remains
+            # authoritative and can replace this value.
+            if self._interface is interface:
+                dp_key = str(dp_index)
+
+                self._status[
+                    dp_key
+                ] = state
+
+                # PyTuya keeps its own DPS cache. Keep it in sync
+                # too, otherwise a later status() call may return
+                # the previous value and overwrite HA's state.
+                if hasattr(
+                    interface,
+                    "dps_cache",
+                ):
+                    interface.dps_cache[
+                        dp_key
+                    ] = state
+
+                self._dispatch_status()
+
         else:
             self.error(
-                "Not connected to device %s", self._dev_config_entry[CONF_FRIENDLY_NAME]
+                "Not connected to device %s",
+                self._dev_config_entry[
+                    CONF_FRIENDLY_NAME
+                ],
             )
 
     async def set_dps(self, states):
-        """Change value of a DPs of the Tuya device."""
-        if self._interface is not None:
+        """Change values of multiple DPS."""
+        interface = self._interface
+
+        if interface is not None:
             try:
-                await self._interface.set_dps(states)
+                await interface.set_dps(
+                    states
+                )
             except Exception:  # pylint: disable=broad-except
-                self.exception("Failed to set DPs %r", states)
+                self.exception(
+                    "Failed to set DPs %r",
+                    states,
+                )
+                return
+
+            if self._interface is interface:
+                self._status.update(
+                    {
+                        str(dp_index): value
+                        for dp_index, value
+                        in states.items()
+                    }
+                )
+
+                self._dispatch_status()
+
         else:
             self.error(
-                "Not connected to device %s", self._dev_config_entry[CONF_FRIENDLY_NAME]
+                "Not connected to device %s",
+                self._dev_config_entry[
+                    CONF_FRIENDLY_NAME
+                ],
             )
 
     @callback
