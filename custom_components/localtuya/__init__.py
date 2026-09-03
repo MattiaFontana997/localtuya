@@ -204,7 +204,7 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
             new_data[CONF_USERNAME] = DOMAIN
             new_data[CONF_NO_CLOUD] = True
             new_data[CONF_DEVICES] = {
-                config_entry.data[CONF_DEVICE_ID]: config_copy.deepcopy(dict(entry.data))
+                config_entry.data[CONF_DEVICE_ID]: copy.deepcopy(dict(config_entry.data))
             }
             new_data[ATTR_UPDATED_AT] = str(int(time.time() * 1000))
             hass.config_entries.async_update_entry(
@@ -219,7 +219,7 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
             )
             new_data = copy.deepcopy(dict(stored_entries[0].data))
             new_data[CONF_DEVICES].update(
-                {config_entry.data[CONF_DEVICE_ID]: config_copy.deepcopy(dict(entry.data))}
+                {config_entry.data[CONF_DEVICE_ID]: copy.deepcopy(dict(config_entry.data))}
             )
             new_data[ATTR_UPDATED_AT] = str(int(time.time() * 1000))
             hass.config_entries.async_update_entry(stored_entries[0], data=new_data)
@@ -350,7 +350,7 @@ async def async_remove_config_entry_device(
 
     await hass.data[DOMAIN][TUYA_DEVICES][dev_id].close()
 
-    new_data = config_copy.deepcopy(dict(entry.data))
+    new_data = copy.deepcopy(dict(config_entry.data))
     new_data[CONF_DEVICES].pop(dev_id)
     new_data[ATTR_UPDATED_AT] = str(int(time.time() * 1000))
 
