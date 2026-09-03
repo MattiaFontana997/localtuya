@@ -300,7 +300,7 @@ async def async_get_cloud_entity_candidates(
     for candidate in candidates:
         if (
             candidate.confidence
-            != MappingConfidence.HIGH
+            == MappingConfidence.LOW
         ):
             continue
 
@@ -986,17 +986,30 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         self,
         user_input=None,
     ):
-        """Review high-confidence entities suggested from Cloud metadata."""
+        """Review entities suggested from Cloud metadata."""
         options = {
             str(index): (
                 f"{candidate.config.get(CONF_FRIENDLY_NAME, 'Tuya entity')} "
                 f"— {candidate.platform} "
+                f"[{candidate.confidence.value.upper()}] "
                 f"(DP {candidate.primary_dp}; "
                 f"{', '.join(candidate.matched_codes)})"
             )
             for index, candidate
             in enumerate(self.auto_candidates)
         }
+
+        # HIGH-confidence mappings are selected automatically.
+        # MEDIUM mappings are visible but require explicit approval.
+        default_selection = [
+            str(index)
+            for index, candidate
+            in enumerate(self.auto_candidates)
+            if (
+                candidate.confidence
+                == MappingConfidence.HIGH
+            )
+        ]
 
         if user_input is not None:
             selected = set(
@@ -1031,7 +1044,7 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                 {
                     vol.Required(
                         AUTO_ENTITY_SELECTION,
-                        default=list(options),
+                        default=default_selection,
                     ): cv.multi_select(options),
                 }
             ),

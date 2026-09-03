@@ -210,7 +210,7 @@
             },
             "review_auto_entities": {
                 "title": "Review automatically detected entities",
-                "description": "Tuya Cloud metadata produced high-confidence entity suggestions. Select the entities to add automatically. You can still add more entities manually afterwards.",
+                "description": "Tuya Cloud metadata produced entity suggestions. High-confidence entities are preselected; medium-confidence suggestions are shown but left unselected. You can review them and still add entities manually afterwards.",
                 "data": {
                     "auto_entity_selection": "Automatically detected entities"
                 }

@@ -25,10 +25,16 @@ from .const import (
     CONF_COLOR,
     CONF_COLOR_MODE,
     CONF_CURRENT_TEMPERATURE_DP,
+    CONF_MAX_VALUE,
+    CONF_MIN_VALUE,
+    CONF_OPTIONS,
+    CONF_PASSIVE_ENTITY,
     CONF_PRECISION,
     CONF_PRESET_DP,
     CONF_PRESET_SET,
+    CONF_RESTORE_ON_RECONNECT,
     CONF_SCALING,
+    CONF_STEPSIZE_VALUE,
     CONF_TARGET_PRECISION,
     CONF_TARGET_TEMPERATURE_DP,
     CONF_TEMPERATURE_STEP,
@@ -955,6 +961,203 @@ def _build_sensor_candidates(
     return candidates
 
 
+def _generic_dp_label(
+    code: str,
+) -> str:
+    """Create a readable fallback label from a Tuya code."""
+    label = (
+        code.replace("_", " ")
+        .strip()
+        .title()
+    )
+
+    return label or "Value"
+
+
+def _build_number_candidates(
+    device: dict[str, Any],
+    metadata: dict[int, DpMetadata],
+    consumed_dps: set[int],
+) -> list[EntityCandidate]:
+    """Build medium-confidence writable numeric candidates."""
+    candidates: list[EntityCandidate] = []
+
+    device_name = _device_name(
+        device,
+        "Tuya Device",
+    )
+
+    numeric_types = {
+        "integer",
+        "value",
+        "float",
+        "double",
+    }
+
+    for dp in metadata.values():
+        if dp.id in consumed_dps:
+            continue
+
+        if not dp.writable:
+            continue
+
+        if dp.type_name not in numeric_types:
+            continue
+
+        factor = _tuya_scale_factor(dp)
+
+        if factor is None:
+            continue
+
+        raw_min = _numeric_value(
+            dp,
+            "min",
+        )
+        raw_max = _numeric_value(
+            dp,
+            "max",
+        )
+        raw_step = _numeric_value(
+            dp,
+            "step",
+        )
+
+        if (
+            raw_min is None
+            or raw_max is None
+            or raw_step is None
+            or raw_max <= raw_min
+            or raw_step <= 0
+        ):
+            continue
+
+        config: dict[str, Any] = {
+            CONF_ID: dp.id,
+            CONF_FRIENDLY_NAME: (
+                f"{device_name} "
+                f"{_generic_dp_label(dp.code)}"
+            ),
+            CONF_PLATFORM: "number",
+            CONF_MIN_VALUE: round(
+                raw_min * factor,
+                6,
+            ),
+            CONF_MAX_VALUE: round(
+                raw_max * factor,
+                6,
+            ),
+            CONF_STEPSIZE_VALUE: round(
+                raw_step * factor,
+                6,
+            ),
+            CONF_RESTORE_ON_RECONNECT: False,
+            CONF_PASSIVE_ENTITY: False,
+        }
+
+        if factor != 1.0:
+            config[
+                CONF_SCALING
+            ] = factor
+
+        unit = _normalize_unit(
+            dp.values.get("unit"),
+            "",
+        )
+
+        if unit:
+            config[
+                CONF_UNIT_OF_MEASUREMENT
+            ] = unit
+
+        candidates.append(
+            EntityCandidate(
+                platform="number",
+                primary_dp=dp.id,
+                confidence=MappingConfidence.MEDIUM,
+                config=config,
+                matched_codes=(dp.code,),
+                referenced_dps=(dp.id,),
+            )
+        )
+
+    return candidates
+
+
+def _build_select_candidates(
+    device: dict[str, Any],
+    metadata: dict[int, DpMetadata],
+    consumed_dps: set[int],
+) -> list[EntityCandidate]:
+    """Build medium-confidence writable enum candidates."""
+    candidates: list[EntityCandidate] = []
+
+    device_name = _device_name(
+        device,
+        "Tuya Device",
+    )
+
+    for dp in metadata.values():
+        if dp.id in consumed_dps:
+            continue
+
+        if not dp.writable:
+            continue
+
+        if dp.type_name != "enum":
+            continue
+
+        raw_options = dp.values.get(
+            "range"
+        )
+
+        if not isinstance(
+            raw_options,
+            list,
+        ):
+            continue
+
+        options = [
+            str(value).strip()
+            for value in raw_options
+            if str(value).strip()
+        ]
+
+        if len(options) < 2:
+            continue
+
+        # LocalTuya select stores raw options separated by ';'.
+        if any(
+            ";" in option
+            for option in options
+        ):
+            continue
+
+        candidates.append(
+            EntityCandidate(
+                platform="select",
+                primary_dp=dp.id,
+                confidence=MappingConfidence.MEDIUM,
+                config={
+                    CONF_ID: dp.id,
+                    CONF_FRIENDLY_NAME: (
+                        f"{device_name} "
+                        f"{_generic_dp_label(dp.code)}"
+                    ),
+                    CONF_PLATFORM: "select",
+                    CONF_OPTIONS: ";".join(
+                        options
+                    ),
+                    CONF_RESTORE_ON_RECONNECT: False,
+                    CONF_PASSIVE_ENTITY: False,
+                },
+                matched_codes=(dp.code,),
+                referenced_dps=(dp.id,),
+            )
+        )
+
+    return candidates
+
+
 def _apply_product_overrides(
     device: dict[str, Any],
     candidates: list[EntityCandidate],
@@ -1098,12 +1301,52 @@ def build_entity_candidates(
                 or (candidate.primary_dp,)
             )
 
-    candidates.extend(
+    sensor_candidates = (
         _build_sensor_candidates(
             device,
             metadata,
             consumed_dps,
         )
+    )
+
+    candidates.extend(
+        sensor_candidates
+    )
+
+    for candidate in sensor_candidates:
+        consumed_dps.update(
+            candidate.referenced_dps
+            or (candidate.primary_dp,)
+        )
+
+    number_candidates = (
+        _build_number_candidates(
+            device,
+            metadata,
+            consumed_dps,
+        )
+    )
+
+    candidates.extend(
+        number_candidates
+    )
+
+    for candidate in number_candidates:
+        consumed_dps.update(
+            candidate.referenced_dps
+            or (candidate.primary_dp,)
+        )
+
+    select_candidates = (
+        _build_select_candidates(
+            device,
+            metadata,
+            consumed_dps,
+        )
+    )
+
+    candidates.extend(
+        select_candidates
     )
 
     candidates = _apply_product_overrides(

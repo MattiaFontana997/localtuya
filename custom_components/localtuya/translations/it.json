@@ -188,7 +188,7 @@
             },
             "review_auto_entities": {
                 "title": "Verifica delle entity rilevate automaticamente",
-                "description": "I metadati Tuya Cloud hanno prodotto suggerimenti ad alta affidabilità. Seleziona le entity da aggiungere automaticamente. Potrai comunque aggiungerne altre manualmente.",
+                "description": "I metadati Tuya Cloud hanno prodotto dei suggerimenti. Le entity ad alta affidabilità sono preselezionate; quelle a media affidabilità vengono mostrate ma non selezionate. Puoi verificarle e aggiungere comunque altre entity manualmente.",
                 "data": {
                     "auto_entity_selection": "Entity rilevate automaticamente"
                 }

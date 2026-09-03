@@ -21,6 +21,7 @@ from .const import (
     CONF_MIN_VALUE,
     CONF_PASSIVE_ENTITY,
     CONF_RESTORE_ON_RECONNECT,
+    CONF_SCALING,
     CONF_STEPSIZE_VALUE,
 )
 
@@ -29,6 +30,33 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_MIN = 0.0
 DEFAULT_MAX = 100000.0
 DEFAULT_STEP = 1.0
+
+
+def _scale_number_value(
+    value,
+    scaling: float,
+) -> float:
+    """Convert a raw Tuya number to its native HA value."""
+    return float(value) * scaling
+
+
+def _unscale_number_value(
+    value,
+    scaling: float,
+):
+    """Convert a native HA number back to its raw Tuya value."""
+    raw_value = float(value) / scaling
+
+    # Avoid values such as 224.99999999997 for Integer DPS.
+    raw_value = round(
+        raw_value,
+        10,
+    )
+
+    if float(raw_value).is_integer():
+        return int(raw_value)
+
+    return raw_value
 
 
 def flow_schema(dps):
@@ -47,6 +75,16 @@ def flow_schema(dps):
             vol.Range(min=0.0, max=1000000.0),
         ),
         vol.Optional(CONF_UNIT_OF_MEASUREMENT): str,
+        vol.Optional(
+            CONF_SCALING,
+            default=1.0,
+        ): vol.All(
+            vol.Coerce(float),
+            vol.Range(
+                min=0.000000001,
+                max=1000000000.0,
+            ),
+        ),
         vol.Optional(CONF_DEVICE_CLASS): vol.In(
             [device_class.value for device_class in NumberDeviceClass]
         ),
@@ -70,6 +108,18 @@ class LocaltuyaNumber(LocalTuyaEntity, NumberEntity):
         super().__init__(device, config_entry, sensorid, _LOGGER, **kwargs)
 
         self._state = None
+
+        self._scaling = float(
+            self._config.get(
+                CONF_SCALING,
+                1.0,
+            )
+        )
+
+        if self._scaling <= 0:
+            raise ValueError(
+                "Number scaling must be greater than zero"
+            )
 
         self._attr_native_min_value = float(
             self._config.get(CONF_MIN_VALUE, DEFAULT_MIN)
@@ -119,14 +169,25 @@ class LocaltuyaNumber(LocalTuyaEntity, NumberEntity):
             )
             return
 
-        self._state = value
+        self._state = _scale_number_value(
+            value,
+            self._scaling,
+        )
 
         if not self._device.is_connecting:
-            self._last_state = value
+            self._last_state = self._state
 
     async def async_set_native_value(self, value: float) -> None:
         """Update the current value."""
-        await self._device.set_dp(value, self._dp_id)
+        raw_value = _unscale_number_value(
+            value,
+            self._scaling,
+        )
+
+        await self._device.set_dp(
+            raw_value,
+            self._dp_id,
+        )
 
     def entity_default_value(self):
         """Return the minimum value as the default value."""
