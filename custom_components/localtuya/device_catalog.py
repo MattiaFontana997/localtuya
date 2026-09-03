@@ -12,6 +12,7 @@ from aiohttp import ClientError, ClientTimeout
 from homeassistant.helpers.aiohttp_client import (
     async_get_clientsession,
 )
+from homeassistant.helpers.storage import Store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,6 +25,9 @@ CATALOG_URL = (
 )
 
 REQUEST_TIMEOUT = ClientTimeout(total=10)
+
+CATALOG_STORAGE_VERSION = 1
+CATALOG_STORAGE_KEY = "localtuya.device_catalog"
 
 SUPPORTED_PLATFORMS = {
     "binary_sensor",
@@ -38,6 +42,22 @@ SUPPORTED_PLATFORMS = {
     "vacuum",
 }
 
+# These keys must never arrive from a remote device mapping.
+# Catalog entries describe entity behaviour only, never account,
+# device or network credentials.
+_FORBIDDEN_CONFIG_KEYS = {
+    "local_key",
+    "device_id",
+    "host",
+    "ip",
+    "gwid",
+    "client_id",
+    "client_secret",
+    "user_id",
+    "username",
+    "region",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class CatalogMatch:
@@ -46,6 +66,7 @@ class CatalogMatch:
     mapping_id: str
     product_id: str
     confidence: str
+    required_dps: tuple[int, ...]
     entities: tuple[dict[str, Any], ...]
 
 
@@ -79,6 +100,33 @@ def _device_category(
     return str(value).strip().lower()
 
 
+def _contains_forbidden_keys(
+    value: Any,
+) -> bool:
+    """Return whether a JSON value contains forbidden config keys."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            normalized_key = (
+                str(key)
+                .strip()
+                .lower()
+            )
+
+            if normalized_key in _FORBIDDEN_CONFIG_KEYS:
+                return True
+
+            if _contains_forbidden_keys(child):
+                return True
+
+    elif isinstance(value, list):
+        return any(
+            _contains_forbidden_keys(item)
+            for item in value
+        )
+
+    return False
+
+
 def _validate_entity(
     entity: Any,
 ) -> dict[str, Any] | None:
@@ -96,11 +144,40 @@ def _validate_entity(
     if not isinstance(config, dict):
         return None
 
-    # Only JSON-compatible configuration is allowed.
-    # No executable expressions or dynamically imported code.
+    if _contains_forbidden_keys(config):
+        return None
+
+    config = copy.deepcopy(config)
+
+    configured_platform = config.get(
+        "platform"
+    )
+
+    if (
+        configured_platform is not None
+        and configured_platform != platform
+    ):
+        return None
+
+    primary_dp = config.get("id")
+
+    if isinstance(primary_dp, bool):
+        return None
+
+    try:
+        primary_dp = int(primary_dp)
+    except (TypeError, ValueError):
+        return None
+
+    if primary_dp <= 0:
+        return None
+
+    config["id"] = primary_dp
+    config["platform"] = platform
+
     return {
         "platform": platform,
-        "config": copy.deepcopy(config),
+        "config": config,
     }
 
 
@@ -109,9 +186,14 @@ def validate_catalog(
 ) -> dict[str, Any]:
     """Validate remote catalog structure."""
     if not isinstance(payload, dict):
-        raise ValueError("Catalog root must be an object")
+        raise ValueError(
+            "Catalog root must be an object"
+        )
 
-    if payload.get("schema_version") != CATALOG_SCHEMA_VERSION:
+    if (
+        payload.get("schema_version")
+        != CATALOG_SCHEMA_VERSION
+    ):
         raise ValueError(
             "Unsupported catalog schema version"
         )
@@ -119,12 +201,17 @@ def validate_catalog(
     mappings = payload.get("mappings")
 
     if not isinstance(mappings, list):
-        raise ValueError("Catalog mappings must be a list")
+        raise ValueError(
+            "Catalog mappings must be a list"
+        )
 
     validated = []
 
     for raw_mapping in mappings:
-        if not isinstance(raw_mapping, dict):
+        if not isinstance(
+            raw_mapping,
+            dict,
+        ):
             continue
 
         mapping_id = raw_mapping.get("id")
@@ -139,17 +226,41 @@ def validate_catalog(
         ):
             continue
 
-        product_id = match.get("product_id")
-        category = match.get("category")
-        required_dps = match.get("required_dps", [])
+        product_id = match.get(
+            "product_id"
+        )
 
-        if product_id is not None:
-            product_id = str(product_id).strip()
+        # The remote catalog is intentionally product-specific.
+        # Broad category-based behaviour remains the responsibility
+        # of the built-in generic mapper.
+        if (
+            not isinstance(product_id, str)
+            or not product_id.strip()
+        ):
+            continue
+
+        product_id = product_id.strip()
+
+        category = match.get(
+            "category"
+        )
 
         if category is not None:
-            category = str(category).strip().lower()
+            category = (
+                str(category)
+                .strip()
+                .lower()
+            )
 
-        if not isinstance(required_dps, list):
+        required_dps = match.get(
+            "required_dps",
+            [],
+        )
+
+        if not isinstance(
+            required_dps,
+            list,
+        ):
             continue
 
         normalized_dps: list[int] = []
@@ -157,9 +268,16 @@ def validate_catalog(
         valid_dps = True
 
         for dp in required_dps:
+            if isinstance(dp, bool):
+                valid_dps = False
+                break
+
             try:
                 dp_id = int(dp)
-            except (TypeError, ValueError):
+            except (
+                TypeError,
+                ValueError,
+            ):
                 valid_dps = False
                 break
 
@@ -167,7 +285,10 @@ def validate_catalog(
                 valid_dps = False
                 break
 
-            normalized_dps.append(dp_id)
+            if dp_id not in normalized_dps:
+                normalized_dps.append(
+                    dp_id
+                )
 
         if not valid_dps:
             continue
@@ -175,10 +296,25 @@ def validate_catalog(
         validated_entities = []
 
         for entity in entities:
-            normalized = _validate_entity(entity)
+            normalized = _validate_entity(
+                entity
+            )
 
-            if normalized is not None:
-                validated_entities.append(normalized)
+            if normalized is None:
+                continue
+
+            primary_dp = normalized[
+                "config"
+            ]["id"]
+
+            if primary_dp not in normalized_dps:
+                normalized_dps.append(
+                    primary_dp
+                )
+
+            validated_entities.append(
+                normalized
+            )
 
         if not validated_entities:
             continue
@@ -203,7 +339,9 @@ def validate_catalog(
                 "match": {
                     "product_id": product_id,
                     "category": category,
-                    "required_dps": normalized_dps,
+                    "required_dps": sorted(
+                        normalized_dps
+                    ),
                 },
                 "confidence": confidence,
                 "entities": validated_entities,
@@ -211,7 +349,8 @@ def validate_catalog(
         )
 
     return {
-        "schema_version": CATALOG_SCHEMA_VERSION,
+        "schema_version":
+            CATALOG_SCHEMA_VERSION,
         "mappings": validated,
     }
 
@@ -225,39 +364,56 @@ def match_catalog_mapping(
     if not catalog:
         return None
 
-    product_id = _device_product_id(device)
-    category = _device_category(device)
+    product_id = _device_product_id(
+        device
+    )
+
+    if not product_id:
+        return None
+
+    category = _device_category(
+        device
+    )
 
     best_match = None
     best_score = -1
 
-    for mapping in catalog.get("mappings", []):
+    for mapping in catalog.get(
+        "mappings",
+        [],
+    ):
         match = mapping["match"]
 
-        expected_product = match.get("product_id")
-        expected_category = match.get("category")
-        required_dps = set(
-            match.get("required_dps", [])
+        expected_product = match.get(
+            "product_id"
         )
 
-        score = 0
+        if product_id != expected_product:
+            continue
 
-        if expected_product:
-            if product_id != expected_product:
-                continue
+        expected_category = match.get(
+            "category"
+        )
 
-            score += 100
+        required_dps = set(
+            match.get(
+                "required_dps",
+                [],
+            )
+        )
+
+        if not required_dps.issubset(
+            available_dps
+        ):
+            continue
+
+        score = 100
 
         if expected_category:
             if category != expected_category:
                 continue
 
             score += 10
-
-        if not required_dps.issubset(
-            available_dps
-        ):
-            continue
 
         score += len(required_dps)
 
@@ -270,37 +426,56 @@ def match_catalog_mapping(
     if best_match is None:
         return None
 
-    resolved_product_id = (
-        _device_product_id(device) or ""
-    )
-
     return CatalogMatch(
         mapping_id=best_match["id"],
-        product_id=resolved_product_id,
-        confidence=best_match["confidence"],
+        product_id=product_id,
+        confidence=best_match[
+            "confidence"
+        ],
+        required_dps=tuple(
+            best_match["match"][
+                "required_dps"
+            ]
+        ),
         entities=tuple(
-            copy.deepcopy(
-                entity
-            )
-            for entity in best_match["entities"]
+            copy.deepcopy(entity)
+            for entity
+            in best_match["entities"]
         ),
     )
 
 
 class DeviceCatalog:
-    """Remote LocalTuya device catalog with safe in-memory fallback."""
+    """Remote LocalTuya device catalog with persistent fallback."""
 
     def __init__(
         self,
         hass,
         *,
         url: str = CATALOG_URL,
+        session: Any | None = None,
+        store: Any | None = None,
     ) -> None:
         """Initialize catalog client."""
         self._hass = hass
         self._url = url
-        self._session = async_get_clientsession(
-            hass
+
+        self._session = (
+            session
+            if session is not None
+            else async_get_clientsession(
+                hass
+            )
+        )
+
+        self._store = (
+            store
+            if store is not None
+            else Store(
+                hass,
+                CATALOG_STORAGE_VERSION,
+                CATALOG_STORAGE_KEY,
+            )
         )
 
         self._catalog: dict[
@@ -310,6 +485,8 @@ class DeviceCatalog:
 
         self._etag: str | None = None
 
+        self._cache_loaded = False
+
     @property
     def catalog(
         self,
@@ -317,17 +494,108 @@ class DeviceCatalog:
         """Return currently loaded catalog."""
         return self._catalog
 
+    @property
+    def mapping_count(self) -> int:
+        """Return number of active mappings."""
+        if self._catalog is None:
+            return 0
+
+        return len(
+            self._catalog.get(
+                "mappings",
+                [],
+            )
+        )
+
+    @property
+    def cache_loaded(self) -> bool:
+        """Return whether catalog was restored from persistent cache."""
+        return self._cache_loaded
+
+    async def async_load_cache(
+        self,
+    ) -> bool:
+        """Restore last valid catalog from Home Assistant storage."""
+        try:
+            stored = (
+                await self._store.async_load()
+            )
+        except Exception as ex:
+            _LOGGER.debug(
+                "Unable to load LocalTuya device catalog cache: %s",
+                ex,
+            )
+            return False
+
+        if not isinstance(stored, dict):
+            return False
+
+        try:
+            validated = validate_catalog(
+                stored.get("catalog")
+            )
+        except ValueError as ex:
+            _LOGGER.debug(
+                "Ignoring invalid cached LocalTuya catalog: %s",
+                ex,
+            )
+            return False
+
+        self._catalog = validated
+        self._cache_loaded = True
+
+        if stored.get("url") == self._url:
+            etag = stored.get("etag")
+
+            if isinstance(etag, str):
+                self._etag = etag
+
+        _LOGGER.info(
+            "Loaded cached LocalTuya device catalog with %s mappings",
+            self.mapping_count,
+        )
+
+        return True
+
+    async def _async_save_cache(
+        self,
+    ) -> bool:
+        """Persist currently valid catalog."""
+        if self._catalog is None:
+            return False
+
+        try:
+            await self._store.async_save(
+                {
+                    "url": self._url,
+                    "etag": self._etag,
+                    "catalog":
+                        self._catalog,
+                }
+            )
+        except Exception as ex:
+            _LOGGER.debug(
+                "Unable to save LocalTuya device catalog cache: %s",
+                ex,
+            )
+            return False
+
+        return True
+
     async def async_refresh(
         self,
     ) -> bool:
         """Download and validate latest catalog.
 
-        Existing valid catalog remains active if refresh fails.
+        The current in-memory or cached catalog remains active
+        whenever the remote refresh fails.
         """
         headers = {}
 
         if self._etag:
-            headers["If-None-Match"] = self._etag
+            headers[
+                "If-None-Match"
+            ] = self._etag
 
         try:
             async with self._session.get(
@@ -336,7 +604,10 @@ class DeviceCatalog:
                 timeout=REQUEST_TIMEOUT,
             ) as response:
                 if response.status == 304:
-                    return True
+                    return (
+                        self._catalog
+                        is not None
+                    )
 
                 if response.status != 200:
                     _LOGGER.debug(
@@ -353,19 +624,25 @@ class DeviceCatalog:
                     payload
                 )
 
+                # Only replace the current catalog after the
+                # entire remote payload has validated.
                 self._catalog = validated
 
-                self._etag = response.headers.get(
+                etag = response.headers.get(
                     "ETag"
                 )
 
+                self._etag = (
+                    etag
+                    if isinstance(etag, str)
+                    else None
+                )
+
+                await self._async_save_cache()
+
                 _LOGGER.info(
-                    "Loaded LocalTuya device catalog with %s mappings",
-                    len(
-                        validated[
-                            "mappings"
-                        ]
-                    ),
+                    "Loaded remote LocalTuya device catalog with %s mappings",
+                    self.mapping_count,
                 )
 
                 return True

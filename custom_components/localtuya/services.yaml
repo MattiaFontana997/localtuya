@@ -13,3 +13,13 @@ set_dp:
     value:
       description: New value to set
       example: False
+refresh_device_catalog:
+  description: Refresh the remote LocalTuya community device catalog.
+
+export_device_mapping:
+  description: Generate a privacy-safe community mapping for a configured LocalTuya device.
+  fields:
+    device_id:
+      description: Tuya device ID to export. The ID itself is never included in the exported mapping.
+      required: true
+      example: bf1234567890abcdef

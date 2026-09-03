@@ -299,9 +299,10 @@ async def async_get_cloud_entity_candidates(
 
     # Remote catalog extends the built-in mapper.
     #
-    # Existing mapper candidates always remain valid. The
-    # catalog may add product-specific configurations, but
-    # only when the mapping fingerprint matches the LAN DPS.
+    # Product-specific community mappings must never remove
+    # or replace behaviour already discovered by the built-in
+    # mapper. When both identify the same entity, the catalog
+    # may only fill configuration keys that are still missing.
     catalog_client = domain_data.get(
         DATA_DEVICE_CATALOG
     )
@@ -319,14 +320,6 @@ async def async_get_cloud_entity_candidates(
                 catalog_match.mapping_id,
                 catalog_match.product_id,
             )
-
-            existing_keys = {
-                (
-                    candidate.platform,
-                    candidate.primary_dp,
-                )
-                for candidate in candidates
-            }
 
             for remote_entity in (
                 catalog_match.entities
@@ -356,14 +349,132 @@ async def async_get_cloud_entity_candidates(
                 if primary_dp not in detected_ids:
                     continue
 
-                key = (
-                    platform,
-                    primary_dp,
+                config[CONF_ID] = primary_dp
+                config[CONF_PLATFORM] = platform
+
+                if not config.get(
+                    CONF_FRIENDLY_NAME
+                ):
+                    device_label = str(
+                        mapper_device.get("name")
+                        or mapper_device.get(
+                            "product_name"
+                        )
+                        or mapper_device.get(
+                            "productName"
+                        )
+                        or "Tuya Device"
+                    )
+
+                    config[
+                        CONF_FRIENDLY_NAME
+                    ] = (
+                        f"{device_label} "
+                        f"{platform.replace('_', ' ').title()} "
+                        f"DP {primary_dp}"
+                    )
+
+                catalog_marker = (
+                    f"catalog:{catalog_match.mapping_id}"
                 )
 
-                # Never replace a mapping already produced by
-                # the built-in mapper.
-                if key in existing_keys:
+                catalog_refs = list(
+                    catalog_match.required_dps
+                )
+
+                if primary_dp not in catalog_refs:
+                    catalog_refs.append(
+                        primary_dp
+                    )
+
+                existing_index = next(
+                    (
+                        index
+                        for index, candidate
+                        in enumerate(candidates)
+                        if (
+                            candidate.platform
+                            == platform
+                            and candidate.primary_dp
+                            == primary_dp
+                        )
+                    ),
+                    None,
+                )
+
+                if existing_index is not None:
+                    existing = candidates[
+                        existing_index
+                    ]
+
+                    merged_config = dict(
+                        existing.config
+                    )
+
+                    # Built-in behaviour wins. The remote
+                    # catalog may only add missing knowledge.
+                    for config_key, config_value in (
+                        config.items()
+                    ):
+                        if config_key in {
+                            CONF_ID,
+                            CONF_PLATFORM,
+                            CONF_FRIENDLY_NAME,
+                        }:
+                            continue
+
+                        merged_config.setdefault(
+                            config_key,
+                            config_value,
+                        )
+
+                    referenced_dps = list(
+                        existing.referenced_dps
+                        or (
+                            existing.primary_dp,
+                        )
+                    )
+
+                    for dp_id in catalog_refs:
+                        if (
+                            dp_id
+                            not in referenced_dps
+                        ):
+                            referenced_dps.append(
+                                dp_id
+                            )
+
+                    matched_codes = list(
+                        existing.matched_codes
+                    )
+
+                    if (
+                        catalog_marker
+                        not in matched_codes
+                    ):
+                        matched_codes.append(
+                            catalog_marker
+                        )
+
+                    candidates[
+                        existing_index
+                    ] = EntityCandidate(
+                        platform=existing.platform,
+                        primary_dp=(
+                            existing.primary_dp
+                        ),
+                        confidence=(
+                            existing.confidence
+                        ),
+                        config=merged_config,
+                        matched_codes=tuple(
+                            matched_codes
+                        ),
+                        referenced_dps=tuple(
+                            referenced_dps
+                        ),
+                    )
+
                     continue
 
                 confidence = (
@@ -383,16 +494,12 @@ async def async_get_cloud_entity_candidates(
                         confidence=confidence,
                         config=config,
                         matched_codes=(
-                            f"catalog:{catalog_match.mapping_id}",
+                            catalog_marker,
                         ),
-                        referenced_dps=(
-                            primary_dp,
+                        referenced_dps=tuple(
+                            catalog_refs
                         ),
                     )
-                )
-
-                existing_keys.add(
-                    key
                 )
 
     accepted = []

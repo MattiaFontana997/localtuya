@@ -23,7 +23,7 @@ from homeassistant.const import (
     EVENT_HOMEASSISTANT_STOP,
     SERVICE_RELOAD,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.event import async_track_time_interval
@@ -44,6 +44,7 @@ from .const import (
     TUYA_DEVICES,
 )
 from .device_catalog import DeviceCatalog
+from .mapping_export import build_mapping_submission
 from .discovery import TuyaDiscovery
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ LOADED_PLATFORMS = "loaded_platforms"
 LOADED_DEVICES = "loaded_devices"
 
 RECONNECT_INTERVAL = timedelta(seconds=60)
+CATALOG_REFRESH_INTERVAL = timedelta(hours=24)
 
 CONF_DP = "dp"
 CONF_VALUE = "value"
@@ -62,6 +64,22 @@ SERVICE_SET_DP_SCHEMA = vol.Schema(
         vol.Required(CONF_DEVICE_ID): cv.string,
         vol.Required(CONF_DP): int,
         vol.Required(CONF_VALUE): object,
+    }
+)
+
+SERVICE_REFRESH_DEVICE_CATALOG = (
+    "refresh_device_catalog"
+)
+
+SERVICE_EXPORT_DEVICE_MAPPING = (
+    "export_device_mapping"
+)
+
+SERVICE_EXPORT_DEVICE_MAPPING_SCHEMA = vol.Schema(
+    {
+        vol.Required(
+            CONF_DEVICE_ID
+        ): cv.string,
     }
 )
 
@@ -76,7 +94,12 @@ async def async_setup(hass: HomeAssistant, config: dict):
         device_catalog
     )
 
-    # Catalog availability must never block LocalTuya startup.
+    # Restore the last valid catalog before attempting any
+    # network access. LocalTuya therefore remains usable when
+    # GitHub or the Internet is unavailable.
+    await device_catalog.async_load_cache()
+
+    # Remote availability must never block LocalTuya startup.
     hass.async_create_task(
         device_catalog.async_refresh()
     )
@@ -107,6 +130,73 @@ async def async_setup(hass: HomeAssistant, config: dict):
             raise HomeAssistantError("not connected to device")
 
         await device.set_dp(event.data[CONF_VALUE], event.data[CONF_DP])
+
+    async def _handle_refresh_device_catalog(service):
+        """Refresh the remote community device catalog."""
+        success = await device_catalog.async_refresh()
+
+        return {
+            "success": success,
+            "mappings": (
+                device_catalog.mapping_count
+            ),
+            "cache_loaded": (
+                device_catalog.cache_loaded
+            ),
+        }
+
+    async def _handle_export_device_mapping(service):
+        """Return a privacy-safe community mapping."""
+        dev_id = service.data[
+            CONF_DEVICE_ID
+        ]
+
+        entry = async_config_entry_by_device_id(
+            hass,
+            dev_id,
+        )
+
+        if (
+            entry is None
+            or dev_id
+            not in entry.data[CONF_DEVICES]
+        ):
+            raise HomeAssistantError(
+                "unknown LocalTuya device id"
+            )
+
+        device_data = entry.data[
+            CONF_DEVICES
+        ][dev_id]
+
+        cloud_device = {}
+
+        cloud_api = hass.data[
+            DOMAIN
+        ].get(DATA_CLOUD)
+
+        if cloud_api is not None:
+            candidate = (
+                cloud_api.device_list.get(
+                    dev_id
+                )
+            )
+
+            if isinstance(
+                candidate,
+                dict,
+            ):
+                cloud_device = candidate
+
+        try:
+            return build_mapping_submission(
+                device_data,
+                cloud_device=cloud_device,
+            )
+        except ValueError as ex:
+            raise HomeAssistantError(
+                str(ex)
+            ) from ex
 
     def _device_discovered(device):
         """Update address of device if it has changed."""
@@ -176,6 +266,11 @@ async def async_setup(hass: HomeAssistant, config: dict):
     def _shutdown(event):
         """Clean up resources when shutting down."""
         discovery.close()
+        remove_catalog_refresh()
+
+    async def _async_refresh_catalog(now):
+        """Refresh community mappings periodically."""
+        await device_catalog.async_refresh()
 
     async def _async_reconnect(now):
         """Try connecting to devices not already connected to."""
@@ -183,13 +278,48 @@ async def async_setup(hass: HomeAssistant, config: dict):
             if not device.connected:
                 device.async_connect()
 
-    async_track_time_interval(hass, _async_reconnect, RECONNECT_INTERVAL)
+    remove_catalog_refresh = (
+        async_track_time_interval(
+            hass,
+            _async_refresh_catalog,
+            CATALOG_REFRESH_INTERVAL,
+        )
+    )
+
+    async_track_time_interval(
+        hass,
+        _async_reconnect,
+        RECONNECT_INTERVAL,
+    )
 
     async_register_admin_service(
         hass,
         DOMAIN,
         SERVICE_RELOAD,
         _handle_reload,
+    )
+
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        SERVICE_REFRESH_DEVICE_CATALOG,
+        _handle_refresh_device_catalog,
+        supports_response=(
+            SupportsResponse.ONLY
+        ),
+    )
+
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        SERVICE_EXPORT_DEVICE_MAPPING,
+        _handle_export_device_mapping,
+        schema=(
+            SERVICE_EXPORT_DEVICE_MAPPING_SCHEMA
+        ),
+        supports_response=(
+            SupportsResponse.ONLY
+        ),
     )
 
     hass.services.async_register(
