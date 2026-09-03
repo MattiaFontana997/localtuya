@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "mappings": [
+    {
+      "id": "wxmbjwpt8yea7bag-ef945de926",
+      "confidence": "verified",
+      "match": {
+        "product_id": "wxmbjwpt8yea7bag",
+        "category": "wk",
+        "required_dps": [
+          1,
+          2,
+          16,
+          24,
+          32,
+          33,
+          103
+        ]
+      },
+      "entities": [
+        {
+          "platform": "climate",
+          "config": {
+            "id": 1,
+            "platform": "climate",
+            "target_temperature_dp": 16,
+            "current_temperature_dp": 24,
+            "target_precision": 0.1,
+            "precision": 0.1,
+            "temperature_unit": "celsius",
+            "min_temperature_const": 5,
+            "max_temperature_const": 35,
+            "temperature_step": 0.5,
+            "preset_dp": 2,
+            "preset_set": "auto/manual/temporary/boost/holiday",
+            "hvac_mode_dp": 103,
+            "hvac_mode_set": "heatcool_heat/heatcool_cool/heatcool_heatcool",
+            "away_temperature_dp": 32
+          },
+          "override_keys": [
+            "preset_set"
+          ]
+        },
+        {
+          "platform": "number",
+          "config": {
+            "id": 32,
+            "platform": "number",
+            "min_value": 5,
+            "max_value": 35,
+            "step_size": 0.5,
+            "restore_on_reconnect": false,
+            "is_passive_entity": false,
+            "scaling": 0.1,
+            "unit_of_measurement": "°C"
+          }
+        },
+        {
+          "platform": "number",
+          "config": {
+            "id": 33,
+            "platform": "number",
+            "min_value": 0,
+            "max_value": 99,
+            "step_size": 1,
+            "restore_on_reconnect": false,
+            "is_passive_entity": false,
+            "unit_of_measurement": "day"
+          }
+        }
+      ]
+    }
+  ]
+}

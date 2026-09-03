@@ -264,8 +264,8 @@ class DeviceMapperTests(unittest.TestCase):
             )
         )
 
-    def test_generic_thermostat_product_override(self):
-        """Known thermostat receives verified LAN-only HVAC mode."""
+    def test_generic_thermostat_remains_product_agnostic(self):
+        """Generic mapper contains no product-specific HVAC knowledge."""
         device = {
             "name": "Termostato",
             "category": "wk",
@@ -381,24 +381,22 @@ class DeviceMapperTests(unittest.TestCase):
             climate.config["temperature_step"],
             0.5,
         )
-        self.assertEqual(
-            climate.config["hvac_mode_dp"],
-            103,
+        self.assertNotIn(
+            "hvac_mode_dp",
+            climate.config,
         )
-        self.assertEqual(
-            climate.config["hvac_mode_set"],
-            (
-                "heatcool_heat/"
-                "heatcool_cool/"
-                "heatcool_heatcool"
-            ),
+
+        self.assertNotIn(
+            "hvac_mode_set",
+            climate.config,
         )
-        self.assertIn(
+
+        self.assertNotIn(
             103,
             climate.referenced_dps,
         )
 
-    def test_product_override_does_not_leak(self):
+    def test_generic_mapper_does_not_infer_hvac_from_dp103(self):
         """DP103 alone must not activate another product's override."""
         device = {
             "name": "Other Thermostat",

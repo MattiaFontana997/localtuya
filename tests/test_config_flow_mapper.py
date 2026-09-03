@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from custom_components.localtuya.config_flow import (
     AUTO_ENTITY_SELECTION,
     LocalTuyaOptionsFlowHandler,
-    async_get_cloud_entity_candidates,
+    async_get_entity_candidates,
 )
 from custom_components.localtuya.const import (
     CONF_DEFAULT_VALUE,
@@ -114,7 +114,7 @@ class ConfigFlowMapperTests(
         )
 
         candidates = (
-            await async_get_cloud_entity_candidates(
+            await async_get_entity_candidates(
                 hass,
                 {
                     "device_id": DEVICE_ID,
@@ -252,7 +252,7 @@ class ConfigFlowMapperTests(
         )
 
         candidates = (
-            await async_get_cloud_entity_candidates(
+            await async_get_entity_candidates(
                 hass,
                 {
                     "device_id": DEVICE_ID,
@@ -471,7 +471,7 @@ class ConfigFlowMapperTests(
         )
 
         candidates = (
-            await async_get_cloud_entity_candidates(
+            await async_get_entity_candidates(
                 hass,
                 {
                     "device_id": DEVICE_ID,
@@ -573,7 +573,7 @@ class ConfigFlowMapperTests(
         )
 
         candidates = (
-            await async_get_cloud_entity_candidates(
+            await async_get_entity_candidates(
                 hass,
                 {
                     "device_id": DEVICE_ID,

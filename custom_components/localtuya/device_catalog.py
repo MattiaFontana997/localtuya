@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import copy
+import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from aiohttp import ClientError, ClientTimeout
@@ -25,6 +27,12 @@ CATALOG_URL = (
 )
 
 REQUEST_TIMEOUT = ClientTimeout(total=10)
+
+BUILTIN_CATALOG_PATH = (
+    Path(__file__).with_name(
+        "builtin_catalog.json"
+    )
+)
 
 CATALOG_STORAGE_VERSION = 1
 CATALOG_STORAGE_KEY = "localtuya.device_catalog"
@@ -77,6 +85,7 @@ class CatalogMatch:
     confidence: str
     required_dps: tuple[int, ...]
     entities: tuple[dict[str, Any], ...]
+    source: str = "remote"
 
 
 def _device_product_id(
@@ -408,6 +417,8 @@ def match_catalog_mapping(
     catalog: dict[str, Any] | None,
     device: dict[str, Any],
     available_dps: set[int],
+    *,
+    source: str = "remote",
 ) -> CatalogMatch | None:
     """Find the best compatible catalog mapping."""
     if not catalog:
@@ -459,10 +470,18 @@ def match_catalog_mapping(
         score = 100
 
         if expected_category:
-            if category != expected_category:
+            if (
+                category
+                and category
+                != expected_category
+            ):
                 continue
 
-            score += 10
+            if (
+                category
+                == expected_category
+            ):
+                score += 10
 
         score += len(required_dps)
 
@@ -491,7 +510,58 @@ def match_catalog_mapping(
             for entity
             in best_match["entities"]
         ),
+        source=source,
     )
+
+
+def load_builtin_catalog(
+    path: Path = BUILTIN_CATALOG_PATH,
+) -> dict[str, Any]:
+    """Load the bundled physically verified catalog snapshot."""
+    try:
+        payload = json.loads(
+            path.read_text(
+                encoding="utf-8"
+            )
+        )
+
+        validated = validate_catalog(
+            payload
+        )
+
+    except (
+        OSError,
+        ValueError,
+    ) as ex:
+        _LOGGER.error(
+            "Unable to load bundled LocalTuya "
+            "device catalog: %s",
+            ex,
+        )
+
+        return {
+            "schema_version":
+                CATALOG_SCHEMA_VERSION,
+            "mappings": [],
+        }
+
+    # Only physically verified mappings may ship
+    # as an offline bundled snapshot.
+    mappings = [
+        mapping
+        for mapping
+        in validated["mappings"]
+        if (
+            mapping["confidence"]
+            == "verified"
+        )
+    ]
+
+    return {
+        "schema_version":
+            CATALOG_SCHEMA_VERSION,
+        "mappings": mappings,
+    }
 
 
 class DeviceCatalog:
@@ -508,6 +578,10 @@ class DeviceCatalog:
         """Initialize catalog client."""
         self._hass = hass
         self._url = url
+
+        self._builtin_catalog = (
+            load_builtin_catalog()
+        )
 
         self._session = (
             session
@@ -544,8 +618,18 @@ class DeviceCatalog:
         return self._catalog
 
     @property
-    def mapping_count(self) -> int:
-        """Return number of active mappings."""
+    def bundled_mapping_count(self) -> int:
+        """Return number of bundled verified mappings."""
+        return len(
+            self._builtin_catalog.get(
+                "mappings",
+                [],
+            )
+        )
+
+    @property
+    def remote_mapping_count(self) -> int:
+        """Return number of cached/remote mappings."""
         if self._catalog is None:
             return 0
 
@@ -554,6 +638,18 @@ class DeviceCatalog:
                 "mappings",
                 [],
             )
+        )
+
+    @property
+    def mapping_count(self) -> int:
+        """Return number of mappings in the preferred catalog."""
+        if self._catalog is not None:
+            return (
+                self.remote_mapping_count
+            )
+
+        return (
+            self.bundled_mapping_count
         )
 
     @property
@@ -713,9 +809,51 @@ class DeviceCatalog:
         device: dict[str, Any],
         available_dps: set[int],
     ) -> CatalogMatch | None:
-        """Match a device against current catalog."""
-        return match_catalog_mapping(
-            self._catalog,
-            device,
-            available_dps,
+        """Return the safest compatible product-specific mapping."""
+        remote_match = (
+            match_catalog_mapping(
+                self._catalog,
+                device,
+                available_dps,
+                source="remote",
+            )
         )
+
+        bundled_match = (
+            match_catalog_mapping(
+                self._builtin_catalog,
+                device,
+                available_dps,
+                source="bundled",
+            )
+        )
+
+        if remote_match is None:
+            return bundled_match
+
+        if bundled_match is None:
+            return remote_match
+
+        confidence_rank = {
+            "experimental": 0,
+            "community": 1,
+            "verified": 2,
+        }
+
+        # Never allow newer but less-trusted remote data
+        # to replace a physically verified bundled mapping.
+        if (
+            confidence_rank.get(
+                remote_match.confidence,
+                0,
+            )
+            < confidence_rank.get(
+                bundled_match.confidence,
+                0,
+            )
+        ):
+            return bundled_match
+
+        # Equal-or-higher trust means the remote mapping
+        # represents the preferred newer knowledge.
+        return remote_match

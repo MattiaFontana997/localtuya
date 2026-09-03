@@ -41,6 +41,7 @@ from .const import (
     CONF_MODEL,
     CONF_NO_CLOUD,
     CONF_PRODUCT_NAME,
+    CONF_PRODUCT_KEY,
     CONF_PROTOCOL_VERSION,
     CONF_RESET_DPIDS,
     CONF_SETUP_CLOUD,
@@ -54,9 +55,10 @@ from .const import (
 )
 from .discovery import discover
 from .device_mapper import (
-    EntityCandidate,
     MappingConfidence,
-    build_entity_candidates,
+)
+from .mapping_resolver import (
+    resolve_entity_candidates,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -215,382 +217,152 @@ def _detected_dp_ids(dps_strings):
     return result
 
 
-async def async_get_cloud_entity_candidates(
+async def async_get_entity_candidates(
     hass,
     device_data,
     discovered_devices,
     dps_strings,
 ):
-    """Build high-confidence entity suggestions using Tuya Cloud metadata."""
-    domain_data = hass.data.get(DOMAIN, {})
-    cloud_api = domain_data.get(DATA_CLOUD)
+    """Build entity suggestions from every available mapping source."""
+    domain_data = hass.data.get(
+        DOMAIN,
+        {},
+    )
 
-    if cloud_api is None:
-        return []
-
-    device_id = device_data.get(CONF_DEVICE_ID)
+    device_id = device_data.get(
+        CONF_DEVICE_ID
+    )
 
     if not device_id:
         return []
 
-    cloud_device = cloud_api.device_list.get(device_id)
+    discovered = (
+        discovered_devices.get(
+            device_id,
+            {},
+        )
+    )
 
-    if not isinstance(cloud_device, dict):
-        return []
+    if not isinstance(
+        discovered,
+        dict,
+    ):
+        discovered = {}
 
-    try:
-        result, specification = (
-            await cloud_api.async_get_device_specification(
+    cloud_device = {}
+    specification = {}
+
+    cloud_api = domain_data.get(
+        DATA_CLOUD
+    )
+
+    # Cloud metadata is optional enrichment.
+    # A failure here must not disable bundled/cached mappings.
+    if cloud_api is not None:
+        candidate = (
+            cloud_api.device_list.get(
                 device_id
             )
         )
-    except Exception as ex:
-        _LOGGER.debug(
-            "Unable to retrieve Tuya Cloud specification "
-            "for device %s: %s",
-            device_id,
-            ex,
-        )
-        return []
 
-    if (
-        result != "ok"
-        or not isinstance(specification, dict)
-    ):
-        _LOGGER.debug(
-            "No usable Tuya Cloud specification for "
-            "device %s: %s",
-            device_id,
-            result,
-        )
-        return []
+        if isinstance(
+            candidate,
+            dict,
+        ):
+            cloud_device = candidate
 
-    discovered = discovered_devices.get(
-        device_id,
-        {},
-    )
+            try:
+                (
+                    result,
+                    cloud_specification,
+                ) = await (
+                    cloud_api
+                    .async_get_device_specification(
+                        device_id
+                    )
+                )
 
-    if not isinstance(discovered, dict):
-        discovered = {}
+                if (
+                    result == "ok"
+                    and isinstance(
+                        cloud_specification,
+                        dict,
+                    )
+                ):
+                    specification = (
+                        cloud_specification
+                    )
 
-    # Discovery contributes LAN/product information while Cloud
-    # contributes the canonical name/category/product metadata.
+                else:
+                    _LOGGER.debug(
+                        "No usable Tuya Cloud "
+                        "specification for device %s: %s",
+                        device_id,
+                        result,
+                    )
+
+            except Exception as ex:
+                _LOGGER.debug(
+                    "Unable to retrieve Tuya Cloud "
+                    "specification for device %s: %s",
+                    device_id,
+                    ex,
+                )
+
+    # LAN/discovery information is the base.
+    # Cloud metadata only supplements it.
     mapper_device = {
         **discovered,
         **cloud_device,
     }
+
+    # Existing devices may already have learned productKey
+    # from LAN discovery and stored it in their config.
+    product_key = device_data.get(
+        CONF_PRODUCT_KEY
+    )
+
+    if (
+        product_key
+        and not any(
+            mapper_device.get(key)
+            for key in (
+                "product_id",
+                "productId",
+                "product_key",
+                "productKey",
+            )
+        )
+    ):
+        mapper_device[
+            "product_key"
+        ] = product_key
 
     friendly_name = device_data.get(
         CONF_FRIENDLY_NAME
     )
 
     if friendly_name:
-        mapper_device["name"] = friendly_name
+        mapper_device[
+            "name"
+        ] = friendly_name
 
     detected_ids = _detected_dp_ids(
         dps_strings
     )
 
-    candidates = build_entity_candidates(
-        mapper_device,
-        specification,
-        available_dps=detected_ids,
-    )
-
-    # Remote catalog extends the built-in mapper.
-    #
-    # Product-specific community mappings preserve built-in
-    # behaviour by default. They may fill missing configuration
-    # and may replace an existing value only when the mapping
-    # explicitly declares that key in override_keys.
     catalog_client = domain_data.get(
         DATA_DEVICE_CATALOG
     )
 
-    if catalog_client is not None:
-        catalog_match = catalog_client.match(
-            mapper_device,
-            detected_ids,
-        )
-
-        if catalog_match is not None:
-            _LOGGER.info(
-                "Matched remote LocalTuya catalog mapping %s "
-                "for product %s",
-                catalog_match.mapping_id,
-                catalog_match.product_id,
-            )
-
-            for remote_entity in (
-                catalog_match.entities
-            ):
-                config = copy.deepcopy(
-                    remote_entity["config"]
-                )
-
-                override_keys = set(
-                    remote_entity.get(
-                        "override_keys",
-                        (),
-                    )
-                )
-
-                platform = remote_entity[
-                    "platform"
-                ]
-
-                primary_dp = config.get(
-                    CONF_ID
-                )
-
-                try:
-                    primary_dp = int(
-                        primary_dp
-                    )
-                except (
-                    TypeError,
-                    ValueError,
-                ):
-                    continue
-
-                if primary_dp not in detected_ids:
-                    continue
-
-                config[CONF_ID] = primary_dp
-                config[CONF_PLATFORM] = platform
-
-                if not config.get(
-                    CONF_FRIENDLY_NAME
-                ):
-                    device_label = str(
-                        mapper_device.get("name")
-                        or mapper_device.get(
-                            "product_name"
-                        )
-                        or mapper_device.get(
-                            "productName"
-                        )
-                        or "Tuya Device"
-                    )
-
-                    config[
-                        CONF_FRIENDLY_NAME
-                    ] = (
-                        f"{device_label} "
-                        f"{platform.replace('_', ' ').title()} "
-                        f"DP {primary_dp}"
-                    )
-
-                catalog_marker = (
-                    f"catalog:{catalog_match.mapping_id}"
-                )
-
-                catalog_refs = list(
-                    catalog_match.required_dps
-                )
-
-                if primary_dp not in catalog_refs:
-                    catalog_refs.append(
-                        primary_dp
-                    )
-
-                existing_index = next(
-                    (
-                        index
-                        for index, candidate
-                        in enumerate(candidates)
-                        if (
-                            candidate.platform
-                            == platform
-                            and candidate.primary_dp
-                            == primary_dp
-                        )
-                    ),
-                    None,
-                )
-
-                if existing_index is not None:
-                    existing = candidates[
-                        existing_index
-                    ]
-
-                    merged_config = dict(
-                        existing.config
-                    )
-
-                    # Built-in behaviour wins by default.
-                    # Only explicitly declared, validated keys
-                    # may replace an existing built-in value.
-                    override_applied = False
-
-                    for config_key, config_value in (
-                        config.items()
-                    ):
-                        if config_key in {
-                            CONF_ID,
-                            CONF_PLATFORM,
-                            CONF_FRIENDLY_NAME,
-                        }:
-                            continue
-
-                        if (
-                            config_key
-                            in override_keys
-                            and config_key
-                            in merged_config
-                        ):
-                            if (
-                                merged_config[
-                                    config_key
-                                ]
-                                != config_value
-                            ):
-                                merged_config[
-                                    config_key
-                                ] = config_value
-
-                                override_applied = True
-
-                            continue
-
-                        merged_config.setdefault(
-                            config_key,
-                            config_value,
-                        )
-
-                    referenced_dps = list(
-                        existing.referenced_dps
-                        or (
-                            existing.primary_dp,
-                        )
-                    )
-
-                    for dp_id in catalog_refs:
-                        if (
-                            dp_id
-                            not in referenced_dps
-                        ):
-                            referenced_dps.append(
-                                dp_id
-                            )
-
-                    matched_codes = list(
-                        existing.matched_codes
-                    )
-
-                    if (
-                        catalog_marker
-                        not in matched_codes
-                    ):
-                        matched_codes.append(
-                            catalog_marker
-                        )
-
-                    if (
-                        catalog_match.confidence
-                        in {
-                            "verified",
-                            "community",
-                        }
-                    ):
-                        # An exact product-specific catalog mapping,
-                        # already validated against the LAN-observed
-                        # DPS, can promote a generic suggestion.
-                        merged_confidence = (
-                            MappingConfidence.HIGH
-                        )
-
-                    elif override_applied:
-                        # Experimental mappings that replace
-                        # built-in knowledge require explicit
-                        # user approval.
-                        merged_confidence = (
-                            MappingConfidence.MEDIUM
-                        )
-
-                    else:
-                        merged_confidence = (
-                            existing.confidence
-                        )
-
-                    candidates[
-                        existing_index
-                    ] = EntityCandidate(
-                        platform=existing.platform,
-                        primary_dp=(
-                            existing.primary_dp
-                        ),
-                        confidence=(
-                            merged_confidence
-                        ),
-                        config=merged_config,
-                        matched_codes=tuple(
-                            matched_codes
-                        ),
-                        referenced_dps=tuple(
-                            referenced_dps
-                        ),
-                    )
-
-                    continue
-
-                confidence = (
-                    MappingConfidence.HIGH
-                    if catalog_match.confidence
-                    in {
-                        "verified",
-                        "community",
-                    }
-                    else MappingConfidence.MEDIUM
-                )
-
-                candidates.append(
-                    EntityCandidate(
-                        platform=platform,
-                        primary_dp=primary_dp,
-                        confidence=confidence,
-                        config=config,
-                        matched_codes=(
-                            catalog_marker,
-                        ),
-                        referenced_dps=tuple(
-                            catalog_refs
-                        ),
-                    )
-                )
-
-    accepted = []
-
-    for candidate in candidates:
-        if (
-            candidate.confidence
-            == MappingConfidence.LOW
-        ):
-            continue
-
-        referenced_dps = (
-            candidate.referenced_dps
-            or (candidate.primary_dp,)
-        )
-
-        # Cloud metadata can theoretically be stale. For the
-        # first automatic mapper version only accept candidates
-        # whose referenced DPs were also observed over LAN.
-        if not set(referenced_dps).issubset(
-            detected_ids
-        ):
-            _LOGGER.debug(
-                "Ignoring Cloud mapping candidate %s DP %s: "
-                "referenced DPS %s not all detected over LAN",
-                candidate.platform,
-                candidate.primary_dp,
-                referenced_dps,
-            )
-            continue
-
-        accepted.append(candidate)
-
-    return accepted
+    return resolve_entity_candidates(
+        mapper_device,
+        specification,
+        detected_ids,
+        catalog_client=(
+            catalog_client
+        ),
+    )
 
 
 async def platform_schema(
@@ -1163,7 +935,7 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                 ] = resolved_protocol
 
                 self.auto_candidates = (
-                    await async_get_cloud_entity_candidates(
+                    await async_get_entity_candidates(
                         self.hass,
                         self.device_data,
                         self.discovered_devices,
@@ -1250,7 +1022,7 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         self,
         user_input=None,
     ):
-        """Review entities suggested from Cloud metadata."""
+        """Review automatically resolved entity suggestions."""
         options = {
             str(index): (
                 f"{candidate.config.get(CONF_FRIENDLY_NAME, 'Tuya entity')} "
