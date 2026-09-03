@@ -48,11 +48,13 @@ from .const import (
     CONF_ENABLE_ADD_ENTITIES,
     DATA_CLOUD,
     DATA_DISCOVERY,
+    DATA_DEVICE_CATALOG,
     DOMAIN,
     PLATFORMS,
 )
 from .discovery import discover
 from .device_mapper import (
+    EntityCandidate,
     MappingConfidence,
     build_entity_candidates,
 )
@@ -294,6 +296,104 @@ async def async_get_cloud_entity_candidates(
         specification,
         available_dps=detected_ids,
     )
+
+    # Remote catalog extends the built-in mapper.
+    #
+    # Existing mapper candidates always remain valid. The
+    # catalog may add product-specific configurations, but
+    # only when the mapping fingerprint matches the LAN DPS.
+    catalog_client = domain_data.get(
+        DATA_DEVICE_CATALOG
+    )
+
+    if catalog_client is not None:
+        catalog_match = catalog_client.match(
+            mapper_device,
+            detected_ids,
+        )
+
+        if catalog_match is not None:
+            _LOGGER.info(
+                "Matched remote LocalTuya catalog mapping %s "
+                "for product %s",
+                catalog_match.mapping_id,
+                catalog_match.product_id,
+            )
+
+            existing_keys = {
+                (
+                    candidate.platform,
+                    candidate.primary_dp,
+                )
+                for candidate in candidates
+            }
+
+            for remote_entity in (
+                catalog_match.entities
+            ):
+                config = copy.deepcopy(
+                    remote_entity["config"]
+                )
+
+                platform = remote_entity[
+                    "platform"
+                ]
+
+                primary_dp = config.get(
+                    CONF_ID
+                )
+
+                try:
+                    primary_dp = int(
+                        primary_dp
+                    )
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+                    continue
+
+                if primary_dp not in detected_ids:
+                    continue
+
+                key = (
+                    platform,
+                    primary_dp,
+                )
+
+                # Never replace a mapping already produced by
+                # the built-in mapper.
+                if key in existing_keys:
+                    continue
+
+                confidence = (
+                    MappingConfidence.HIGH
+                    if catalog_match.confidence
+                    in {
+                        "verified",
+                        "community",
+                    }
+                    else MappingConfidence.MEDIUM
+                )
+
+                candidates.append(
+                    EntityCandidate(
+                        platform=platform,
+                        primary_dp=primary_dp,
+                        confidence=confidence,
+                        config=config,
+                        matched_codes=(
+                            f"catalog:{catalog_match.mapping_id}",
+                        ),
+                        referenced_dps=(
+                            primary_dp,
+                        ),
+                    )
+                )
+
+                existing_keys.add(
+                    key
+                )
 
     accepted = []
 

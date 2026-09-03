@@ -145,3 +145,6 @@ CONF_OPTIONS_FRIENDLY = "select_options_friendly"
 # States
 ATTR_STATE = "raw_state"
 CONF_RESTORE_ON_RECONNECT = "restore_on_reconnect"
+
+# Remote device catalog
+DATA_DEVICE_CATALOG = "device_catalog"

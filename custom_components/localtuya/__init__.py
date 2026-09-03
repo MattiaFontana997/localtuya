@@ -39,9 +39,11 @@ from .const import (
     CONF_USER_ID,
     DATA_CLOUD,
     DATA_DISCOVERY,
+    DATA_DEVICE_CATALOG,
     DOMAIN,
     TUYA_DEVICES,
 )
+from .device_catalog import DeviceCatalog
 from .discovery import TuyaDiscovery
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,6 +70,16 @@ async def async_setup(hass: HomeAssistant, config: dict):
     """Set up the LocalTuya integration component."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][TUYA_DEVICES] = {}
+
+    device_catalog = DeviceCatalog(hass)
+    hass.data[DOMAIN][DATA_DEVICE_CATALOG] = (
+        device_catalog
+    )
+
+    # Catalog availability must never block LocalTuya startup.
+    hass.async_create_task(
+        device_catalog.async_refresh()
+    )
 
     device_cache = {}
 
