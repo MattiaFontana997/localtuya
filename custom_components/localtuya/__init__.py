@@ -98,9 +98,16 @@ async def async_setup(hass: HomeAssistant, config: dict):
 
     def _device_discovered(device):
         """Update address of device if it has changed."""
-        device_ip = device["ip"]
-        device_id = device["gwId"]
-        product_key = device["productKey"]
+        device_ip = device.get("ip")
+        device_id = device.get("gwId") or device.get("id")
+        product_key = device.get("productKey")
+
+        if not device_id or not device_ip:
+            _LOGGER.debug(
+                "Ignoring incomplete Tuya discovery payload: %s",
+                device,
+            )
+            return
 
         # If device is not in cache, check if a config entry exists
         entry = async_config_entry_by_device_id(hass, device_id)
@@ -127,7 +134,10 @@ async def async_setup(hass: HomeAssistant, config: dict):
             new_data[CONF_DEVICES][device_id][CONF_HOST] = device_ip
             device_cache[device_id] = device_ip
 
-        if dev_entry.get(CONF_PRODUCT_KEY) != product_key:
+        if (
+            product_key is not None
+            and dev_entry.get(CONF_PRODUCT_KEY) != product_key
+        ):
             updated = True
             new_data[CONF_DEVICES][device_id][CONF_PRODUCT_KEY] = product_key
 
