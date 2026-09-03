@@ -9,8 +9,13 @@ from custom_components.localtuya.config_flow import (
     async_get_cloud_entity_candidates,
 )
 from custom_components.localtuya.const import (
+    CONF_DEFAULT_VALUE,
     DATA_CLOUD,
+    DATA_DEVICE_CATALOG,
     DOMAIN,
+)
+from custom_components.localtuya.device_catalog import (
+    CatalogMatch,
 )
 
 
@@ -186,6 +191,139 @@ class ConfigFlowMapperTests(
             set(defaults)
             & set(medium_indexes)
         )
+
+
+    async def test_builtin_mapping_wins_and_catalog_only_enriches(
+        self,
+    ):
+        """Remote catalog must not replace built-in mapper data."""
+
+        class FakeCatalog:
+            """Return a catalog mapping for the built-in switch."""
+
+            def match(
+                self,
+                device,
+                available_dps,
+            ):
+                self.last_device = device
+                self.last_dps = set(
+                    available_dps
+                )
+
+                return CatalogMatch(
+                    mapping_id="catalog-precedence-test",
+                    product_id="catalog-test-product",
+                    confidence="verified",
+                    required_dps=(1,),
+                    entities=(
+                        {
+                            "platform": "switch",
+                            "config": {
+                                "id": 1,
+                                "platform": "switch",
+
+                                # This must NOT replace the
+                                # built-in friendly name.
+                                "friendly_name":
+                                    "Remote Catalog Name",
+
+                                # This does not exist in the
+                                # generic candidate and therefore
+                                # may safely enrich it.
+                                CONF_DEFAULT_VALUE:
+                                    "catalog-added-value",
+                            },
+                        },
+                    ),
+                )
+
+        catalog = FakeCatalog()
+
+        hass = SimpleNamespace(
+            data={
+                DOMAIN: {
+                    DATA_CLOUD:
+                        FakeCloud(),
+                    DATA_DEVICE_CATALOG:
+                        catalog,
+                }
+            }
+        )
+
+        candidates = (
+            await async_get_cloud_entity_candidates(
+                hass,
+                {
+                    "device_id": DEVICE_ID,
+                    "friendly_name":
+                        "Generic Device",
+                },
+                {},
+                [
+                    "1 (value: True)",
+                    "10 (value: 0)",
+                    "11 (value: memory)",
+                ],
+            )
+        )
+
+        switch_candidate = next(
+            candidate
+            for candidate in candidates
+            if (
+                candidate.platform
+                == "switch"
+                and candidate.primary_dp
+                == 1
+            )
+        )
+
+        # Built-in mapping still owns identity/name/confidence.
+        self.assertEqual(
+            switch_candidate.config[
+                "friendly_name"
+            ],
+            "Generic Device",
+        )
+
+        self.assertEqual(
+            switch_candidate.confidence.value,
+            "high",
+        )
+
+        # Catalog was allowed to add missing knowledge.
+        self.assertEqual(
+            switch_candidate.config[
+                CONF_DEFAULT_VALUE
+            ],
+            "catalog-added-value",
+        )
+
+        # Both sources remain traceable.
+        self.assertIn(
+            "switch_1",
+            switch_candidate.matched_codes,
+        )
+
+        self.assertIn(
+            "catalog:catalog-precedence-test",
+            switch_candidate.matched_codes,
+        )
+
+        # LAN safety remains active.
+        self.assertEqual(
+            set(
+                switch_candidate.referenced_dps
+            ),
+            {1},
+        )
+
+        self.assertEqual(
+            catalog.last_dps,
+            {1, 10, 11},
+        )
+
 
 
 if __name__ == "__main__":
