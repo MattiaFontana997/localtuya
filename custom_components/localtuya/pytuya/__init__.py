@@ -1020,10 +1020,19 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
     async def exchange(self, command, dps=None):
         """Send and receive a message, returning response from device."""
-        if self.version == 3.4 and self.real_local_key == self.local_key:
-            self.debug("3.4 device: negotiating a new session key")
+        if (
+            self.version in (3.4, 3.5)
+            and self.real_local_key == self.local_key
+        ):
+            self.debug(
+                "Protocol %.1f device: negotiating a new session key",
+                self.version,
+            )
             if not await self._negotiate_session_key():
-                self.error("3.4 session key negotiation failed")
+                self.error(
+                    "Protocol %.1f session key negotiation failed",
+                    self.version,
+                )
                 await self.close()
                 return None
         self.debug(
@@ -1248,20 +1257,31 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         return json_payload
 
     async def _negotiate_session_key(self):
-        """Negotiate a fresh protocol 3.4 session key."""
+        """Negotiate a fresh protocol 3.4/3.5 session key."""
         self.local_key = self.real_local_key
         self.dispatcher.local_key = self.real_local_key
 
-        # A fresh cryptographically secure nonce must be used for every handshake.
+        # A fresh cryptographically secure nonce must be used
+        # for every session negotiation.
         self.local_nonce = secrets.token_bytes(16)
         self.remote_nonce = b""
 
         rkey = await self.exchange_quick(
-            MessagePayload(SESS_KEY_NEG_START, self.local_nonce), 2
+            MessagePayload(
+                SESS_KEY_NEG_START,
+                self.local_nonce,
+            ),
+            2,
         )
 
-        if not rkey or not isinstance(rkey, TuyaMessage) or len(rkey.payload) < 48:
-            self.debug("Session key negotiation failed on step 1")
+        if (
+            not rkey
+            or not isinstance(rkey, TuyaMessage)
+            or len(rkey.payload) < 48
+        ):
+            self.debug(
+                "Session key negotiation failed on step 1"
+            )
             return False
 
         if rkey.cmd != SESS_KEY_NEG_RESP:
@@ -1273,15 +1293,29 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
         payload = rkey.payload
 
-        try:
-            cipher = AESCipher(self.real_local_key)
-            payload = cipher.decrypt(payload, False, decode_text=False)
-        except Exception as ex:
-            self.debug(
-                "Session key negotiation response decrypt failed: %s",
-                ex,
-            )
-            return False
+        # Protocol 3.4 carries the negotiation response
+        # encrypted inside its 55AA/HMAC envelope.
+        #
+        # Protocol 3.5 is already AES-GCM decrypted and
+        # authenticated by unpack_message().
+        if self.version == 3.4:
+            try:
+                cipher = AESCipher(
+                    self.real_local_key
+                )
+
+                payload = cipher.decrypt(
+                    payload,
+                    False,
+                    decode_text=False,
+                )
+
+            except Exception as ex:
+                self.debug(
+                    "Session key negotiation response decrypt failed: %s",
+                    ex,
+                )
+                return False
 
         if len(payload) < 48:
             self.debug(
@@ -1300,8 +1334,13 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
         received_hmac = payload[16:48]
 
-        if not hmac.compare_digest(expected_hmac, received_hmac):
-            self.debug("Session key negotiation HMAC verification failed")
+        if not hmac.compare_digest(
+            expected_hmac,
+            received_hmac,
+        ):
+            self.debug(
+                "Session key negotiation HMAC verification failed"
+            )
             return False
 
         response_hmac = hmac.new(
@@ -1311,49 +1350,135 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         ).digest()
 
         await self.exchange_quick(
-            MessagePayload(SESS_KEY_NEG_FINISH, response_hmac),
+            MessagePayload(
+                SESS_KEY_NEG_FINISH,
+                response_hmac,
+            ),
             None,
         )
 
         session_seed = bytes(
-            a ^ b for a, b in zip(self.local_nonce, self.remote_nonce)
+            a ^ b
+            for a, b
+            in zip(
+                self.local_nonce,
+                self.remote_nonce,
+            )
         )
 
         try:
-            cipher = AESCipher(self.real_local_key)
-            session_key = cipher.encrypt(
-                session_seed,
-                False,
-                pad=False,
-            )
+            if self.version == 3.4:
+                cipher = AESCipher(
+                    self.real_local_key
+                )
+
+                session_key = cipher.encrypt(
+                    session_seed,
+                    False,
+                    pad=False,
+                )
+
+            else:
+                # Protocol 3.5 derives the session key from
+                # the first 16 bytes of AES-GCM ciphertext.
+                #
+                # IV = first 12 bytes of the client nonce.
+                encrypted = AESGCM(
+                    self.real_local_key
+                ).encrypt(
+                    self.local_nonce[:12],
+                    session_seed,
+                    None,
+                )
+
+                session_key = encrypted[:16]
+
         except Exception as ex:
-            self.debug("Session key derivation failed: %s", ex)
+            self.debug(
+                "Session key derivation failed: %s",
+                ex,
+            )
             return False
 
         self.local_key = session_key
         self.dispatcher.local_key = session_key
 
-        self.debug("Session key negotiation succeeded")
+        self.debug(
+            "Session key negotiation succeeded"
+        )
+
         return True
 
     # adds protocol header (if needed) and encrypts
     def _encode_message(self, msg):
+        """Encode one Tuya LAN message."""
         hmac_key = None
         payload = msg.payload
-        self.cipher = AESCipher(self.local_key)
-        if self.version == 3.4:
+
+        self.cipher = AESCipher(
+            self.local_key
+        )
+
+        if self.version >= 3.4:
             hmac_key = self.local_key
-            if msg.cmd not in NO_PROTOCOL_HEADER_CMDS:
-                # add the 3.x header
-                payload = self.version_header + payload
-            self.debug("final payload for cmd %r: %r", msg.cmd, payload)
-            payload = self.cipher.encrypt(payload, False)
+
+            if (
+                msg.cmd
+                not in NO_PROTOCOL_HEADER_CMDS
+            ):
+                payload = (
+                    self.version_header
+                    + payload
+                )
+
+            self.debug(
+                "final payload for cmd %r: %r",
+                msg.cmd,
+                payload,
+            )
+
+            if self.version >= 3.5:
+                encoded_msg = TuyaMessage(
+                    self.seqno,
+                    msg.cmd,
+                    None,
+                    payload,
+                    0,
+                    True,
+                    PREFIX_6699_VALUE,
+                    None,
+                )
+
+                self.seqno += 1
+                self.cipher = None
+
+                return pack_message(
+                    encoded_msg,
+                    hmac_key=hmac_key,
+                )
+
+            # Protocol 3.4 keeps 55AA framing and encrypts
+            # the payload using the negotiated session key.
+            payload = self.cipher.encrypt(
+                payload,
+                False,
+            )
+
         elif self.version >= 3.2:
-            # expect to connect and then disconnect to set new
-            payload = self.cipher.encrypt(payload, False)
-            if msg.cmd not in NO_PROTOCOL_HEADER_CMDS:
-                # add the 3.x header
-                payload = self.version_header + payload
+            payload = self.cipher.encrypt(
+                payload,
+                False,
+            )
+
+            if (
+                msg.cmd
+                not in NO_PROTOCOL_HEADER_CMDS
+            ):
+                payload = (
+                    self.version_header
+                    + payload
+                )
+
         elif msg.cmd == CONTROL:
             # need to encrypt
             payload = self.cipher.encrypt(payload)
@@ -1376,11 +1501,22 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             )
 
         self.cipher = None
-        msg = TuyaMessage(self.seqno, msg.cmd, 0, payload, 0, True)
-        self.seqno += 1  # increase message sequence number
-        buffer = pack_message(msg, hmac_key=hmac_key)
-        # self.debug("payload encrypted with key %r => %r", self.local_key, binascii.hexlify(buffer))
-        return buffer
+
+        encoded_msg = TuyaMessage(
+            self.seqno,
+            msg.cmd,
+            0,
+            payload,
+            0,
+            True,
+        )
+
+        self.seqno += 1
+
+        return pack_message(
+            encoded_msg,
+            hmac_key=hmac_key,
+        )
 
     def _generate_payload(self, command, data=None, gwId=None, devId=None, uid=None):
         """
