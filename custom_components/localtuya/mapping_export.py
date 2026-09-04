@@ -42,17 +42,29 @@ _EXPLICIT_DP_REFERENCE_KEYS = {
 
 # These values must never be exported even if a malformed/manual
 # entity configuration happened to contain them.
+# Normalized sensitive keys. Separators and case are removed
+# before comparison, so variants such as localKey, local-key,
+# LOCAL_KEY and clientSecret are treated identically.
 _SENSITIVE_ENTITY_KEYS = {
-    "local_key",
-    "device_id",
+    "localkey",
+    "deviceid",
     "host",
     "ip",
     "gwid",
-    "client_id",
-    "client_secret",
-    "user_id",
+    "clientid",
+    "clientsecret",
+    "userid",
     "username",
     "region",
+    "ownerid",
+    "uuid",
+    "uid",
+    "mac",
+    "latitude",
+    "longitude",
+    "lat",
+    "lon",
+    "friendlyname",
 }
 
 
@@ -81,10 +93,12 @@ def _scrub_sensitive_keys(
         result = {}
 
         for key, child in value.items():
-            normalized_key = (
+            normalized_key = re.sub(
+                r"[^a-z0-9]+",
+                "",
                 str(key)
                 .strip()
-                .lower()
+                .lower(),
             )
 
             if (
@@ -319,10 +333,167 @@ def _safe_mapping_id_part(
     return value or "tuya-product"
 
 
+def _mapping_entity_identity(
+    entity: Any,
+) -> tuple[str, int] | None:
+    """Return platform/DP identity for an exported or baseline entity."""
+    if not isinstance(
+        entity,
+        dict,
+    ):
+        return None
+
+    platform = entity.get(
+        "platform"
+    )
+
+    config = entity.get(
+        "config"
+    )
+
+    if (
+        not isinstance(
+            platform,
+            str,
+        )
+        or not isinstance(
+            config,
+            dict,
+        )
+    ):
+        return None
+
+    primary_dp = config.get(
+        CONF_ID
+    )
+
+    if isinstance(
+        primary_dp,
+        bool,
+    ):
+        return None
+
+    try:
+        primary_dp = int(
+            primary_dp
+        )
+    except (
+        TypeError,
+        ValueError,
+    ):
+        return None
+
+    if primary_dp <= 0:
+        return None
+
+    return (
+        platform,
+        primary_dp,
+    )
+
+
+def _apply_baseline_override_keys(
+    entities: list[dict[str, Any]],
+    baseline_entities: list[dict[str, Any]]
+    | None,
+) -> None:
+    """Mark only settings that must replace generic knowledge."""
+    if not isinstance(
+        baseline_entities,
+        list,
+    ):
+        return
+
+    baselines = {}
+
+    for entity in baseline_entities:
+        identity = (
+            _mapping_entity_identity(
+                entity
+            )
+        )
+
+        if identity is None:
+            continue
+
+        config = entity.get(
+            "config"
+        )
+
+        if isinstance(
+            config,
+            dict,
+        ):
+            baselines[
+                identity
+            ] = config
+
+    protected_keys = {
+        CONF_ID,
+        CONF_PLATFORM,
+        CONF_FRIENDLY_NAME,
+    }
+
+    for entity in entities:
+        identity = (
+            _mapping_entity_identity(
+                entity
+            )
+        )
+
+        if identity is None:
+            continue
+
+        baseline = baselines.get(
+            identity
+        )
+
+        if not isinstance(
+            baseline,
+            dict,
+        ):
+            continue
+
+        config = entity[
+            "config"
+        ]
+
+        override_keys = []
+
+        for (
+            key,
+            value,
+        ) in config.items():
+            if key in protected_keys:
+                continue
+
+            # A catalog override is necessary only
+            # when generic mapping already owns the
+            # same key with a different value.
+            if (
+                key in baseline
+                and baseline[key]
+                != value
+            ):
+                override_keys.append(
+                    key
+                )
+
+        if override_keys:
+            entity[
+                "override_keys"
+            ] = sorted(
+                override_keys
+            )
+
+
+
 def build_mapping_submission(
     device_data: dict[str, Any],
     *,
     cloud_device: dict[str, Any] | None = None,
+    baseline_entities: list[dict[str, Any]]
+    | None = None,
 ) -> dict[str, Any]:
     """Build a privacy-safe community catalog submission."""
     if not isinstance(
@@ -382,6 +553,11 @@ def build_mapping_submission(
         raise ValueError(
             "Device has no exportable entities"
         )
+
+    _apply_baseline_override_keys(
+        entities,
+        baseline_entities,
+    )
 
     required_dps = (
         _collect_required_dps(
@@ -479,4 +655,128 @@ def build_mapping_submission(
             "entity_count":
                 len(entities),
         },
+    }
+
+
+COMMUNITY_CATALOG_REPOSITORY_URL = (
+    "https://github.com/"
+    "MattiaFontana997/"
+    "localtuya-device-catalog"
+)
+
+COMMUNITY_CATALOG_NEW_SUBMISSION_URL = (
+    f"{COMMUNITY_CATALOG_REPOSITORY_URL}"
+    "/new/main/submissions"
+)
+
+
+def build_mapping_contribution_package(
+    device_data: dict[str, Any],
+    *,
+    cloud_device: dict[str, Any] | None = None,
+    baseline_entities: list[dict[str, Any]]
+    | None = None,
+) -> dict[str, Any]:
+    """Build a privacy-safe package for a community contribution.
+
+    This function never uploads anything. It prepares the sanitized
+    submission, a human-readable preview, the suggested filename and
+    navigation links for the public device catalog.
+    """
+    submission = build_mapping_submission(
+        device_data,
+        cloud_device=cloud_device,
+        baseline_entities=baseline_entities,
+    )
+
+    mapping = submission[
+        "mappings"
+    ][0]
+
+    match = mapping[
+        "match"
+    ]
+
+    fingerprint = submission[
+        "fingerprint"
+    ]
+
+    mapping_id = str(
+        mapping["id"]
+    )
+
+    preview = {
+        "mapping_id":
+            mapping_id,
+        "product_id":
+            match.get(
+                "product_id"
+            ),
+        "category":
+            match.get(
+                "category"
+            ),
+        "confidence":
+            mapping.get(
+                "confidence"
+            ),
+        "entity_count":
+            fingerprint.get(
+                "entity_count",
+                0,
+            ),
+        "observed_dps":
+            list(
+                fingerprint.get(
+                    "observed_dps",
+                    [],
+                )
+            ),
+        "required_dps":
+            list(
+                fingerprint.get(
+                    "required_dps",
+                    [],
+                )
+            ),
+        "protocol_version":
+            fingerprint.get(
+                "protocol_version",
+                "",
+            ),
+    }
+
+    submission_json = json.dumps(
+        submission,
+        indent=2,
+        ensure_ascii=False,
+    )
+
+    return {
+        "suggested_filename":
+            f"{mapping_id}.json",
+        "repository_url":
+            COMMUNITY_CATALOG_REPOSITORY_URL,
+        "new_submission_url":
+            COMMUNITY_CATALOG_NEW_SUBMISSION_URL,
+        "preview":
+            preview,
+        "privacy": {
+            "automatic_upload":
+                False,
+            "contains_local_key":
+                False,
+            "contains_device_id":
+                False,
+            "contains_ip_address":
+                False,
+            "contains_cloud_credentials":
+                False,
+            "contains_friendly_names":
+                False,
+        },
+        "submission":
+            submission,
+        "submission_json":
+            submission_json,
     }

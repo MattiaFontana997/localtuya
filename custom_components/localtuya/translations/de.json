@@ -45,7 +45,9 @@
             "entity_already_configured": "Eine Entität mit dieser ID wurde bereits konfiguriert.",
             "address_in_use": "Die für die Erkennung verwendete Adresse wird bereits verwendet. Stelle sicher, dass keine andere Anwendung sie verwendet (TCP-Port 6668).",
             "discovery_failed": "Bei der Geräteerkennung ist ein Fehler aufgetreten. Weitere Einzelheiten findest du im Protokoll.",
-            "empty_dps": "Die Verbindung zum Gerät war erfolgreich, es wurden jedoch keine Datenpunkte gefunden. Versuche es erneut. Erstelle ein neues Issue und füge Debug-Protokolle hinzu, wenn das Problem weiterhin besteht."
+            "empty_dps": "Die Verbindung zum Gerät war erfolgreich, es wurden jedoch keine Datenpunkte gefunden. Versuche es erneut. Erstelle ein neues Issue und füge Debug-Protokolle hinzu, wenn das Problem weiterhin besteht.",
+            "contribution_not_available": "Für dieses Gerät sind nicht genügend sichere Mapping-Daten verfügbar, um einen Community-Beitrag vorzubereiten.",
+            "contribution_confirmation_required": "Bestätige vor dem Fortfahren, dass du die Beitragsdaten geprüft hast."
         },
         "step": {
             "yaml_import": {
@@ -233,6 +235,27 @@
                 "data": {
                     "mapping_review_selection": "Zuordnungsänderungen"
                 }
+            },
+            "prepare_contribution_device": {
+                "title": "Community-Beitrag vorbereiten",
+                "description": "Wähle das konfigurierte Gerät aus, dessen Mapping du für den LocalTuya-Community-Katalog vorbereiten möchtest.",
+                "data": {
+                    "selected_device": "Konfiguriertes Gerät"
+                }
+            },
+            "prepare_contribution_review": {
+                "title": "Community-Beitrag prüfen",
+                "description": "Prüfe die Daten, die für {device} in den Beitrag aufgenommen werden. Produkt: `{product_id}` · Kategorie: `{category}` · Protokoll: `{protocol_version}` · Entitäten: {entity_count}. Beobachtete DPS: `{observed_dps}`. Erforderliche DPS: `{required_dps}`. Anfangsstatus: `{confidence}`. Vorgeschlagene Datei: `{filename}`. Local Key, Geräte-ID, IP-Adresse, Cloud-Zugangsdaten und benutzerdefinierte Namen werden nicht einbezogen. Es wird nichts automatisch hochgeladen.",
+                "data": {
+                    "contribution_confirm": "Ich habe die Daten geprüft und möchte den Beitrag vorbereiten"
+                }
+            },
+            "prepare_contribution_result": {
+                "title": "Community-Beitrag ist bereit",
+                "description": "Kopiere das bereinigte JSON unten und speichere es als `{filename}`. Öffne anschließend [die Einreichungsseite des Katalogs]({new_submission_url}) und erstelle die Datei. Repository: {repository_url}. Es wurde nichts automatisch hochgeladen.",
+                "data": {
+                    "contribution_json": "Bereinigtes JSON des Beitrags"
+                }
             }
         }
     },
@@ -272,6 +295,7 @@
         "action_setup_cloud": "Cloud-API-Konto neu konfigurieren",
         "action_review_mapping": "Gerätezuordnung prüfen",
         "mapping_change_update": "Aktualisierung",
-        "mapping_change_new": "Neue Entität"
+        "mapping_change_new": "Neue Entität",
+        "action_prepare_contribution": "Community-Beitrag vorbereiten"
     }
 }

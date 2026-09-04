@@ -31,9 +31,13 @@ from homeassistant.helpers.service import async_register_admin_service
 
 from .cloud_api import TuyaCloudApi
 from .common import TuyaDevice, async_config_entry_by_device_id
-from .config_flow import ENTRIES_VERSION
+from .config_flow import (
+    ENTRIES_VERSION,
+    async_get_entity_candidates,
+)
 from .const import (
     ATTR_UPDATED_AT,
+    CONF_DPS_STRINGS,
     CONF_NO_CLOUD,
     CONF_PRODUCT_KEY,
     CONF_USER_ID,
@@ -189,10 +193,68 @@ async def async_setup(hass: HomeAssistant, config: dict):
                 cloud_device = candidate
 
         try:
+            discovery = hass.data[
+                DOMAIN
+            ].get(
+                DATA_DISCOVERY
+            )
+
+            discovered_devices = getattr(
+                discovery,
+                "devices",
+                {},
+            )
+
+            if not isinstance(
+                discovered_devices,
+                dict,
+            ):
+                discovered_devices = {}
+
+            candidate_device_data = (
+                copy.deepcopy(
+                    device_data
+                )
+            )
+
+            candidate_device_data[
+                CONF_DEVICE_ID
+            ] = dev_id
+
+            generic_candidates = (
+                await async_get_entity_candidates(
+                    hass,
+                    candidate_device_data,
+                    discovered_devices,
+                    device_data.get(
+                        CONF_DPS_STRINGS,
+                        [],
+                    ),
+                    include_catalog=False,
+                )
+            )
+
+            baseline_entities = [
+                {
+                    "platform":
+                        candidate.platform,
+                    "config":
+                        copy.deepcopy(
+                            candidate.config
+                        ),
+                }
+                for candidate
+                in generic_candidates
+            ]
+
             return build_mapping_submission(
                 device_data,
                 cloud_device=cloud_device,
+                baseline_entities=(
+                    baseline_entities
+                ),
             )
+
         except ValueError as ex:
             raise HomeAssistantError(
                 str(ex)

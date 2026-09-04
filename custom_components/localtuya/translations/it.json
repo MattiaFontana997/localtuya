@@ -45,7 +45,9 @@
             "entity_already_configured": "L'entity con questo ID è già stata configurata.",
             "address_in_use": "L'indirizzo utilizzato per il discovery è già in uso. Assicurarsi che nessun'altra applicazione lo stia utilizzando (porta TCP 6668).",
             "discovery_failed": "Qualcosa è fallito nella discovery dei dispositivi. Vedi registro per i dettagli.",
-            "empty_dps": "La connessione al dispositivo è riuscita ma non sono stati trovati i datapoint, riprova. Crea un nuovo Issue e includi i log di debug se il problema persiste."
+            "empty_dps": "La connessione al dispositivo è riuscita ma non sono stati trovati i datapoint, riprova. Crea un nuovo Issue e includi i log di debug se il problema persiste.",
+            "contribution_not_available": "Questo dispositivo non dispone di dati di mappatura sicuri sufficienti per preparare un contributo community.",
+            "contribution_confirmation_required": "Conferma di aver controllato i dati del contributo prima di continuare."
         },
         "step": {
             "yaml_import": {
@@ -233,6 +235,27 @@
                 "data": {
                     "mapping_review_selection": "Modifiche di mappatura"
                 }
+            },
+            "prepare_contribution_device": {
+                "title": "Prepara contributo community",
+                "description": "Seleziona il dispositivo configurato di cui vuoi preparare la mappatura per il catalogo community di LocalTuya.",
+                "data": {
+                    "selected_device": "Dispositivo configurato"
+                }
+            },
+            "prepare_contribution_review": {
+                "title": "Controlla contributo community",
+                "description": "Controlla i dati che verranno inclusi nel contributo per {device}. Prodotto: `{product_id}` · categoria: `{category}` · protocollo: `{protocol_version}` · entità: {entity_count}. DPS osservati: `{observed_dps}`. DPS richiesti: `{required_dps}`. Stato iniziale: `{confidence}`. File suggerito: `{filename}`. Local key, ID dispositivo, indirizzo IP, credenziali Cloud e nomi personalizzati non vengono inclusi. Nulla viene caricato automaticamente.",
+                "data": {
+                    "contribution_confirm": "Ho controllato i dati e voglio preparare il contributo"
+                }
+            },
+            "prepare_contribution_result": {
+                "title": "Contributo community pronto",
+                "description": "Copia il JSON sanitizzato qui sotto e salvalo come `{filename}`. Poi apri [la pagina di invio del catalogo]({new_submission_url}) e crea il file. Repository: {repository_url}. Nulla è stato caricato automaticamente.",
+                "data": {
+                    "contribution_json": "JSON sanitizzato del contributo"
+                }
             }
         }
     },
@@ -272,6 +295,7 @@
         "action_setup_cloud": "Riconfigura account Cloud API",
         "action_review_mapping": "Controlla mappatura dispositivo",
         "mapping_change_update": "Da aggiornare",
-        "mapping_change_new": "Nuova entità"
+        "mapping_change_new": "Nuova entità",
+        "action_prepare_contribution": "Prepara contributo community"
     }
 }

@@ -45,7 +45,9 @@
             "entity_already_configured": "Entity with this ID has already been configured.",
             "address_in_use": "Address used for discovery is already in use. Make sure no other application is using it (TCP port 6668).",
             "discovery_failed": "Something failed when discovering devices. See log for details.",
-            "empty_dps": "Connection to device succeeded but no datapoints found, please try again. Create a new issue and include debug logs if problem persists."
+            "empty_dps": "Connection to device succeeded but no datapoints found, please try again. Create a new issue and include debug logs if problem persists.",
+            "contribution_not_available": "This device does not have enough safe mapping data to prepare a community contribution.",
+            "contribution_confirmation_required": "Confirm that you reviewed the contribution data before continuing."
         },
         "step": {
             "yaml_import": {
@@ -233,6 +235,27 @@
                 "data": {
                     "mapping_review_selection": "Mapping changes"
                 }
+            },
+            "prepare_contribution_device": {
+                "title": "Prepare community contribution",
+                "description": "Select the configured device whose mapping you want to prepare for the LocalTuya community catalog.",
+                "data": {
+                    "selected_device": "Configured device"
+                }
+            },
+            "prepare_contribution_review": {
+                "title": "Review community contribution",
+                "description": "Review the data that will be included in the contribution for {device}. Product: `{product_id}` · category: `{category}` · protocol: `{protocol_version}` · entities: {entity_count}. Observed DPS: `{observed_dps}`. Required DPS: `{required_dps}`. Initial status: `{confidence}`. Suggested file: `{filename}`. Local key, device ID, IP address, Cloud credentials and friendly names are not included. Nothing is uploaded automatically.",
+                "data": {
+                    "contribution_confirm": "I reviewed the data and want to prepare the contribution"
+                }
+            },
+            "prepare_contribution_result": {
+                "title": "Community contribution ready",
+                "description": "Copy the sanitized JSON below and save it as `{filename}`. Then open [the catalog submission page]({new_submission_url}) and create the file. Repository: {repository_url}. Nothing has been uploaded automatically.",
+                "data": {
+                    "contribution_json": "Sanitized contribution JSON"
+                }
             }
         }
     },
@@ -272,6 +295,7 @@
         "action_setup_cloud": "Reconfigure Cloud API account",
         "action_review_mapping": "Review device mapping",
         "mapping_change_update": "Update",
-        "mapping_change_new": "New entity"
+        "mapping_change_new": "New entity",
+        "action_prepare_contribution": "Prepare community contribution"
     }
 }

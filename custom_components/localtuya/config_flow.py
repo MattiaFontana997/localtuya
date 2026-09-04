@@ -27,6 +27,10 @@ from homeassistant.const import (
 from homeassistant.core import callback
 from homeassistant.helpers.importlib import async_import_module
 from homeassistant.helpers.translation import async_get_translations
+from homeassistant.helpers.selector import (
+    TextSelector,
+    TextSelectorConfig,
+)
 
 from .cloud_api import TuyaCloudApi
 from .common import pytuya
@@ -45,6 +49,7 @@ from .const import (
     CONF_PRODUCT_NAME,
     CONF_PRODUCT_KEY,
     CONF_PROTOCOL_VERSION,
+    CONF_PREPARE_CONTRIBUTION,
     CONF_RESET_DPIDS,
     CONF_SETUP_CLOUD,
     CONF_USER_ID,
@@ -69,6 +74,9 @@ from .mapping_review import (
     build_existing_mapping_reviews,
     default_existing_mapping_selection,
 )
+from .mapping_export import (
+    build_mapping_contribution_package,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,6 +87,8 @@ NO_ADDITIONAL_ENTITIES = "no_additional_entities"
 SELECTED_DEVICE = "selected_device"
 AUTO_ENTITY_SELECTION = "auto_entity_selection"
 MAPPING_REVIEW_SELECTION = "mapping_review_selection"
+CONTRIBUTION_CONFIRM = "contribution_confirm"
+CONTRIBUTION_JSON = "contribution_json"
 
 CUSTOM_DEVICE = "..."
 
@@ -205,6 +215,8 @@ _ACTION_TRANSLATION_KEYS = {
         "action_edit_device",
     CONF_REVIEW_MAPPING:
         "action_review_mapping",
+    CONF_PREPARE_CONTRIBUTION:
+        "action_prepare_contribution",
     CONF_SETUP_CLOUD:
         "action_setup_cloud",
 }
@@ -216,6 +228,8 @@ _ACTION_FALLBACKS = {
         "Edit a device",
     CONF_REVIEW_MAPPING:
         "Review device mapping",
+    CONF_PREPARE_CONTRIBUTION:
+        "Prepare community contribution",
     CONF_SETUP_CLOUD:
         "Reconfigure Cloud API account",
 }
@@ -534,6 +548,8 @@ async def async_get_entity_candidates(
     device_data,
     discovered_devices,
     dps_strings,
+    *,
+    include_catalog=True,
 ):
     """Build entity suggestions from every available mapping source."""
     domain_data = hass.data.get(
@@ -663,8 +679,12 @@ async def async_get_entity_candidates(
         dps_strings
     )
 
-    catalog_client = domain_data.get(
-        DATA_DEVICE_CATALOG
+    catalog_client = (
+        domain_data.get(
+            DATA_DEVICE_CATALOG
+        )
+        if include_catalog
+        else None
     )
 
     return resolve_entity_candidates(
@@ -1022,6 +1042,7 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         self.entities = []
         self.auto_candidates = []
         self.mapping_reviews = []
+        self.contribution_package = None
 
     async def async_step_init(self, user_input=None):
         """Manage basic options."""
@@ -1035,6 +1056,13 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                 return await self.async_step_edit_device()
             if user_input.get(CONF_ACTION) == CONF_REVIEW_MAPPING:
                 return await self.async_step_review_mapping_device()
+            if (
+                user_input.get(CONF_ACTION)
+                == CONF_PREPARE_CONTRIBUTION
+            ):
+                return await (
+                    self.async_step_prepare_contribution_device()
+                )
 
         action_labels = (
             await _async_action_labels(
@@ -1047,6 +1075,378 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=_configure_schema(
                 action_labels
             ),
+        )
+
+    async def async_step_prepare_contribution_device(
+        self,
+        user_input=None,
+    ):
+        """Select a configured device for a community contribution."""
+        errors = {}
+
+        if user_input is not None:
+            self.selected_device = user_input[
+                SELECTED_DEVICE
+            ]
+
+            device_data = copy.deepcopy(
+                self.config_entry.data[
+                    CONF_DEVICES
+                ][
+                    self.selected_device
+                ]
+            )
+
+            cloud_device = {}
+
+            domain_data = self.hass.data.get(
+                DOMAIN,
+                {},
+            )
+
+            cloud_api = domain_data.get(
+                DATA_CLOUD
+            )
+
+            if cloud_api is not None:
+                device_list = getattr(
+                    cloud_api,
+                    "device_list",
+                    {},
+                )
+
+                if isinstance(
+                    device_list,
+                    dict,
+                ):
+                    candidate = device_list.get(
+                        self.selected_device
+                    )
+
+                    if isinstance(
+                        candidate,
+                        dict,
+                    ):
+                        cloud_device = candidate
+
+            try:
+                discovery = domain_data.get(
+                    DATA_DISCOVERY
+                )
+
+                discovered_devices = getattr(
+                    discovery,
+                    "devices",
+                    {},
+                )
+
+                if not isinstance(
+                    discovered_devices,
+                    dict,
+                ):
+                    discovered_devices = {}
+
+                candidate_device_data = (
+                    copy.deepcopy(
+                        device_data
+                    )
+                )
+
+                candidate_device_data[
+                    CONF_DEVICE_ID
+                ] = self.selected_device
+
+                generic_candidates = (
+                    await async_get_entity_candidates(
+                        self.hass,
+                        candidate_device_data,
+                        discovered_devices,
+                        device_data.get(
+                            CONF_DPS_STRINGS,
+                            [],
+                        ),
+                        include_catalog=False,
+                    )
+                )
+
+                baseline_entities = [
+                    {
+                        "platform":
+                            candidate.platform,
+                        "config":
+                            copy.deepcopy(
+                                candidate.config
+                            ),
+                    }
+                    for candidate
+                    in generic_candidates
+                ]
+
+                self.contribution_package = (
+                    build_mapping_contribution_package(
+                        device_data,
+                        cloud_device=cloud_device,
+                        baseline_entities=(
+                            baseline_entities
+                        ),
+                    )
+                )
+
+                return await (
+                    self.async_step_prepare_contribution_review()
+                )
+
+            except ValueError as ex:
+                _LOGGER.debug(
+                    "Unable to prepare LocalTuya "
+                    "community contribution: %s",
+                    ex,
+                )
+
+                errors[
+                    "base"
+                ] = (
+                    "contribution_not_available"
+                )
+
+        devices = {}
+
+        for (
+            device_id,
+            device_data,
+        ) in self.config_entry.data[
+            CONF_DEVICES
+        ].items():
+            devices[
+                device_id
+            ] = device_data.get(
+                CONF_FRIENDLY_NAME,
+                "LocalTuya device",
+            )
+
+        return self.async_show_form(
+            step_id=(
+                "prepare_contribution_device"
+            ),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        SELECTED_DEVICE
+                    ): vol.In(
+                        devices
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_prepare_contribution_review(
+        self,
+        user_input=None,
+    ):
+        """Review exactly what will be included in a contribution."""
+        if (
+            not isinstance(
+                self.contribution_package,
+                dict,
+            )
+            or self.selected_device is None
+        ):
+            return await (
+                self.async_step_prepare_contribution_device()
+            )
+
+        errors = {}
+
+        if user_input is not None:
+            if user_input.get(
+                CONTRIBUTION_CONFIRM,
+                False,
+            ):
+                return await (
+                    self.async_step_prepare_contribution_result()
+                )
+
+            errors[
+                "base"
+            ] = (
+                "contribution_confirmation_required"
+            )
+
+        preview = self.contribution_package[
+            "preview"
+        ]
+
+        configured_device = (
+            self.config_entry.data[
+                CONF_DEVICES
+            ][
+                self.selected_device
+            ]
+        )
+
+        device_name = configured_device.get(
+            CONF_FRIENDLY_NAME,
+            "LocalTuya device",
+        )
+
+        status_labels = (
+            await _async_mapping_status_labels(
+                self.hass
+            )
+        )
+
+        confidence = preview.get(
+            "confidence",
+            "experimental",
+        )
+
+        if confidence == "experimental":
+            confidence = status_labels[
+                "mapping_status_experimental"
+            ]
+
+        observed_dps = ", ".join(
+            str(dp)
+            for dp
+            in preview.get(
+                "observed_dps",
+                []
+            )
+        )
+
+        required_dps = ", ".join(
+            str(dp)
+            for dp
+            in preview.get(
+                "required_dps",
+                []
+            )
+        )
+
+        return self.async_show_form(
+            step_id=(
+                "prepare_contribution_review"
+            ),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONTRIBUTION_CONFIRM,
+                        default=False,
+                    ): bool,
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "device":
+                    str(device_name),
+                "product_id":
+                    str(
+                        preview.get(
+                            "product_id",
+                            "—",
+                        )
+                    ),
+                "category":
+                    str(
+                        preview.get(
+                            "category",
+                        )
+                        or "—"
+                    ),
+                "protocol_version":
+                    str(
+                        preview.get(
+                            "protocol_version",
+                            "—",
+                        )
+                    ),
+                "entity_count":
+                    str(
+                        preview.get(
+                            "entity_count",
+                            0,
+                        )
+                    ),
+                "observed_dps":
+                    observed_dps,
+                "required_dps":
+                    required_dps,
+                "confidence":
+                    str(confidence),
+                "filename":
+                    str(
+                        self.contribution_package[
+                            "suggested_filename"
+                        ]
+                    ),
+            },
+        )
+
+    async def async_step_prepare_contribution_result(
+        self,
+        user_input=None,
+    ):
+        """Show sanitized JSON after explicit user confirmation."""
+        if not isinstance(
+            self.contribution_package,
+            dict,
+        ):
+            return await (
+                self.async_step_prepare_contribution_device()
+            )
+
+        if user_input is not None:
+            return self.async_create_entry(
+                title="",
+                data={},
+            )
+
+        submission_json = (
+            self.contribution_package[
+                "submission_json"
+            ]
+        )
+
+        return self.async_show_form(
+            step_id=(
+                "prepare_contribution_result"
+            ),
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONTRIBUTION_JSON,
+                        description={
+                            "suggested_value":
+                                submission_json
+                        },
+                    ): TextSelector(
+                        TextSelectorConfig(
+                            multiline=True,
+                        )
+                    ),
+                }
+            ),
+            description_placeholders={
+                "filename":
+                    str(
+                        self.contribution_package[
+                            "suggested_filename"
+                        ]
+                    ),
+                "new_submission_url":
+                    str(
+                        self.contribution_package[
+                            "new_submission_url"
+                        ]
+                    ),
+                "repository_url":
+                    str(
+                        self.contribution_package[
+                            "repository_url"
+                        ]
+                    ),
+            },
         )
 
     async def async_step_review_mapping_device(

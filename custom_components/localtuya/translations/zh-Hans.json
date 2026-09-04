@@ -45,7 +45,9 @@
             "entity_already_configured": "具有此 ID 的实体已经配置。",
             "address_in_use": "用于设备发现的地址已被占用。请确保没有其他应用正在使用该地址（TCP 端口 6668）。",
             "discovery_failed": "设备发现过程中发生错误。请查看日志了解详细信息。",
-            "empty_dps": "已成功连接到设备，但未发现任何数据点。请重试。如果问题仍然存在，请创建新的 Issue 并附上调试日志。"
+            "empty_dps": "已成功连接到设备，但未发现任何数据点。请重试。如果问题仍然存在，请创建新的 Issue 并附上调试日志。",
+            "contribution_not_available": "此设备没有足够的安全映射数据来准备社区贡献。",
+            "contribution_confirmation_required": "继续之前，请确认你已检查贡献数据。"
         },
         "step": {
             "yaml_import": {
@@ -233,6 +235,27 @@
                 "data": {
                     "mapping_review_selection": "映射更改"
                 }
+            },
+            "prepare_contribution_device": {
+                "title": "准备社区贡献",
+                "description": "选择要为 LocalTuya 社区设备目录准备映射的已配置设备。",
+                "data": {
+                    "selected_device": "已配置设备"
+                }
+            },
+            "prepare_contribution_review": {
+                "title": "检查社区贡献",
+                "description": "检查将为 {device} 包含在贡献中的数据。产品：`{product_id}` · 类别：`{category}` · 协议：`{protocol_version}` · 实体：{entity_count}。已观察 DPS：`{observed_dps}`。必需 DPS：`{required_dps}`。初始状态：`{confidence}`。建议文件：`{filename}`。不会包含 Local Key、设备 ID、IP 地址、Cloud 凭据或自定义名称。不会自动上传任何内容。",
+                "data": {
+                    "contribution_confirm": "我已检查数据并希望准备此贡献"
+                }
+            },
+            "prepare_contribution_result": {
+                "title": "社区贡献已准备好",
+                "description": "复制下面经过清理的 JSON，并保存为 `{filename}`。然后打开[目录提交页面]({new_submission_url})并创建文件。仓库：{repository_url}。没有自动上传任何内容。",
+                "data": {
+                    "contribution_json": "已清理的贡献 JSON"
+                }
             }
         }
     },
@@ -272,6 +295,7 @@
         "action_setup_cloud": "重新配置云 API 账户",
         "action_review_mapping": "检查设备映射",
         "mapping_change_update": "更新",
-        "mapping_change_new": "新实体"
+        "mapping_change_new": "新实体",
+        "action_prepare_contribution": "准备社区贡献"
     }
 }

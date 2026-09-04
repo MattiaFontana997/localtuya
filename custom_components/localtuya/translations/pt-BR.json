@@ -45,7 +45,9 @@
             "entity_already_configured": "A entidade com este ID já foi configurada.",
             "address_in_use": "O endereço usado para descoberta já está em uso. Certifique-se de que nenhum outro aplicativo o esteja usando (porta TCP 6668).",
             "discovery_failed": "Algo falhou ao descobrir dispositivos. Consulte o registro para obter detalhes.",
-            "empty_dps": "A conexão com o dispositivo foi bem-sucedida, mas nenhum ponto de dados foi encontrado. Tente novamente. Crie um novo issue e inclua os logs de depuração se o problema persistir."
+            "empty_dps": "A conexão com o dispositivo foi bem-sucedida, mas nenhum ponto de dados foi encontrado. Tente novamente. Crie um novo issue e inclua os logs de depuração se o problema persistir.",
+            "contribution_not_available": "Este dispositivo não possui dados de mapeamento seguros suficientes para preparar uma contribuição da comunidade.",
+            "contribution_confirmation_required": "Confirme que você revisou os dados da contribuição antes de continuar."
         },
         "step": {
             "yaml_import": {
@@ -233,6 +235,27 @@
                 "data": {
                     "mapping_review_selection": "Alterações de mapeamento"
                 }
+            },
+            "prepare_contribution_device": {
+                "title": "Preparar contribuição da comunidade",
+                "description": "Selecione o dispositivo configurado cujo mapeamento você deseja preparar para o catálogo comunitário do LocalTuya.",
+                "data": {
+                    "selected_device": "Dispositivo configurado"
+                }
+            },
+            "prepare_contribution_review": {
+                "title": "Revisar contribuição da comunidade",
+                "description": "Revise os dados que serão incluídos na contribuição para {device}. Produto: `{product_id}` · categoria: `{category}` · protocolo: `{protocol_version}` · entidades: {entity_count}. DPS observados: `{observed_dps}`. DPS necessários: `{required_dps}`. Status inicial: `{confidence}`. Arquivo sugerido: `{filename}`. Local Key, ID do dispositivo, endereço IP, credenciais da Cloud e nomes personalizados não são incluídos. Nada é enviado automaticamente.",
+                "data": {
+                    "contribution_confirm": "Revisei os dados e quero preparar a contribuição"
+                }
+            },
+            "prepare_contribution_result": {
+                "title": "Contribuição da comunidade pronta",
+                "description": "Copie o JSON sanitizado abaixo e salve-o como `{filename}`. Depois abra [a página de envio do catálogo]({new_submission_url}) e crie o arquivo. Repositório: {repository_url}. Nada foi enviado automaticamente.",
+                "data": {
+                    "contribution_json": "JSON sanitizado da contribuição"
+                }
             }
         }
     },
@@ -272,6 +295,7 @@
         "action_setup_cloud": "Reconfigurar a conta da API da nuvem",
         "action_review_mapping": "Verificar mapeamento do dispositivo",
         "mapping_change_update": "Atualização",
-        "mapping_change_new": "Nova entidade"
+        "mapping_change_new": "Nova entidade",
+        "action_prepare_contribution": "Preparar contribuição da comunidade"
     }
 }
