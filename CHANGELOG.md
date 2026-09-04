@@ -1,5 +1,88 @@
 # Changelog
 
+## 6.2.0
+
+Feature release adding stable Tuya protocol 3.5 support and refreshing the
+product-specific device catalog.
+
+### Tuya protocol 3.5
+
+- Added 6699 AES-GCM framing and authenticated payload handling
+- Added Tuya 3.5 session-key negotiation
+- Added Tuya 3.5 protocol selection and automatic protocol detection
+- Added support for Tuya 3.5 global response sequence numbers
+- Hardened protocol probe and malformed-frame error handling
+- Preserved legacy Tuya 3.1, 3.2, 3.3 and 3.4 compatibility
+
+Tuya 3.5 was physically validated on real hardware for discovery,
+configuration, bidirectional state updates, power, brightness, color
+temperature and color control.
+
+### Device state handling
+
+- Keep LocalTuya DPS caches synchronized after multi-DP writes
+- Fixed stale state after partial Tuya status updates
+
+### Lights
+
+- Added mapping support for compatible string/raw `colour_data_v2` and
+  `color_data_v2` datapoints
+- Structured JSON color data remains excluded from encoded-string handling
+
+### Community device catalog
+
+The bundled offline snapshot now contains two physically verified
+product-specific mappings:
+
+- LSC Smart Connect RGB+CCT smart light sold by Action
+- EMOS GoSmart P56201 Wi-Fi Room Thermostat
+
+The remote catalog remains independently refreshable between LocalTuya
+releases.
+
+### Documentation
+
+- Updated README for Tuya 3.5 and the community catalog
+- Documented contribution and promotion lifecycle
+- Updated HACS information and verified device examples
+
+### Tests
+
+- Expanded automated protocol and catalog regression coverage
+- Physical validation completed for Tuya 3.5, 3.4 and 3.3 devices
+
+
+## 6.1.1
+
+Stability hotfix for catalog loading and Tuya LAN discovery.
+
+- Moved bundled catalog file loading off the Home Assistant event loop
+- Removed the blocking catalog I/O warning during integration setup
+- Added active Tuya device-information discovery over UDP port 7000
+- Added Home Assistant `network` dependency for adapter-aware broadcast
+  discovery
+- Fixed discovery of devices that listen on the LAN but do not advertise
+  passively
+
+
+## 6.1.0
+
+Community catalog and mapping workflow release.
+
+- Added remote community device catalog support
+- Added persistent catalog cache
+- Added bundled offline catalog snapshot
+- Added unified generic/catalog mapping resolver
+- Added mapping review workflow
+- Added privacy-safe mapping export
+- Added `Prepare community contribution` configuration flow
+- Added `localtuya.export_device_mapping`
+- Added `localtuya.refresh_device_catalog`
+- Expanded generic climate mapping
+- Hardened diagnostics redaction
+- Expanded translations, tests and catalog tooling
+
+
 ## 6.0.0
 
 Major modernization release of the LocalTuya fork.

@@ -152,6 +152,92 @@ class UnifiedCatalogTests(
             )
         )
 
+    def test_snapshot_contains_verified_lsc_light(
+        self,
+    ):
+        match = match_catalog_mapping(
+            load_builtin_catalog(),
+            {
+                "product_id":
+                    "r7sn2fda7l5hwzvx",
+                "category":
+                    "dj",
+            },
+            {
+                20,
+                21,
+                22,
+                23,
+                24,
+            },
+            source="bundled",
+        )
+
+        self.assertIsNotNone(
+            match
+        )
+
+        self.assertEqual(
+            match.mapping_id,
+            "r7sn2fda7l5hwzvx-0cc115f608",
+        )
+
+        self.assertEqual(
+            match.confidence,
+            "verified",
+        )
+
+        self.assertEqual(
+            len(match.entities),
+            1,
+        )
+
+        entity = match.entities[0]
+
+        self.assertEqual(
+            entity["platform"],
+            "light",
+        )
+
+        config = entity["config"]
+
+        self.assertEqual(
+            config["id"],
+            20,
+        )
+        self.assertEqual(
+            config["brightness"],
+            22,
+        )
+        self.assertEqual(
+            config["color_temp"],
+            23,
+        )
+        self.assertEqual(
+            config["color_mode"],
+            21,
+        )
+        self.assertEqual(
+            config["color"],
+            24,
+        )
+        self.assertEqual(
+            config["brightness_lower"],
+            10,
+        )
+        self.assertEqual(
+            config["brightness_upper"],
+            1000,
+        )
+        self.assertEqual(
+            config["color_temp_min_kelvin"],
+            2700,
+        )
+        self.assertEqual(
+            config["color_temp_max_kelvin"],
+            6500,
+        )
+
     def test_match_without_category(
         self,
     ):
