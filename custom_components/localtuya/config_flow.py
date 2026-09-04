@@ -36,6 +36,7 @@ from .const import (
     CONF_ADD_DEVICE,
     CONF_DPS_STRINGS,
     CONF_EDIT_DEVICE,
+    CONF_REVIEW_MAPPING,
     CONF_ENABLE_DEBUG,
     CONF_LOCAL_KEY,
     CONF_MANUAL_DPS,
@@ -62,6 +63,12 @@ from .device_mapper import (
 from .mapping_resolver import (
     resolve_entity_candidates,
 )
+from .mapping_review import (
+    MappingReviewKind,
+    apply_existing_mapping_reviews,
+    build_existing_mapping_reviews,
+    default_existing_mapping_selection,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -71,6 +78,7 @@ PLATFORM_TO_ADD = "platform_to_add"
 NO_ADDITIONAL_ENTITIES = "no_additional_entities"
 SELECTED_DEVICE = "selected_device"
 AUTO_ENTITY_SELECTION = "auto_entity_selection"
+MAPPING_REVIEW_SELECTION = "mapping_review_selection"
 
 CUSTOM_DEVICE = "..."
 
@@ -195,6 +203,8 @@ _ACTION_TRANSLATION_KEYS = {
         "action_add_device",
     CONF_EDIT_DEVICE:
         "action_edit_device",
+    CONF_REVIEW_MAPPING:
+        "action_review_mapping",
     CONF_SETUP_CLOUD:
         "action_setup_cloud",
 }
@@ -204,9 +214,125 @@ _ACTION_FALLBACKS = {
         "Add a new device",
     CONF_EDIT_DEVICE:
         "Edit a device",
+    CONF_REVIEW_MAPPING:
+        "Review device mapping",
     CONF_SETUP_CLOUD:
         "Reconfigure Cloud API account",
 }
+
+
+_MAPPING_CHANGE_FALLBACKS = {
+    "mapping_change_update":
+        "Update",
+    "mapping_change_new":
+        "New entity",
+}
+
+
+async def _async_mapping_change_labels(
+    hass,
+) -> dict[str, str]:
+    """Load localized existing-device mapping change labels."""
+    labels = dict(
+        _MAPPING_CHANGE_FALLBACKS
+    )
+
+    language = getattr(
+        getattr(
+            hass,
+            "config",
+            None,
+        ),
+        "language",
+        "en",
+    )
+
+    try:
+        translations = (
+            await async_get_translations(
+                hass,
+                language,
+                "common",
+                {DOMAIN},
+            )
+        )
+    except Exception as ex:
+        _LOGGER.debug(
+            "Unable to load mapping change "
+            "translations for %s: %s",
+            language,
+            ex,
+        )
+        return labels
+
+    prefix = (
+        f"component.{DOMAIN}.common."
+    )
+
+    for key in labels:
+        translated = translations.get(
+            f"{prefix}{key}"
+        )
+
+        if (
+            isinstance(
+                translated,
+                str,
+            )
+            and translated
+        ):
+            labels[key] = translated
+
+    return labels
+
+
+def _existing_mapping_review_label(
+    review,
+    status_labels,
+    change_labels,
+) -> str:
+    """Return label for one actionable existing-device mapping change."""
+    entity_name = (
+        review.proposed_config.get(
+            CONF_FRIENDLY_NAME
+        )
+        or review.candidate.config.get(
+            CONF_FRIENDLY_NAME
+        )
+        or "Tuya entity"
+    )
+
+    status = status_labels.get(
+        review.candidate.display_status_key,
+        review.candidate.display_status_key,
+    )
+
+    if (
+        review.kind
+        == MappingReviewKind.NEW
+    ):
+        change = change_labels[
+            "mapping_change_new"
+        ]
+
+    else:
+        change = change_labels[
+            "mapping_change_update"
+        ]
+
+        if review.changed_keys:
+            change = (
+                f"{change}: "
+                f"{', '.join(review.changed_keys)}"
+            )
+
+    return (
+        f"{entity_name} "
+        f"— {review.candidate.platform} "
+        f"· {status} "
+        f"· {change} "
+        f"(DP {review.candidate.primary_dp})"
+    )
 
 
 async def _async_action_labels(
@@ -895,6 +1021,7 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         self.discovered_devices = {}
         self.entities = []
         self.auto_candidates = []
+        self.mapping_reviews = []
 
     async def async_step_init(self, user_input=None):
         """Manage basic options."""
@@ -906,6 +1033,8 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                 return await self.async_step_add_device()
             if user_input.get(CONF_ACTION) == CONF_EDIT_DEVICE:
                 return await self.async_step_edit_device()
+            if user_input.get(CONF_ACTION) == CONF_REVIEW_MAPPING:
+                return await self.async_step_review_mapping_device()
 
         action_labels = (
             await _async_action_labels(
@@ -918,6 +1047,383 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=_configure_schema(
                 action_labels
             ),
+        )
+
+    async def async_step_review_mapping_device(
+        self,
+        user_input=None,
+    ):
+        """Select and resolve mapping for an existing device."""
+        errors = {}
+
+        if user_input is not None:
+            self.selected_device = (
+                user_input[
+                    SELECTED_DEVICE
+                ]
+            )
+
+            existing_device = (
+                self.config_entry.data[
+                    CONF_DEVICES
+                ][
+                    self.selected_device
+                ]
+            )
+
+            self.entities = copy.deepcopy(
+                existing_device.get(
+                    CONF_ENTITIES,
+                    [],
+                )
+            )
+
+            self.device_data = (
+                copy.deepcopy(
+                    existing_device
+                )
+            )
+
+            self.device_data[
+                CONF_DEVICE_ID
+            ] = self.selected_device
+
+            try:
+                probe_data = (
+                    copy.deepcopy(
+                        existing_device
+                    )
+                )
+
+                probe_data[
+                    CONF_DEVICE_ID
+                ] = self.selected_device
+
+                (
+                    self.dps_strings,
+                    resolved_protocol,
+                ) = await validate_input(
+                    self.hass,
+                    probe_data,
+                )
+
+                self.device_data[
+                    CONF_PROTOCOL_VERSION
+                ] = resolved_protocol
+
+                domain_data = (
+                    self.hass.data.get(
+                        DOMAIN,
+                        {},
+                    )
+                )
+
+                discovery = (
+                    domain_data.get(
+                        DATA_DISCOVERY
+                    )
+                )
+
+                discovered = getattr(
+                    discovery,
+                    "devices",
+                    {},
+                )
+
+                self.discovered_devices = (
+                    discovered
+                    if isinstance(
+                        discovered,
+                        dict,
+                    )
+                    else {}
+                )
+
+                # A manual mapping review is a good moment
+                # to try the latest catalog. Failure is safe:
+                # DeviceCatalog keeps cache/bundled fallback.
+                catalog_client = (
+                    domain_data.get(
+                        DATA_DEVICE_CATALOG
+                    )
+                )
+
+                refresh = getattr(
+                    catalog_client,
+                    "async_refresh",
+                    None,
+                )
+
+                if callable(refresh):
+                    try:
+                        await refresh()
+                    except Exception as ex:
+                        _LOGGER.debug(
+                            "Unable to refresh device "
+                            "catalog during mapping "
+                            "review: %s",
+                            ex,
+                        )
+
+                candidates = (
+                    await async_get_entity_candidates(
+                        self.hass,
+                        self.device_data,
+                        self.discovered_devices,
+                        self.dps_strings,
+                    )
+                )
+
+                self.mapping_reviews = (
+                    build_existing_mapping_reviews(
+                        self.entities,
+                        candidates,
+                    )
+                )
+
+                return await (
+                    self.async_step_review_mapping_changes()
+                )
+
+            except CannotConnect:
+                errors["base"] = (
+                    "cannot_connect"
+                )
+            except InvalidAuth:
+                errors["base"] = (
+                    "invalid_auth"
+                )
+            except EmptyDpsList:
+                errors["base"] = (
+                    "empty_dps"
+                )
+            except Exception as ex:
+                _LOGGER.exception(
+                    "Unable to review LocalTuya "
+                    "device mapping: %s",
+                    ex,
+                )
+                errors["base"] = "unknown"
+
+        devices = {}
+
+        for (
+            device_id,
+            device,
+        ) in (
+            self.config_entry.data[
+                CONF_DEVICES
+            ].items()
+        ):
+            name = device.get(
+                CONF_FRIENDLY_NAME,
+                device_id,
+            )
+
+            host = device.get(
+                CONF_HOST,
+                "?",
+            )
+
+            devices[
+                device_id
+            ] = (
+                f"{name} ({host})"
+            )
+
+        return self.async_show_form(
+            step_id=(
+                "review_mapping_device"
+            ),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        SELECTED_DEVICE
+                    ): vol.In(
+                        devices
+                    )
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_review_mapping_changes(
+        self,
+        user_input=None,
+    ):
+        """Review and explicitly apply mapping changes."""
+        actionable_reviews = [
+            review
+            for review
+            in self.mapping_reviews
+            if review.actionable
+        ]
+
+        if user_input is not None:
+            selected = set(
+                user_input.get(
+                    MAPPING_REVIEW_SELECTION,
+                    [],
+                )
+            )
+
+            if selected:
+                updated_entities = (
+                    apply_existing_mapping_reviews(
+                        self.entities,
+                        self.mapping_reviews,
+                        selected,
+                    )
+                )
+
+                new_data = copy.deepcopy(
+                    dict(
+                        self.config_entry.data
+                    )
+                )
+
+                device_config = (
+                    copy.deepcopy(
+                        new_data[
+                            CONF_DEVICES
+                        ][
+                            self.selected_device
+                        ]
+                    )
+                )
+
+                device_config[
+                    CONF_ENTITIES
+                ] = updated_entities
+
+                # Store the DPS list actually observed during
+                # this explicit review. No other device settings
+                # are silently changed.
+                device_config[
+                    CONF_DPS_STRINGS
+                ] = list(
+                    self.dps_strings
+                )
+
+                new_data[
+                    CONF_DEVICES
+                ][
+                    self.selected_device
+                ] = device_config
+
+                new_data[
+                    ATTR_UPDATED_AT
+                ] = str(
+                    int(
+                        time.time()
+                        * 1000
+                    )
+                )
+
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data=new_data,
+                )
+
+            return self.async_create_entry(
+                title="",
+                data={},
+            )
+
+        status_labels = (
+            await _async_mapping_status_labels(
+                self.hass
+            )
+        )
+
+        change_labels = (
+            await _async_mapping_change_labels(
+                self.hass
+            )
+        )
+
+        options = {
+            review.key:
+                _existing_mapping_review_label(
+                    review,
+                    status_labels,
+                    change_labels,
+                )
+            for review
+            in actionable_reviews
+        }
+
+        default_selection = (
+            default_existing_mapping_selection(
+                self.mapping_reviews
+            )
+        )
+
+        current_count = sum(
+            1
+            for review
+            in self.mapping_reviews
+            if (
+                review.kind
+                == MappingReviewKind.CURRENT
+            )
+        )
+
+        conflict_count = sum(
+            1
+            for review
+            in self.mapping_reviews
+            if (
+                review.kind
+                == MappingReviewKind.CONFLICT
+            )
+        )
+
+        configured_device = (
+            self.config_entry.data[
+                CONF_DEVICES
+            ][
+                self.selected_device
+            ]
+        )
+
+        device_name = (
+            configured_device.get(
+                CONF_FRIENDLY_NAME
+            )
+            or self.selected_device
+        )
+
+        return self.async_show_form(
+            step_id=(
+                "review_mapping_changes"
+            ),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        MAPPING_REVIEW_SELECTION,
+                        default=(
+                            default_selection
+                        ),
+                    ): cv.multi_select(
+                        options
+                    ),
+                }
+            ),
+            description_placeholders={
+                "device":
+                    str(device_name),
+                "actionable":
+                    str(
+                        len(
+                            actionable_reviews
+                        )
+                    ),
+                "current":
+                    str(current_count),
+                "conflicts":
+                    str(conflict_count),
+            },
         )
 
     async def async_step_cloud_setup(self, user_input=None):

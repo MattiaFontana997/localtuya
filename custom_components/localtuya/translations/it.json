@@ -219,6 +219,20 @@
                 "data": {
                     "auto_entity_selection": "Entità rilevate automaticamente"
                 }
+            },
+            "review_mapping_device": {
+                "title": "Controlla mappatura dispositivo",
+                "description": "Seleziona il dispositivo configurato di cui vuoi controllare la mappatura.",
+                "data": {
+                    "selected_device": "Dispositivo configurato"
+                }
+            },
+            "review_mapping_changes": {
+                "title": "Controlla aggiornamenti mappatura",
+                "description": "Controllo della mappatura per {device}. LocalTuya ha trovato {actionable} modifiche applicabili, {current} mappature già aggiornate e {conflicts} conflitti. Verranno applicate solo le modifiche selezionate; le impostazioni locali e le entità non corrispondenti saranno mantenute.",
+                "data": {
+                    "mapping_review_selection": "Modifiche di mappatura"
+                }
             }
         }
     },
@@ -255,6 +269,9 @@
         "mapping_status_suggested": "Suggerito",
         "action_add_device": "Aggiungi un nuovo dispositivo",
         "action_edit_device": "Modifica un dispositivo",
-        "action_setup_cloud": "Riconfigura account Cloud API"
+        "action_setup_cloud": "Riconfigura account Cloud API",
+        "action_review_mapping": "Controlla mappatura dispositivo",
+        "mapping_change_update": "Da aggiornare",
+        "mapping_change_new": "Nuova entità"
     }
 }

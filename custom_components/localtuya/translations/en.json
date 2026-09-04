@@ -219,6 +219,20 @@
                 "data": {
                     "auto_entity_selection": "Automatically detected entities"
                 }
+            },
+            "review_mapping_device": {
+                "title": "Review device mapping",
+                "description": "Select the configured device whose mapping you want to review.",
+                "data": {
+                    "selected_device": "Configured device"
+                }
+            },
+            "review_mapping_changes": {
+                "title": "Review mapping changes",
+                "description": "Reviewing the mapping for {device}. LocalTuya found {actionable} applicable changes, {current} mappings already current, and {conflicts} conflicts. Only selected changes will be applied; local settings and unmatched entities are preserved.",
+                "data": {
+                    "mapping_review_selection": "Mapping changes"
+                }
             }
         }
     },
@@ -255,6 +269,9 @@
         "mapping_status_suggested": "Suggested",
         "action_add_device": "Add a new device",
         "action_edit_device": "Edit a device",
-        "action_setup_cloud": "Reconfigure Cloud API account"
+        "action_setup_cloud": "Reconfigure Cloud API account",
+        "action_review_mapping": "Review device mapping",
+        "mapping_change_update": "Update",
+        "mapping_change_new": "New entity"
     }
 }

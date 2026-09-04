@@ -219,6 +219,20 @@
                 "data": {
                     "auto_entity_selection": "Automatisch erkannte Entitäten"
                 }
+            },
+            "review_mapping_device": {
+                "title": "Gerätezuordnung prüfen",
+                "description": "Wähle das konfigurierte Gerät aus, dessen Zuordnung geprüft werden soll.",
+                "data": {
+                    "selected_device": "Konfiguriertes Gerät"
+                }
+            },
+            "review_mapping_changes": {
+                "title": "Zuordnungsänderungen prüfen",
+                "description": "Prüfung der Zuordnung für {device}. LocalTuya hat {actionable} anwendbare Änderungen, {current} bereits aktuelle Zuordnungen und {conflicts} Konflikte gefunden. Nur ausgewählte Änderungen werden angewendet; lokale Einstellungen und nicht zugeordnete Entitäten bleiben erhalten.",
+                "data": {
+                    "mapping_review_selection": "Zuordnungsänderungen"
+                }
             }
         }
     },
@@ -255,6 +269,9 @@
         "mapping_status_suggested": "Vorgeschlagen",
         "action_add_device": "Neues Gerät hinzufügen",
         "action_edit_device": "Gerät bearbeiten",
-        "action_setup_cloud": "Cloud-API-Konto neu konfigurieren"
+        "action_setup_cloud": "Cloud-API-Konto neu konfigurieren",
+        "action_review_mapping": "Gerätezuordnung prüfen",
+        "mapping_change_update": "Aktualisierung",
+        "mapping_change_new": "Neue Entität"
     }
 }

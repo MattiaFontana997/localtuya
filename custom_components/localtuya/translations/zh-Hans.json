@@ -219,6 +219,20 @@
                 "data": {
                     "auto_entity_selection": "自动检测到的实体"
                 }
+            },
+            "review_mapping_device": {
+                "title": "检查设备映射",
+                "description": "选择要检查映射的已配置设备。",
+                "data": {
+                    "selected_device": "已配置设备"
+                }
+            },
+            "review_mapping_changes": {
+                "title": "检查映射更改",
+                "description": "正在检查 {device} 的映射。LocalTuya 找到 {actionable} 个可应用更改、{current} 个已是最新的映射和 {conflicts} 个冲突。只会应用选中的更改；本地设置和未匹配实体会保留。",
+                "data": {
+                    "mapping_review_selection": "映射更改"
+                }
             }
         }
     },
@@ -255,6 +269,9 @@
         "mapping_status_suggested": "建议",
         "action_add_device": "添加新设备",
         "action_edit_device": "编辑设备",
-        "action_setup_cloud": "重新配置云 API 账户"
+        "action_setup_cloud": "重新配置云 API 账户",
+        "action_review_mapping": "检查设备映射",
+        "mapping_change_update": "更新",
+        "mapping_change_new": "新实体"
     }
 }
