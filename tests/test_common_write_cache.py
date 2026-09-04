@@ -109,6 +109,16 @@ class WriteCacheTests(
             3,
         )
 
+        self.assertEqual(
+            device._interface.dps_cache["32"],
+            215,
+        )
+
+        self.assertEqual(
+            device._interface.dps_cache["33"],
+            3,
+        )
+
         device._dispatch_status.assert_called_once()
 
 

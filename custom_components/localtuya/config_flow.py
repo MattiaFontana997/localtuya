@@ -95,6 +95,7 @@ CUSTOM_DEVICE = "..."
 PROTOCOL_AUTO = "auto"
 
 SUPPORTED_PROTOCOL_VERSIONS = (
+    "3.5",
     "3.4",
     "3.3",
     "3.2",

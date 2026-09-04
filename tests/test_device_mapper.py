@@ -590,6 +590,12 @@ class DeviceMapperTests(unittest.TestCase):
                         '"scale":0,"step":1}'
                     ),
                 },
+                {
+                    "dp_id": 24,
+                    "code": "colour_data_v2",
+                    "type": "String",
+                    "values": "{}",
+                },
             ],
             "status": [
                 {
@@ -625,13 +631,19 @@ class DeviceMapperTests(unittest.TestCase):
                         '"scale":0,"step":1}'
                     ),
                 },
+                {
+                    "dp_id": 24,
+                    "code": "colour_data_v2",
+                    "type": "String",
+                    "values": "{}",
+                },
             ],
         }
 
         candidates = build_entity_candidates(
             device,
             specification,
-            available_dps={20, 21, 22, 23},
+            available_dps={20, 21, 22, 23, 24},
         )
 
         light = self.candidate(
@@ -655,6 +667,10 @@ class DeviceMapperTests(unittest.TestCase):
         self.assertEqual(
             light.config["color_mode"],
             21,
+        )
+        self.assertEqual(
+            light.config["color"],
+            24,
         )
         self.assertEqual(
             light.config["brightness_lower"],
