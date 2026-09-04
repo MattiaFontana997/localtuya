@@ -5,7 +5,7 @@
     "@MattiaFontana997"
   ],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": ["network"],
   "documentation": "https://github.com/MattiaFontana997/localtuya",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/MattiaFontana997/localtuya/issues",
