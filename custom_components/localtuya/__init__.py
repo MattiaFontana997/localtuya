@@ -94,6 +94,11 @@ async def async_setup(hass: HomeAssistant, config: dict):
     hass.data[DOMAIN][TUYA_DEVICES] = {}
 
     device_catalog = DeviceCatalog(hass)
+
+    # Reading the bundled JSON touches the filesystem and must
+    # not happen inside Home Assistant's event loop.
+    await device_catalog.async_load_builtin_catalog()
+
     hass.data[DOMAIN][DATA_DEVICE_CATALOG] = (
         device_catalog
     )
@@ -388,7 +393,10 @@ async def async_setup(hass: HomeAssistant, config: dict):
         DOMAIN, SERVICE_SET_DP, _handle_set_dp, schema=SERVICE_SET_DP_SCHEMA
     )
 
-    discovery = TuyaDiscovery(_device_discovered)
+    discovery = TuyaDiscovery(
+        _device_discovered,
+        hass=hass,
+    )
     try:
         await discovery.start()
         hass.data[DOMAIN][DATA_DISCOVERY] = discovery
