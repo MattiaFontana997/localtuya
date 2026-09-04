@@ -13,15 +13,11 @@ configuration.
 
 - Home Assistant **2026.9 or newer**
 - Python **3.14**
-- Tuya LAN protocols **3.1, 3.2, 3.3 and 3.4**
+- Tuya LAN protocols **3.1, 3.2, 3.3, 3.4 and 3.5**
 - Local push updates
 - Optional Tuya Cloud metadata
 - Automatic entity suggestions
 - Manual entity configuration remains available
-
-> Protocol 3.5 is not included in the stable release yet. Experimental work
-> exists separately but will not be merged until it has been validated with
-> real protocol 3.5 hardware.
 
 ## Supported platforms
 
@@ -59,24 +55,135 @@ devices, covers, fans, sensors, binary sensors, numbers and selects.
 
 Manual configuration remains available after reviewing the suggestions.
 
+## Community device catalog
+
+LocalTuya includes a community-maintained device mapping catalog for
+product-specific configurations that cannot be safely inferred from generic
+Tuya metadata alone.
+
+Catalog mappings are matched against:
+
+- Tuya product ID
+- Tuya category, when available
+- datapoints actually detected from the device over the LAN
+
+The built-in generic mapper remains the first source of automatic mappings.
+Product-specific catalog entries can complete or refine a configuration when
+the detected hardware matches the catalog requirements.
+
+LocalTuya uses:
+
+- the remote community catalog for current mappings
+- a persistent local cache
+- a bundled `builtin_catalog.json` snapshot as an offline fallback
+
+Catalog mappings use three confidence levels:
+
+- **experimental** — newly submitted mapping awaiting trusted promotion
+- **community** — reviewed mapping accepted into the published catalog
+- **verified** — community mapping additionally validated on real hardware
+
+The catalog promotion lifecycle is:
+
+`experimental` → `community` → `verified`
+
+Experimental mappings cannot skip directly to verified status.
+
+### Verified catalog devices
+
+The bundled catalog currently includes physically verified product-specific
+mappings for real Tuya hardware.
+
+#### LSC Smart Connect RGB+CCT smart light (Action)
+
+- Brand: **LSC Smart Connect**
+- Retailer: **Action**
+- Tuya product ID: `r7sn2fda7l5hwzvx`
+- Category: `dj`
+- Mapping ID: `r7sn2fda7l5hwzvx-0cc115f608`
+- Protocol physically tested: **Tuya 3.5**
+- Platform: `light`
+- DPS:
+  - DP 20 — power
+  - DP 21 — work/color mode
+  - DP 22 — brightness
+  - DP 23 — color temperature
+  - DP 24 — RGB/HSV color
+
+Power, brightness, color temperature, color and spontaneous device/Tuya app
+state updates back to Home Assistant were validated on real hardware.
+
+#### EMOS GoSmart P56201 Wi-Fi Room Thermostat
+
+- Brand: **EMOS**
+- Model: **GoSmart P56201 Wi-Fi Room Thermostat**
+- Tuya product ID: `wxmbjwpt8yea7bag`
+- Category: `wk`
+- Mapping ID: `wxmbjwpt8yea7bag-ef945de926`
+- Main platform: `climate`
+- Additional entities: holiday temperature and holiday-day controls
+- Amazon ASIN: `B0BS3TL7DC`
+- EAN: `8592920117767`
+
+The thermostat mapping is physically verified and preserves product-specific
+climate behaviour that cannot be inferred safely from generic metadata alone.
+
+### Contributing a device mapping
+
+The recommended contribution flow is available directly from the LocalTuya
+configuration menu:
+
+`Prepare community contribution`
+
+Configure and test the device first, then select the configured device and
+review the generated privacy-safe JSON contribution.
+
+LocalTuya also exposes the Home Assistant action/service:
+
+`localtuya.export_device_mapping`
+
+The configured Tuya device ID is used only to locate the device and is not
+included in the exported mapping.
+
+Catalog contributions must not contain local keys, device IDs, IP addresses,
+Tuya Cloud credentials or user-specific friendly names.
+
+New submissions start as `experimental` and follow the trusted promotion
+lifecycle:
+
+`experimental` → `community` → `verified`
+
+LocalTuya also provides:
+
+`localtuya.refresh_device_catalog`
+
+to refresh the remote community catalog without reinstalling or upgrading the
+integration.
+
+Device catalog repository:
+
+`https://github.com/MattiaFontana997/localtuya-device-catalog`
+
 ## Reliability and testing
 
 The modernization fork includes regression coverage for:
 
 - Protocol framing and CRC validation
-- Tuya 3.4 HMAC/session handling
-- Protocol payload decoding from 3.1 through 3.4
-- UDP discovery
+- Tuya 3.4 and 3.5 session-key negotiation and authentication
+- Protocol payload decoding from 3.1 through 3.5
+- Passive and active UDP discovery
 - Legacy AES-ECB discovery
 - Tuya 55AA discovery frames
 - Tuya 6699 AES-GCM discovery frames
+- Tuya 3.5 6699 AES-GCM framing and payload handling
+- Tuya 3.5 global response sequence numbers
 - Tuya Cloud API signing and specification fallback
 - Automatic entity mapping
 - Numeric scaling
 - Diagnostics secret redaction
 - Config-entry setup, migration and unload lifecycle
 
-The current suite contains **41 automated tests** and runs in CI against
+The current suite contains **more than 140 automated tests** and runs in CI against
 Python 3.14 and Home Assistant 2026.
 
 ## Tuya Cloud

@@ -7,31 +7,38 @@ Local control of Tuya devices for Home Assistant.
 This repository is a modernization fork of the original LocalTuya project,
 targeting current Home Assistant releases.
 
-## LocalTuya 6.0
+## LocalTuya 6.2
 
-This release includes:
+LocalTuya 6.2 adds stable and physically validated **Tuya protocol 3.5**
+support while retaining support for protocols 3.1 through 3.4.
 
-- Home Assistant 2026 support
+Highlights:
+
+- Home Assistant 2026.9+
 - Python 3.14 CI
-- Tuya protocols 3.1–3.4
-- Hardened Tuya 3.4 session handling
-- Modern asynchronous Tuya Cloud API
-- Improved LAN discovery
-- 55AA and 6699 discovery frame support
+- Tuya protocols 3.1, 3.2, 3.3, 3.4 and 3.5
+- Automatic protocol probing including Tuya 3.5
+- Tuya 3.5 6699 AES-GCM framing
+- Tuya 3.5 session-key negotiation and authentication
+- Tuya 3.5 payload handling and response sequence support
+- Active LAN discovery for devices that do not advertise passively
 - Automatic entity suggestions from Tuya Cloud metadata
-- Confidence-based automatic configuration
-- Generic light mapping
-- Generic climate mapping
-- Generic cover mapping
-- Generic fan mapping
-- Generic switch mapping
-- Binary sensor mapping
-- Measurement sensor mapping
-- Number and select mapping
+- Community device catalog with remote cache and bundled offline snapshot
+- Mapping review and privacy-safe community contribution flow
+- Verified product-specific mappings
+- Improved string-based Tuya v2 color-data mapping
 - Diagnostics secret redaction
-- Expanded lifecycle and protocol regression tests
+- Expanded protocol, catalog and lifecycle regression coverage
 
-The current automated test suite contains **41 tests**.
+## Verified catalog devices
+
+The bundled snapshot includes physically verified mappings for:
+
+- **LSC Smart Connect RGB+CCT smart light**, sold by Action
+- **EMOS GoSmart P56201 Wi-Fi Room Thermostat**
+
+The remote community catalog can be refreshed independently of LocalTuya
+releases.
 
 ## Automatic configuration
 
@@ -50,9 +57,7 @@ Stable:
 - 3.2
 - 3.3
 - 3.4
-
-Protocol 3.5 is intentionally not part of this stable release until it has
-been validated with real 3.5 hardware.
+- 3.5
 
 ## Important
 
@@ -68,6 +73,10 @@ Do not install the upstream integration and this fork simultaneously.
 Full documentation and development information:
 
 https://github.com/MattiaFontana997/localtuya
+
+Device catalog:
+
+https://github.com/MattiaFontana997/localtuya-device-catalog
 
 ## Credits
 
