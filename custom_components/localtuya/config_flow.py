@@ -1899,10 +1899,38 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         data = self.hass.data.get(DOMAIN)
 
         if data and DATA_DISCOVERY in data:
-            self.discovered_devices = data[DATA_DISCOVERY].devices
+            discovery = data[
+                DATA_DISCOVERY
+            ]
+
+            try:
+                await (
+                    discovery
+                    .async_request_discovery()
+                )
+
+                # Active REQ_DEVINFO replies are normally
+                # immediate. Give the listener a short window
+                # to populate its cache before building the UI.
+                await asyncio.sleep(1.0)
+
+            except Exception as ex:
+                _LOGGER.debug(
+                    "Active Tuya discovery refresh "
+                    "failed: %s",
+                    ex,
+                )
+
+            self.discovered_devices = (
+                discovery.devices
+            )
         else:
             try:
-                self.discovered_devices = await discover()
+                self.discovered_devices = (
+                    await discover(
+                        hass=self.hass
+                    )
+                )
             except OSError as ex:
                 if ex.errno == errno.EADDRINUSE:
                     errors["base"] = "address_in_use"

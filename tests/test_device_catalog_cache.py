@@ -1,6 +1,7 @@
 """Persistent remote catalog tests."""
 
 import unittest
+from unittest.mock import patch
 
 from custom_components.localtuya.device_catalog import (
     DeviceCatalog,
@@ -22,10 +23,94 @@ class FakeStore:
         self.saved = data
 
 
+class FakeHass:
+    """Minimal HA executor interface."""
+
+    def __init__(self):
+        self.executor_calls = 0
+
+    async def async_add_executor_job(
+        self,
+        target,
+        *args,
+    ):
+        self.executor_calls += 1
+        return target(*args)
+
+
 class TestDeviceCatalogCache(
     unittest.IsolatedAsyncioTestCase
 ):
     """Catalog cache tests."""
+
+    async def test_builtin_catalog_uses_executor(
+        self,
+    ):
+        hass = FakeHass()
+
+        expected = {
+            "schema_version": 1,
+            "mappings": [
+                {
+                    "id": "builtin-test",
+                    "confidence":
+                        "verified",
+                    "match": {
+                        "product_id":
+                            "abc123",
+                        "required_dps":
+                            [1],
+                    },
+                    "entities": [
+                        {
+                            "platform":
+                                "switch",
+                            "config": {
+                                "id": 1,
+                                "platform":
+                                    "switch",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+
+        catalog = DeviceCatalog(
+            hass,
+            session=object(),
+            store=FakeStore(),
+        )
+
+        # Constructor must not perform the file read.
+        self.assertEqual(
+            hass.executor_calls,
+            0,
+        )
+        self.assertEqual(
+            catalog.bundled_mapping_count,
+            0,
+        )
+
+        with patch(
+            "custom_components.localtuya."
+            "device_catalog.load_builtin_catalog",
+            return_value=expected,
+        ):
+            result = await (
+                catalog
+                .async_load_builtin_catalog()
+            )
+
+        self.assertTrue(result)
+        self.assertEqual(
+            hass.executor_calls,
+            1,
+        )
+        self.assertEqual(
+            catalog.bundled_mapping_count,
+            1,
+        )
 
     async def test_valid_cached_catalog_is_restored(
         self,

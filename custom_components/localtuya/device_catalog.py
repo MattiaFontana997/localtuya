@@ -815,9 +815,15 @@ class DeviceCatalog:
         self._hass = hass
         self._url = url
 
-        self._builtin_catalog = (
-            load_builtin_catalog()
-        )
+        # Loaded asynchronously during integration setup.
+        # Never perform Path.read_text() from __init__, since
+        # DeviceCatalog is constructed inside Home Assistant's
+        # event loop.
+        self._builtin_catalog = {
+            "schema_version":
+                CATALOG_SCHEMA_VERSION,
+            "mappings": [],
+        }
 
         self._session = (
             session
@@ -845,6 +851,30 @@ class DeviceCatalog:
         self._etag: str | None = None
 
         self._cache_loaded = False
+
+    async def async_load_builtin_catalog(
+        self,
+    ) -> bool:
+        """Load the bundled catalog without blocking the HA event loop."""
+        try:
+            if self._hass is None:
+                catalog = load_builtin_catalog()
+            else:
+                catalog = await (
+                    self._hass.async_add_executor_job(
+                        load_builtin_catalog
+                    )
+                )
+        except Exception as ex:
+            _LOGGER.error(
+                "Unable to load bundled LocalTuya "
+                "device catalog asynchronously: %s",
+                ex,
+            )
+            return False
+
+        self._builtin_catalog = catalog
+        return True
 
     @property
     def catalog(
