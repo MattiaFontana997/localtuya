@@ -28,6 +28,12 @@ CATALOG_URL = (
 
 REQUEST_TIMEOUT = ClientTimeout(total=10)
 
+MAX_REMOTE_CATALOG_BYTES = 2 * 1024 * 1024
+MAX_CATALOG_MAPPINGS = 2048
+MAX_DP_ID = 65535
+MAX_CONFIG_DEPTH = 12
+MAX_CONFIG_NODES = 4096
+
 BUILTIN_CATALOG_PATH = (
     Path(__file__).with_name(
         "builtin_catalog.json"
@@ -118,32 +124,117 @@ def _device_category(
     return str(value).strip().lower()
 
 
+def _normalize_config_key(
+    value: Any,
+) -> str:
+    """Normalize config keys to block separator/case bypasses."""
+    return "".join(
+        char
+        for char
+        in str(value).casefold()
+        if char.isalnum()
+    )
+
+
+_FORBIDDEN_CONFIG_KEY_TOKENS = {
+    _normalize_config_key(key)
+    for key in _FORBIDDEN_CONFIG_KEYS
+}
+
+_PROTECTED_OVERRIDE_KEY_TOKENS = {
+    _normalize_config_key(key)
+    for key in _PROTECTED_OVERRIDE_KEYS
+}
+
+
+def _json_structure_safe(
+    value: Any,
+) -> bool:
+    """Validate nesting and complexity of catalog config values."""
+    stack = [
+        (
+            value,
+            0,
+        )
+    ]
+    nodes = 0
+
+    while stack:
+        current, depth = stack.pop()
+
+        nodes += 1
+
+        if (
+            depth > MAX_CONFIG_DEPTH
+            or nodes > MAX_CONFIG_NODES
+        ):
+            return False
+
+        if isinstance(current, dict):
+            for key, child in current.items():
+                if not isinstance(key, str):
+                    return False
+
+                stack.append(
+                    (
+                        child,
+                        depth + 1,
+                    )
+                )
+
+        elif isinstance(current, list):
+            for child in current:
+                stack.append(
+                    (
+                        child,
+                        depth + 1,
+                    )
+                )
+
+        elif not isinstance(
+            current,
+            (
+                str,
+                int,
+                float,
+                bool,
+                type(None),
+            ),
+        ):
+            return False
+
+    return True
+
+
 def _contains_forbidden_keys(
     value: Any,
 ) -> bool:
     """Return whether a JSON value contains forbidden config keys."""
-    if isinstance(value, dict):
-        for key, child in value.items():
-            normalized_key = (
-                str(key)
-                .strip()
-                .lower()
-            )
+    stack = [value]
 
-            if normalized_key in _FORBIDDEN_CONFIG_KEYS:
-                return True
+    while stack:
+        current = stack.pop()
 
-            if _contains_forbidden_keys(child):
-                return True
+        if isinstance(current, dict):
+            for key, child in current.items():
+                normalized_key = (
+                    _normalize_config_key(
+                        key
+                    )
+                )
 
-    elif isinstance(value, list):
-        return any(
-            _contains_forbidden_keys(item)
-            for item in value
-        )
+                if (
+                    normalized_key
+                    in _FORBIDDEN_CONFIG_KEY_TOKENS
+                ):
+                    return True
+
+                stack.append(child)
+
+        elif isinstance(current, list):
+            stack.extend(current)
 
     return False
-
 
 def _validate_entity(
     entity: Any,
@@ -160,6 +251,9 @@ def _validate_entity(
     config = entity.get("config")
 
     if not isinstance(config, dict):
+        return None
+
+    if not _json_structure_safe(config):
         return None
 
     if _contains_forbidden_keys(config):
@@ -183,14 +277,18 @@ def _validate_entity(
             return None
 
         key = raw_key.strip()
-        normalized_key = key.lower()
+        normalized_key = (
+            _normalize_config_key(
+                key
+            )
+        )
 
         if (
             not key
             or normalized_key
-            in _PROTECTED_OVERRIDE_KEYS
+            in _PROTECTED_OVERRIDE_KEY_TOKENS
             or normalized_key
-            in _FORBIDDEN_CONFIG_KEYS
+            in _FORBIDDEN_CONFIG_KEY_TOKENS
             or key not in config
         ):
             return None
@@ -220,7 +318,10 @@ def _validate_entity(
     except (TypeError, ValueError):
         return None
 
-    if primary_dp <= 0:
+    if (
+        primary_dp <= 0
+        or primary_dp > MAX_DP_ID
+    ):
         return None
 
     config["id"] = primary_dp
@@ -256,14 +357,28 @@ def validate_catalog(
             "Unsupported catalog schema version"
         )
 
-    mappings = payload.get("mappings")
+    mappings = payload.get(
+        "mappings"
+    )
 
-    if not isinstance(mappings, list):
+    if not isinstance(
+        mappings,
+        list,
+    ):
         raise ValueError(
             "Catalog mappings must be a list"
         )
 
+    if (
+        len(mappings)
+        > MAX_CATALOG_MAPPINGS
+    ):
+        raise ValueError(
+            "Catalog contains too many mappings"
+        )
+
     validated = []
+    seen_mapping_ids: set[str] = set()
 
     for raw_mapping in mappings:
         if not isinstance(
@@ -272,43 +387,87 @@ def validate_catalog(
         ):
             continue
 
-        mapping_id = raw_mapping.get("id")
-        match = raw_mapping.get("match")
-        entities = raw_mapping.get("entities")
+        mapping_id = raw_mapping.get(
+            "id"
+        )
+        match = raw_mapping.get(
+            "match"
+        )
+        entities = raw_mapping.get(
+            "entities"
+        )
 
         if (
-            not isinstance(mapping_id, str)
+            not isinstance(
+                mapping_id,
+                str,
+            )
             or not mapping_id.strip()
-            or not isinstance(match, dict)
-            or not isinstance(entities, list)
+            or not isinstance(
+                match,
+                dict,
+            )
+            or not isinstance(
+                entities,
+                list,
+            )
         ):
             continue
+
+        mapping_id = (
+            mapping_id.strip()
+        )
+
+        if (
+            mapping_id
+            in seen_mapping_ids
+        ):
+            raise ValueError(
+                "Duplicate catalog mapping ID: "
+                f"{mapping_id}"
+            )
+
+        seen_mapping_ids.add(
+            mapping_id
+        )
 
         product_id = match.get(
             "product_id"
         )
 
-        # The remote catalog is intentionally product-specific.
-        # Broad category-based behaviour remains the responsibility
-        # of the built-in generic mapper.
+        # Catalog mappings are product-specific.
         if (
-            not isinstance(product_id, str)
+            not isinstance(
+                product_id,
+                str,
+            )
             or not product_id.strip()
         ):
             continue
 
-        product_id = product_id.strip()
+        product_id = (
+            product_id.strip()
+        )
 
         category = match.get(
             "category"
         )
 
         if category is not None:
+            if not isinstance(
+                category,
+                str,
+            ):
+                continue
+
             category = (
-                str(category)
+                category
                 .strip()
                 .lower()
             )
+
+            if not category:
+                category = None
 
         required_dps = match.get(
             "required_dps",
@@ -322,11 +481,13 @@ def validate_catalog(
             continue
 
         normalized_dps: list[int] = []
-
         valid_dps = True
 
         for dp in required_dps:
-            if isinstance(dp, bool):
+            if isinstance(
+                dp,
+                bool,
+            ):
                 valid_dps = False
                 break
 
@@ -339,11 +500,17 @@ def validate_catalog(
                 valid_dps = False
                 break
 
-            if dp_id <= 0:
+            if (
+                dp_id <= 0
+                or dp_id > MAX_DP_ID
+            ):
                 valid_dps = False
                 break
 
-            if dp_id not in normalized_dps:
+            if (
+                dp_id
+                not in normalized_dps
+            ):
                 normalized_dps.append(
                     dp_id
                 )
@@ -352,20 +519,34 @@ def validate_catalog(
             continue
 
         validated_entities = []
+        mapping_entities_valid = True
 
         for entity in entities:
-            normalized = _validate_entity(
-                entity
+            normalized = (
+                _validate_entity(
+                    entity
+                )
             )
 
+            # A product mapping is atomic:
+            # one invalid entity invalidates
+            # the complete mapping.
             if normalized is None:
-                continue
+                mapping_entities_valid = (
+                    False
+                )
+                break
 
-            primary_dp = normalized[
-                "config"
-            ]["id"]
+            primary_dp = (
+                normalized[
+                    "config"
+                ]["id"]
+            )
 
-            if primary_dp not in normalized_dps:
+            if (
+                primary_dp
+                not in normalized_dps
+            ):
                 normalized_dps.append(
                     primary_dp
                 )
@@ -374,43 +555,98 @@ def validate_catalog(
                 normalized
             )
 
-        if not validated_entities:
+        if (
+            not mapping_entities_valid
+            or not validated_entities
+        ):
             continue
 
-        confidence = str(
+        raw_confidence = (
             raw_mapping.get(
                 "confidence",
                 "experimental",
             )
-        ).strip().lower()
+        )
+
+        if not isinstance(
+            raw_confidence,
+            str,
+        ):
+            continue
+
+        confidence = (
+            raw_confidence
+            .strip()
+            .lower()
+        )
 
         if confidence not in {
             "experimental",
             "verified",
             "community",
         }:
-            confidence = "experimental"
+            continue
 
         validated.append(
             {
-                "id": mapping_id.strip(),
+                "id": mapping_id,
                 "match": {
-                    "product_id": product_id,
-                    "category": category,
-                    "required_dps": sorted(
-                        normalized_dps
-                    ),
+                    "product_id":
+                        product_id,
+                    "category":
+                        category,
+                    "required_dps":
+                        sorted(
+                            normalized_dps
+                        ),
                 },
-                "confidence": confidence,
-                "entities": validated_entities,
+                "confidence":
+                    confidence,
+                "entities":
+                    validated_entities,
             }
         )
 
     return {
         "schema_version":
             CATALOG_SCHEMA_VERSION,
-        "mappings": validated,
+        "mappings":
+            validated,
     }
+
+
+def _validate_runtime_catalog(
+    payload: Any,
+) -> dict[str, Any]:
+    """Validate a cache or remote catalog without accepting a silent wipe."""
+    validated = validate_catalog(
+        payload
+    )
+
+    source_mappings = (
+        payload.get("mappings")
+        if isinstance(payload, dict)
+        else None
+    )
+
+    # If the source claimed to contain mappings but every one
+    # was rejected, treat the complete payload as corrupt.
+    #
+    # This prevents a malformed remote/cache catalog from
+    # replacing known-good mappings with an empty catalog.
+    if (
+        isinstance(
+            source_mappings,
+            list,
+        )
+        and source_mappings
+        and not validated["mappings"]
+    ):
+        raise ValueError(
+            "Catalog contains no valid mappings"
+        )
+
+    return validated
 
 
 def match_catalog_mapping(
@@ -675,8 +911,17 @@ class DeviceCatalog:
         if not isinstance(stored, dict):
             return False
 
+        # Never restore a cache created for a different
+        # catalog endpoint.
+        if stored.get("url") != self._url:
+            _LOGGER.debug(
+                "Ignoring LocalTuya device catalog "
+                "cache from a different URL"
+            )
+            return False
+
         try:
-            validated = validate_catalog(
+            validated = _validate_runtime_catalog(
                 stored.get("catalog")
             )
         except ValueError as ex:
@@ -689,11 +934,12 @@ class DeviceCatalog:
         self._catalog = validated
         self._cache_loaded = True
 
-        if stored.get("url") == self._url:
-            etag = stored.get("etag")
+        etag = stored.get(
+            "etag"
+        )
 
-            if isinstance(etag, str):
-                self._etag = etag
+        if isinstance(etag, str):
+            self._etag = etag
 
         _LOGGER.info(
             "Loaded cached LocalTuya device catalog with %s mappings",
@@ -761,11 +1007,57 @@ class DeviceCatalog:
                     )
                     return False
 
+                content_length = getattr(
+                    response,
+                    "content_length",
+                    None,
+                )
+
+                if (
+                    isinstance(
+                        content_length,
+                        int,
+                    )
+                    and content_length
+                    > MAX_REMOTE_CATALOG_BYTES
+                ):
+                    _LOGGER.warning(
+                        "Remote LocalTuya device catalog "
+                        "exceeds the maximum allowed size"
+                    )
+                    return False
+
                 payload = await response.json(
                     content_type=None
                 )
 
-                validated = validate_catalog(
+                # Also enforce the limit after parsing so
+                # responses without Content-Length cannot
+                # silently persist an oversized catalog.
+                encoded_size = len(
+                    json.dumps(
+                        payload,
+                        ensure_ascii=False,
+                        separators=(
+                            ",",
+                            ":",
+                        ),
+                    ).encode(
+                        "utf-8"
+                    )
+                )
+
+                if (
+                    encoded_size
+                    > MAX_REMOTE_CATALOG_BYTES
+                ):
+                    _LOGGER.warning(
+                        "Remote LocalTuya device catalog "
+                        "exceeds the maximum allowed size"
+                    )
+                    return False
+
+                validated = _validate_runtime_catalog(
                     payload
                 )
 
