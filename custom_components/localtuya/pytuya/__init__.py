@@ -47,6 +47,7 @@ import time
 import weakref
 from abc import ABC, abstractmethod
 from collections import namedtuple
+from copy import deepcopy
 from hashlib import md5, sha256
 
 from cryptography.hazmat.backends import default_backend
@@ -149,10 +150,12 @@ LAN_EXT_STREAM = 0x40  # 64 # FRM_LAN_EXT_STREAM
 PROTOCOL_VERSION_BYTES_31 = b"3.1"
 PROTOCOL_VERSION_BYTES_33 = b"3.3"
 PROTOCOL_VERSION_BYTES_34 = b"3.4"
+PROTOCOL_VERSION_BYTES_35 = b"3.5"
 
 PROTOCOL_3x_HEADER = 12 * b"\x00"
 PROTOCOL_33_HEADER = PROTOCOL_VERSION_BYTES_33 + PROTOCOL_3x_HEADER
 PROTOCOL_34_HEADER = PROTOCOL_VERSION_BYTES_34 + PROTOCOL_3x_HEADER
+PROTOCOL_35_HEADER = PROTOCOL_VERSION_BYTES_35 + PROTOCOL_3x_HEADER
 MESSAGE_HEADER_FMT = MESSAGE_HEADER_FMT_55AA = ">4I"
 MESSAGE_RECV_HEADER_FMT = ">5I"
 MESSAGE_HEADER_FMT_6699 = ">IHIII"
@@ -240,6 +243,30 @@ payload_dict = {
             "command": {"protocol": 5, "t": "int", "data": ""},
         },
         DP_QUERY: {"command_override": DP_QUERY_NEW},
+    },
+    "v3.5": {
+        CONTROL: {
+            "command_override": CONTROL_NEW,
+            "command": {
+                "protocol": 5,
+                "t": "int",
+                "data": {},
+            },
+        },
+        CONTROL_NEW: {
+            "command": {
+                "protocol": 5,
+                "t": "int",
+                "data": {},
+            },
+        },
+        DP_QUERY: {
+            "command_override": DP_QUERY_NEW,
+            "command": {},
+        },
+        DP_QUERY_NEW: {
+            "command": {},
+        },
     },
 }
 
@@ -867,6 +894,8 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             self.dev_type = "type_0d"
         elif protocol_version == 3.4:
             self.dev_type = "v3.4"
+        elif protocol_version == 3.5:
+            self.dev_type = "v3.5"
 
     def error_json(self, number=None, payload=None):
         """Return error details in JSON."""
@@ -1106,7 +1135,7 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         Args:
             dps([int]): list of dps to update, default=detected&whitelisted
         """
-        if self.version in [3.2, 3.3, 3.4]:  # 3.2 behaves like 3.3 with type_0d
+        if self.version in [3.2, 3.3, 3.4, 3.5]:
             if dps is None:
                 if not self.dps_cache:
                     await self.detect_available_dps()
@@ -1200,7 +1229,7 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                 payload = payload[len(self.version_header) :]
                 # self.debug("removing type_0d 3.x header=%r", payload)
 
-            if self.version != 3.4:
+            if self.version < 3.4:
                 try:
                     # self.debug("decrypting=%r", payload)
                     payload = cipher.decrypt(payload, False)
@@ -1535,7 +1564,9 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
         if command in payload_dict[self.dev_type]:
             if "command" in payload_dict[self.dev_type][command]:
-                json_data = payload_dict[self.dev_type][command]["command"]
+                json_data = deepcopy(
+                    payload_dict[self.dev_type][command]["command"]
+                )
             if "command_override" in payload_dict[self.dev_type][command]:
                 command_override = payload_dict[self.dev_type][command][
                     "command_override"
@@ -1547,7 +1578,9 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                 and command in payload_dict["type_0a"]
                 and "command" in payload_dict["type_0a"][command]
             ):
-                json_data = payload_dict["type_0a"][command]["command"]
+                json_data = deepcopy(
+                    payload_dict["type_0a"][command]["command"]
+                )
             if (
                 command_override is None
                 and command in payload_dict["type_0a"]
