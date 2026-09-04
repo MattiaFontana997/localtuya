@@ -321,10 +321,11 @@
             },
             "prepare_contribution_result": {
                 "title": "Community contribution ready",
-                "description": "Copy the sanitized JSON below and save it as `{filename}`. Then open [the catalog submission page]({new_submission_url}) and create the file. Repository: {repository_url}. Nothing has been uploaded automatically.",
+                "description": "Review or copy the sanitized JSON below. Suggested file: `{filename}`. Use the button below to open GitHub with the suggested filename and, when possible, the JSON already filled in. Nothing is uploaded automatically.",
                 "data": {
                     "contribution_json": "Sanitized contribution JSON"
-                }
+                },
+                "submit": "Submit to Community Catalog"
             }
         },
         "error": {

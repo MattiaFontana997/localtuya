@@ -252,10 +252,11 @@
             },
             "prepare_contribution_result": {
                 "title": "Community-Beitrag ist bereit",
-                "description": "Kopiere das bereinigte JSON unten und speichere es als `{filename}`. Öffne anschließend [die Einreichungsseite des Katalogs]({new_submission_url}) und erstelle die Datei. Repository: {repository_url}. Es wurde nichts automatisch hochgeladen.",
+                "description": "Prüfe oder kopiere das bereinigte JSON unten. Vorgeschlagene Datei: `{filename}`. Verwende die Schaltfläche unten, um GitHub mit dem vorgeschlagenen Dateinamen und, wenn möglich, bereits ausgefülltem JSON zu öffnen. Es wird nichts automatisch hochgeladen.",
                 "data": {
                     "contribution_json": "Bereinigtes JSON des Beitrags"
-                }
+                },
+                "submit": "An Community-Katalog senden"
             }
         }
     },

@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from typing import Any
+from urllib.parse import quote, urlencode
 
 from homeassistant.const import (
     CONF_ENTITIES,
@@ -669,6 +670,58 @@ COMMUNITY_CATALOG_NEW_SUBMISSION_URL = (
     "/new/main/submissions"
 )
 
+# Keep the generated GitHub URL comfortably below common
+# browser/proxy limits. Larger submissions fall back to
+# filename-only prefill while the JSON remains available
+# in the LocalTuya UI for manual copy.
+MAX_GITHUB_PREFILL_URL_LENGTH = 7500
+
+
+def _build_github_submission_url(
+    suggested_filename: str,
+    submission_json: str,
+) -> str:
+    """Build GitHub new-file URL with safe content prefill."""
+    full_query = urlencode(
+        [
+            (
+                "filename",
+                suggested_filename,
+            ),
+            (
+                "value",
+                submission_json,
+            ),
+        ],
+        quote_via=quote,
+    )
+
+    full_url = (
+        f"{COMMUNITY_CATALOG_NEW_SUBMISSION_URL}"
+        f"?{full_query}"
+    )
+
+    if (
+        len(full_url)
+        <= MAX_GITHUB_PREFILL_URL_LENGTH
+    ):
+        return full_url
+
+    filename_query = urlencode(
+        [
+            (
+                "filename",
+                suggested_filename,
+            ),
+        ],
+        quote_via=quote,
+    )
+
+    return (
+        f"{COMMUNITY_CATALOG_NEW_SUBMISSION_URL}"
+        f"?{filename_query}"
+    )
+
 
 def build_mapping_contribution_package(
     device_data: dict[str, Any],
@@ -752,13 +805,24 @@ def build_mapping_contribution_package(
         ensure_ascii=False,
     )
 
+    suggested_filename = (
+        f"{mapping_id}.json"
+    )
+
+    new_submission_url = (
+        _build_github_submission_url(
+            suggested_filename,
+            submission_json,
+        )
+    )
+
     return {
         "suggested_filename":
-            f"{mapping_id}.json",
+            suggested_filename,
         "repository_url":
             COMMUNITY_CATALOG_REPOSITORY_URL,
         "new_submission_url":
-            COMMUNITY_CATALOG_NEW_SUBMISSION_URL,
+            new_submission_url,
         "preview":
             preview,
         "privacy": {

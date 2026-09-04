@@ -1397,9 +1397,15 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
             )
 
         if user_input is not None:
-            return self.async_create_entry(
-                title="",
-                data={},
+            return self.async_external_step(
+                step_id=(
+                    "prepare_contribution_result"
+                ),
+                url=str(
+                    self.contribution_package[
+                        "new_submission_url"
+                    ]
+                ),
             )
 
         submission_json = (

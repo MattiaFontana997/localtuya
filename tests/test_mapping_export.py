@@ -2,6 +2,7 @@
 
 import json
 import unittest
+from urllib.parse import parse_qs, urlparse
 
 from custom_components.localtuya.mapping_export import (
     build_mapping_contribution_package,
@@ -262,7 +263,7 @@ class TestMappingContributionPackage(
         )
 
 
-    def test_package_contains_catalog_navigation_only(
+    def test_package_prefills_github_filename_and_json(
         self,
     ):
         package = build_mapping_contribution_package(
@@ -278,8 +279,16 @@ class TestMappingContributionPackage(
             ),
         )
 
+        parsed = urlparse(
+            package["new_submission_url"]
+        )
+
         self.assertEqual(
-            package["new_submission_url"],
+            (
+                f"{parsed.scheme}://"
+                f"{parsed.netloc}"
+                f"{parsed.path}"
+            ),
             (
                 "https://github.com/"
                 "MattiaFontana997/"
@@ -288,10 +297,70 @@ class TestMappingContributionPackage(
             ),
         )
 
+        query = parse_qs(
+            parsed.query
+        )
+
+        self.assertEqual(
+            query["filename"],
+            [
+                package[
+                    "suggested_filename"
+                ]
+            ],
+        )
+
+        self.assertEqual(
+            query["value"],
+            [
+                package[
+                    "submission_json"
+                ]
+            ],
+        )
+
         self.assertFalse(
             package["privacy"][
                 "automatic_upload"
             ]
+        )
+
+
+    def test_package_large_json_falls_back_to_filename_only(
+        self,
+    ):
+        device_data = self._device_data()
+
+        device_data[
+            "entities"
+        ][0][
+            "large_safe_value"
+        ] = "x" * 10000
+
+        package = build_mapping_contribution_package(
+            device_data,
+        )
+
+        parsed = urlparse(
+            package["new_submission_url"]
+        )
+
+        query = parse_qs(
+            parsed.query
+        )
+
+        self.assertEqual(
+            query["filename"],
+            [
+                package[
+                    "suggested_filename"
+                ]
+            ],
+        )
+
+        self.assertNotIn(
+            "value",
+            query,
         )
 
 

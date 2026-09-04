@@ -252,10 +252,11 @@
             },
             "prepare_contribution_result": {
                 "title": "Contribuição da comunidade pronta",
-                "description": "Copie o JSON sanitizado abaixo e salve-o como `{filename}`. Depois abra [a página de envio do catálogo]({new_submission_url}) e crie o arquivo. Repositório: {repository_url}. Nada foi enviado automaticamente.",
+                "description": "Revise ou copie o JSON sanitizado abaixo. Arquivo sugerido: `{filename}`. Use o botão abaixo para abrir o GitHub com o nome de arquivo sugerido e, quando possível, o JSON já preenchido. Nada é enviado automaticamente.",
                 "data": {
                     "contribution_json": "JSON sanitizado da contribuição"
-                }
+                },
+                "submit": "Enviar para o catálogo da comunidade"
             }
         }
     },

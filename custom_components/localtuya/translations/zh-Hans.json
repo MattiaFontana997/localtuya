@@ -252,10 +252,11 @@
             },
             "prepare_contribution_result": {
                 "title": "社区贡献已准备好",
-                "description": "复制下面经过清理的 JSON，并保存为 `{filename}`。然后打开[目录提交页面]({new_submission_url})并创建文件。仓库：{repository_url}。没有自动上传任何内容。",
+                "description": "检查或复制下面经过清理的 JSON。建议文件：`{filename}`。使用下方按钮打开 GitHub，并预填建议的文件名；在可能的情况下，也会预填 JSON 内容。不会自动上传任何内容。",
                 "data": {
                     "contribution_json": "已清理的贡献 JSON"
-                }
+                },
+                "submit": "提交到社区目录"
             }
         }
     },

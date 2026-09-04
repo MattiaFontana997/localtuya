@@ -3,6 +3,8 @@
 import unittest
 from types import SimpleNamespace
 
+from homeassistant.data_entry_flow import FlowResultType
+
 from custom_components.localtuya.config_flow import (
     AUTO_ENTITY_SELECTION,
     LocalTuyaOptionsFlowHandler,
@@ -242,6 +244,57 @@ class ConfigFlowMapperTests(
             "switch_1",
             high_label,
         )
+
+
+    async def test_contribution_submit_opens_catalog_url(
+        self,
+    ):
+        """Contribution CTA should open the generated GitHub URL."""
+        flow = LocalTuyaOptionsFlowHandler(
+            SimpleNamespace(
+                data={},
+            )
+        )
+
+        submission_url = (
+            "https://github.com/"
+            "MattiaFontana997/localtuya-device-catalog/"
+            "new/main/submissions/test-device.json"
+        )
+
+        flow.contribution_package = {
+            "submission_json": "{}",
+            "suggested_filename":
+                "test-device.json",
+            "new_submission_url":
+                submission_url,
+            "repository_url": (
+                "https://github.com/"
+                "MattiaFontana997/"
+                "localtuya-device-catalog"
+            ),
+        }
+
+        result = (
+            await flow
+            .async_step_prepare_contribution_result(
+                {}
+            )
+        )
+
+        self.assertEqual(
+            result["type"],
+            FlowResultType.EXTERNAL_STEP,
+        )
+        self.assertEqual(
+            result["step_id"],
+            "prepare_contribution_result",
+        )
+        self.assertEqual(
+            result["url"],
+            submission_url,
+        )
+
 
 
     async def test_builtin_mapping_wins_and_catalog_only_enriches(
