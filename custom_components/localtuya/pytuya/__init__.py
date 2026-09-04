@@ -688,14 +688,13 @@ class MessageDispatcher(ContextualLogger):
         self.local_key = local_key
         self.set_logger(_LOGGER, dev_id, enable_debug)
 
-    def abort(self):
-        """Abort all waiting clients."""
-        for key in self.listeners:
+    def abort(self, error=None):
+        """Abort all waiting clients, optionally propagating an error."""
+        for key in list(self.listeners):
             sem = self.listeners[key]
-            self.listeners[key] = None
 
-            # TODO: Received data and semahore should be stored separately
             if isinstance(sem, asyncio.Semaphore):
+                self.listeners[key] = error
                 sem.release()
 
     async def wait_for(self, seqno, cmd, timeout=5):
@@ -732,6 +731,9 @@ class MessageDispatcher(ContextualLogger):
 
         result = self.listeners.pop(seqno)
         self.listener_cmds.pop(seqno, None)
+
+        if isinstance(result, BaseException):
+            raise result
 
         return result
 
@@ -779,12 +781,30 @@ class MessageDispatcher(ContextualLogger):
                 else None
             )
 
-            msg = unpack_message(
-                frame,
-                header=header,
-                hmac_key=hmac_key,
-                logger=self,
-            )
+            try:
+                msg = unpack_message(
+                    frame,
+                    header=header,
+                    hmac_key=hmac_key,
+                    logger=self,
+                )
+
+            except DecodeError as ex:
+                # Protocol auto-detection intentionally tries
+                # incompatible protocol versions. Authentication
+                # failures must wake the waiting coroutine instead
+                # of escaping asyncio.Protocol.data_received().
+                self.debug(
+                    "Failed to decode received Tuya frame: %s",
+                    ex,
+                )
+
+                # Do not retain data queued behind a frame whose
+                # authentication failed.
+                self.buffer = b""
+
+                self.abort(ex)
+                return
 
             self._dispatch(msg)
 
@@ -1300,7 +1320,13 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             try:
                 data = await self.status()
             except Exception as ex:
-                self.exception("Failed to get status: %s", ex)
+                # Protocol auto-detection deliberately tries
+                # incompatible protocol versions. Failure is
+                # expected here and should remain debug-only.
+                self.debug(
+                    "Failed to get status: %s",
+                    ex,
+                )
                 raise
             if "dps" in data:
                 self.dps_cache.update(data["dps"])
