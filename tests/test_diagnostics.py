@@ -102,7 +102,12 @@ class DiagnosticsTests(
             result[
                 CONF_DEVICES
             ]["device1"]["host"],
+            "**REDACTED**",
+        )
+
+        self.assertNotIn(
             "192.168.1.50",
+            rendered,
         )
 
         self.assertEqual(
