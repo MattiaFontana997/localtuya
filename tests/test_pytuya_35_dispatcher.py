@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 
 from custom_components.localtuya import pytuya
@@ -189,3 +190,131 @@ class TestTuya35Dispatcher(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTuya35GlobalSequence(unittest.IsolatedAsyncioTestCase):
+    KEY = b"0123456789abcdef"
+
+    @staticmethod
+    def _dispatcher():
+        return pytuya.MessageDispatcher(
+            "test-device-123456",
+            lambda msg: None,
+            3.5,
+            TestTuya35GlobalSequence.KEY,
+            False,
+        )
+
+    async def test_35_response_can_use_different_seqno(self):
+        dispatcher = self._dispatcher()
+
+        waiter = asyncio.create_task(
+            dispatcher.wait_for(
+                10,
+                pytuya.DP_QUERY_NEW,
+                timeout=0.05,
+            )
+        )
+
+        # Allow wait_for() to register its listener.
+        await asyncio.sleep(0)
+
+        response = pytuya.TuyaMessage(
+            700,
+            pytuya.DP_QUERY_NEW,
+            0,
+            b'{"dps":{"1":true}}',
+            0,
+            True,
+            pytuya.PREFIX_6699_VALUE,
+            b"abcdefghijkl",
+        )
+
+        dispatcher._dispatch(response)
+
+        result = await waiter
+
+        self.assertIs(result, response)
+
+    async def test_35_single_waiter_can_accept_different_response_command(self):
+        dispatcher = self._dispatcher()
+
+        waiter = asyncio.create_task(
+            dispatcher.wait_for(
+                20,
+                pytuya.DP_QUERY_NEW,
+                timeout=0.05,
+            )
+        )
+
+        await asyncio.sleep(0)
+
+        # Some devices answer a query with STATUS while also
+        # using their own global sequence counter.
+        response = pytuya.TuyaMessage(
+            701,
+            pytuya.STATUS,
+            0,
+            b'{"dps":{"1":false}}',
+            0,
+            True,
+            pytuya.PREFIX_6699_VALUE,
+            b"abcdefghijkl",
+        )
+
+        dispatcher._dispatch(response)
+
+        result = await waiter
+
+        self.assertIs(result, response)
+
+    async def test_35_does_not_guess_between_multiple_waiters(self):
+        dispatcher = self._dispatcher()
+
+        waiter1 = asyncio.create_task(
+            dispatcher.wait_for(
+                30,
+                pytuya.DP_QUERY_NEW,
+                timeout=0.05,
+            )
+        )
+        waiter2 = asyncio.create_task(
+            dispatcher.wait_for(
+                31,
+                pytuya.CONTROL_NEW,
+                timeout=0.05,
+            )
+        )
+
+        await asyncio.sleep(0)
+
+        response = pytuya.TuyaMessage(
+            702,
+            pytuya.STATUS,
+            0,
+            b'{"dps":{"1":true}}',
+            0,
+            True,
+            pytuya.PREFIX_6699_VALUE,
+            b"abcdefghijkl",
+        )
+
+        dispatcher._dispatch(response)
+
+        self.assertIsInstance(
+            dispatcher.listeners[30],
+            asyncio.Semaphore,
+        )
+        self.assertIsInstance(
+            dispatcher.listeners[31],
+            asyncio.Semaphore,
+        )
+
+        waiter1.cancel()
+        waiter2.cancel()
+
+        for waiter in (waiter1, waiter2):
+            try:
+                await waiter
+            except asyncio.CancelledError:
+                pass

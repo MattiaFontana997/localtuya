@@ -682,6 +682,7 @@ class MessageDispatcher(ContextualLogger):
         super().__init__()
         self.buffer = b""
         self.listeners = {}
+        self.listener_cmds = {}
         self.listener = listener
         self.version = protocol_version
         self.local_key = local_key
@@ -698,22 +699,41 @@ class MessageDispatcher(ContextualLogger):
                 sem.release()
 
     async def wait_for(self, seqno, cmd, timeout=5):
-        """Wait for response to a sequence number to be received and return it."""
+        """Wait for a response and return the decoded Tuya message."""
         if seqno in self.listeners:
             raise Exception(f"listener exists for {seqno}")
 
-        self.debug("Command %d waiting for seq. number %d", cmd, seqno)
+        self.debug(
+            "Command %d waiting for seq. number %d",
+            cmd,
+            seqno,
+        )
+
         self.listeners[seqno] = asyncio.Semaphore(0)
+        self.listener_cmds[seqno] = cmd
+
         try:
-            await asyncio.wait_for(self.listeners[seqno].acquire(), timeout=timeout)
+            await asyncio.wait_for(
+                self.listeners[seqno].acquire(),
+                timeout=timeout,
+            )
+
         except asyncio.TimeoutError:
             self.debug(
-                "Command %d timed out waiting for sequence number %d", cmd, seqno
+                "Command %d timed out waiting for sequence number %d",
+                cmd,
+                seqno,
             )
-            del self.listeners[seqno]
+
+            self.listeners.pop(seqno, None)
+            self.listener_cmds.pop(seqno, None)
+
             raise
 
-        return self.listeners.pop(seqno)
+        result = self.listeners.pop(seqno)
+        self.listener_cmds.pop(seqno, None)
+
+        return result
 
     def add_data(self, data):
         """Add data to the buffer and dispatch complete Tuya frames."""
@@ -769,53 +789,153 @@ class MessageDispatcher(ContextualLogger):
             self._dispatch(msg)
 
     def _dispatch(self, msg):
-        """Dispatch a message to someone that is listening."""
-        self.debug("Dispatching message CMD %r %s", msg.cmd, msg)
+        """Dispatch a decoded Tuya message."""
+        self.debug(
+            "Dispatching message CMD %r %s",
+            msg.cmd,
+            msg,
+        )
+
+        listener_key = None
+
+        # Normal Tuya behaviour: response echoes the request
+        # sequence number.
         if msg.seqno in self.listeners:
-            # self.debug("Dispatching sequence number %d", msg.seqno)
-            sem = self.listeners[msg.seqno]
+            listener_key = msg.seqno
+
+        # Protocol 3.5 devices may instead use a global
+        # incrementing sequence counter.
+        elif self.version >= 3.5:
+            command_matches = [
+                seqno
+                for seqno, command
+                in self.listener_cmds.items()
+                if (
+                    command == msg.cmd
+                    and seqno in self.listeners
+                    and isinstance(
+                        self.listeners[seqno],
+                        asyncio.Semaphore,
+                    )
+                )
+            ]
+
+            # Safest fallback: exactly one pending request
+            # expects this command.
+            if len(command_matches) == 1:
+                listener_key = command_matches[0]
+
+            else:
+                # Some 3.5 devices can answer a query using a
+                # different command code, for example STATUS.
+                #
+                # Only accept that response if exactly one
+                # ordinary request is outstanding. Never guess
+                # between multiple simultaneous requests.
+                normal_waiters = [
+                    seqno
+                    for seqno, listener
+                    in self.listeners.items()
+                    if (
+                        seqno >= 0
+                        and isinstance(
+                            listener,
+                            asyncio.Semaphore,
+                        )
+                    )
+                ]
+
+                if len(normal_waiters) == 1:
+                    listener_key = normal_waiters[0]
+
+        if listener_key is not None:
+            sem = self.listeners[listener_key]
+
             if isinstance(sem, asyncio.Semaphore):
-                self.listeners[msg.seqno] = msg
+                self.listeners[listener_key] = msg
                 sem.release()
             else:
-                self.debug("Got additional message without request - skipping: %s", sem)
-        elif msg.cmd == HEART_BEAT:
+                self.debug(
+                    "Got additional message without request "
+                    "- skipping: %s",
+                    sem,
+                )
+
+            return
+
+        if msg.cmd == HEART_BEAT:
             self.debug("Got heartbeat response")
+
             if self.HEARTBEAT_SEQNO in self.listeners:
-                sem = self.listeners[self.HEARTBEAT_SEQNO]
-                self.listeners[self.HEARTBEAT_SEQNO] = msg
+                sem = self.listeners[
+                    self.HEARTBEAT_SEQNO
+                ]
+                self.listeners[
+                    self.HEARTBEAT_SEQNO
+                ] = msg
                 sem.release()
+
         elif msg.cmd == UPDATEDPS:
-            self.debug("Got normal updatedps response")
+            self.debug(
+                "Got normal updatedps response"
+            )
+
             if self.RESET_SEQNO in self.listeners:
-                sem = self.listeners[self.RESET_SEQNO]
-                self.listeners[self.RESET_SEQNO] = msg
+                sem = self.listeners[
+                    self.RESET_SEQNO
+                ]
+                self.listeners[
+                    self.RESET_SEQNO
+                ] = msg
                 sem.release()
+
         elif msg.cmd == SESS_KEY_NEG_RESP:
-            self.debug("Got key negotiation response")
+            self.debug(
+                "Got key negotiation response"
+            )
+
             if self.SESS_KEY_SEQNO in self.listeners:
-                sem = self.listeners[self.SESS_KEY_SEQNO]
-                self.listeners[self.SESS_KEY_SEQNO] = msg
+                sem = self.listeners[
+                    self.SESS_KEY_SEQNO
+                ]
+                self.listeners[
+                    self.SESS_KEY_SEQNO
+                ] = msg
                 sem.release()
+
         elif msg.cmd == STATUS:
             if self.RESET_SEQNO in self.listeners:
-                self.debug("Got reset status update")
-                sem = self.listeners[self.RESET_SEQNO]
-                self.listeners[self.RESET_SEQNO] = msg
+                self.debug(
+                    "Got reset status update"
+                )
+
+                sem = self.listeners[
+                    self.RESET_SEQNO
+                ]
+                self.listeners[
+                    self.RESET_SEQNO
+                ] = msg
                 sem.release()
+
             else:
                 self.debug("Got status update")
                 self.listener(msg)
+
+        elif msg.cmd == CONTROL_NEW:
+            self.debug(
+                "Got ACK message for command %d: "
+                "will ignore it",
+                msg.cmd,
+            )
+
         else:
-            if msg.cmd == CONTROL_NEW:
-                self.debug("Got ACK message for command %d: will ignore it", msg.cmd)
-            else:
-                self.debug(
-                    "Got message type %d for unknown listener %d: %s",
-                    msg.cmd,
-                    msg.seqno,
-                    msg,
-                )
+            self.debug(
+                "Got message type %d for unknown "
+                "listener %d: %s",
+                msg.cmd,
+                msg.seqno,
+                msg,
+            )
 
 
 class TuyaListener(ABC):
