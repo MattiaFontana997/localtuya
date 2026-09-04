@@ -16,7 +16,7 @@ Classes
 
 Functions
    json = status()          # returns json payload
-   set_version(version)     #  3.1 [default], 3.2, 3.3 or 3.4
+   set_version(version)     #  3.1 [default], 3.2, 3.3, 3.4 or 3.5
    detect_available_dps()   # returns a list of available dps provided by the device
    update_dps(dps)          # sends update dps command
    add_dps_to_request(dp_index)  # adds dp_index to the list of dps used by the
@@ -1106,7 +1106,7 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         """Disconnected from device."""
         self.debug("Connection lost: %s", exc)
 
-        # A protocol 3.4 session key is valid only for the current connection.
+        # A protocol 3.4/3.5 session key is valid only for the current connection.
         # Restore the permanent local key so the next connection negotiates
         # a fresh session key.
         self.local_key = self.real_local_key
@@ -1124,7 +1124,7 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         """Close connection and abort all outstanding listeners."""
         self.debug("Closing connection")
 
-        # Discard any temporary protocol 3.4 session key.
+        # Discard any temporary protocol 3.4/3.5 session key.
         self.local_key = self.real_local_key
 
         if self.dispatcher is not None:
@@ -1366,7 +1366,7 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             # Decrypt payload
             # Remove 16-bytes of MD5 hexdigest of payload
             payload = cipher.decrypt(payload[16:])
-        elif self.version >= 3.2:  # 3.2 or 3.3 or 3.4
+        elif self.version >= 3.2:  # 3.2, 3.3, 3.4 or 3.5
             # Trim header for non-default device type
             if payload.startswith(self.version_bytes):
                 payload = payload[len(self.version_header) :]
@@ -1421,7 +1421,7 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             )
             # json_payload = self.error_json(ERR_JSON, payload)
 
-        # v3.4 stuffs it into {"data":{"dps":{"1":true}}, ...}
+        # v3.4/v3.5 may wrap DPS inside {"data":{"dps":{"1":true}}, ...}
         if (
             "dps" not in json_payload
             and "data" in json_payload
