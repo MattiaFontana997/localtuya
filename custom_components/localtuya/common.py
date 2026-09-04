@@ -439,13 +439,23 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                 return
 
             if self._interface is interface:
+                normalized_states = {
+                    str(dp_index): value
+                    for dp_index, value
+                    in states.items()
+                }
+
                 self._status.update(
-                    {
-                        str(dp_index): value
-                        for dp_index, value
-                        in states.items()
-                    }
+                    normalized_states
                 )
+
+                if hasattr(
+                    interface,
+                    "dps_cache",
+                ):
+                    interface.dps_cache.update(
+                        normalized_states
+                    )
 
                 self._dispatch_status()
 
