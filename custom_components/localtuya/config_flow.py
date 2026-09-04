@@ -26,6 +26,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers.importlib import async_import_module
+from homeassistant.helpers.translation import async_get_translations
 
 from .cloud_api import TuyaCloudApi
 from .common import pytuya
@@ -55,6 +56,7 @@ from .const import (
 )
 from .discovery import discover
 from .device_mapper import (
+    EntityCandidate,
     MappingConfidence,
 )
 from .mapping_resolver import (
@@ -87,17 +89,201 @@ PROTOCOL_OPTIONS = (
 )
 
 PROTOCOL_PROBE_TIMEOUT = 8.0
-CONF_ACTIONS = {
-    CONF_ADD_DEVICE: "Add a new device",
-    CONF_EDIT_DEVICE: "Edit a device",
-    CONF_SETUP_CLOUD: "Reconfigure Cloud API account",
+
+
+_MAPPING_STATUS_FALLBACKS = {
+    "mapping_status_verified":
+        "Verified",
+    "mapping_status_community":
+        "Community",
+    "mapping_status_experimental":
+        "Experimental",
+    "mapping_status_auto_detected":
+        "Auto-detected",
+    "mapping_status_suggested":
+        "Suggested",
 }
 
-CONFIGURE_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_ACTION, default=CONF_ADD_DEVICE): vol.In(CONF_ACTIONS),
-    }
-)
+
+async def _async_mapping_status_labels(
+    hass,
+) -> dict[str, str]:
+    """Load localized mapping status labels."""
+    labels = dict(
+        _MAPPING_STATUS_FALLBACKS
+    )
+
+    language = getattr(
+        getattr(
+            hass,
+            "config",
+            None,
+        ),
+        "language",
+        "en",
+    )
+
+    try:
+        translations = (
+            await async_get_translations(
+                hass,
+                language,
+                "common",
+                {DOMAIN},
+            )
+        )
+    except Exception as ex:
+        _LOGGER.debug(
+            "Unable to load mapping status "
+            "translations for %s: %s",
+            language,
+            ex,
+        )
+        return labels
+
+    prefix = (
+        f"component.{DOMAIN}.common."
+    )
+
+    for key in labels:
+        translated = translations.get(
+            f"{prefix}{key}"
+        )
+
+        if (
+            isinstance(
+                translated,
+                str,
+            )
+            and translated
+        ):
+            labels[key] = translated
+
+    return labels
+
+
+def _candidate_review_label(
+    candidate: EntityCandidate,
+    status_labels: dict[str, str] | None = None,
+) -> str:
+    """Return a localized review label."""
+    if status_labels is None:
+        status_labels = (
+            _MAPPING_STATUS_FALLBACKS
+        )
+
+    entity_name = candidate.config.get(
+        CONF_FRIENDLY_NAME,
+        "Tuya entity",
+    )
+
+    status = status_labels.get(
+        candidate.display_status_key,
+        candidate.display_status_key,
+    )
+
+    return (
+        f"{entity_name} "
+        f"— {candidate.platform} "
+        f"· {status} "
+        f"(DP {candidate.primary_dp})"
+    )
+
+
+_ACTION_TRANSLATION_KEYS = {
+    CONF_ADD_DEVICE:
+        "action_add_device",
+    CONF_EDIT_DEVICE:
+        "action_edit_device",
+    CONF_SETUP_CLOUD:
+        "action_setup_cloud",
+}
+
+_ACTION_FALLBACKS = {
+    CONF_ADD_DEVICE:
+        "Add a new device",
+    CONF_EDIT_DEVICE:
+        "Edit a device",
+    CONF_SETUP_CLOUD:
+        "Reconfigure Cloud API account",
+}
+
+
+async def _async_action_labels(
+    hass,
+) -> dict[str, str]:
+    """Return localized labels for the main options actions."""
+    labels = dict(
+        _ACTION_FALLBACKS
+    )
+
+    language = getattr(
+        getattr(
+            hass,
+            "config",
+            None,
+        ),
+        "language",
+        "en",
+    )
+
+    try:
+        translations = (
+            await async_get_translations(
+                hass,
+                language,
+                "common",
+                {DOMAIN},
+            )
+        )
+    except Exception as ex:
+        _LOGGER.debug(
+            "Unable to load action translations "
+            "for %s: %s",
+            language,
+            ex,
+        )
+        return labels
+
+    prefix = (
+        f"component.{DOMAIN}.common."
+    )
+
+    for (
+        action,
+        translation_key,
+    ) in _ACTION_TRANSLATION_KEYS.items():
+        translated = translations.get(
+            f"{prefix}{translation_key}"
+        )
+
+        if (
+            isinstance(
+                translated,
+                str,
+            )
+            and translated
+        ):
+            labels[action] = translated
+
+    return labels
+
+
+def _configure_schema(
+    action_labels: dict[str, str],
+):
+    """Build the translated main options schema."""
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_ACTION,
+                default=CONF_ADD_DEVICE,
+            ): vol.In(
+                action_labels
+            ),
+        }
+    )
+
 
 CLOUD_SETUP_SCHEMA = vol.Schema(
     {
@@ -721,9 +907,17 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
             if user_input.get(CONF_ACTION) == CONF_EDIT_DEVICE:
                 return await self.async_step_edit_device()
 
+        action_labels = (
+            await _async_action_labels(
+                self.hass
+            )
+        )
+
         return self.async_show_form(
             step_id="init",
-            data_schema=CONFIGURE_SCHEMA,
+            data_schema=_configure_schema(
+                action_labels
+            ),
         )
 
     async def async_step_cloud_setup(self, user_input=None):
@@ -1023,14 +1217,18 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         user_input=None,
     ):
         """Review automatically resolved entity suggestions."""
-        options = {
-            str(index): (
-                f"{candidate.config.get(CONF_FRIENDLY_NAME, 'Tuya entity')} "
-                f"— {candidate.platform} "
-                f"[{candidate.confidence.value.upper()}] "
-                f"(DP {candidate.primary_dp}; "
-                f"{', '.join(candidate.matched_codes)})"
+        status_labels = (
+            await _async_mapping_status_labels(
+                self.hass
             )
+        )
+
+        options = {
+            str(index):
+                _candidate_review_label(
+                    candidate,
+                    status_labels,
+                )
             for index, candidate
             in enumerate(self.auto_candidates)
         }

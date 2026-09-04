@@ -53,27 +53,27 @@
                 "description": "Options cannot be edited when configured via YAML."
             },
             "init": {
-                "title": "LocalTuya Configuration",
-                "description": "Select the desired action.",
+                "title": "LocalTuya-Konfiguration",
+                "description": "Wähle die gewünschte Aktion.",
                 "data": {
                     "add_device": "Add a new device",
                     "edit_device": "Edit a device",
                     "setup_cloud": "Reconfigure Cloud API account",
-                    "action": "Action"
+                    "action": "Aktion"
                 }
             },
             "add_device": {
-                "title": "Add a new device",
-                "description": "Select an automatically discovered device or choose `...` to configure one manually.",
+                "title": "Neues Gerät hinzufügen",
+                "description": "Wähle ein automatisch erkanntes Gerät oder `...`, um ein Gerät manuell zu konfigurieren.",
                 "data": {
-                    "selected_device": "Discovered devices"
+                    "selected_device": "Erkannte Geräte"
                 }
             },
             "edit_device": {
-                "title": "Edit a device",
-                "description": "Select the configured device you want to edit.",
+                "title": "Gerät bearbeiten",
+                "description": "Wähle das konfigurierte Gerät aus, das du bearbeiten möchtest.",
                 "data": {
-                    "selected_device": "Configured devices",
+                    "selected_device": "Konfigurierte Geräte",
                     "max_temperature_const": "Max Temperature Constant (optional)",
                     "min_temperature_const": "Min Temperature Constant (optional)",
                     "hvac_fan_mode_dp": "HVAC Fan Mode DP (optional)",
@@ -83,50 +83,50 @@
                 }
             },
             "cloud_setup": {
-                "title": "Cloud API account configuration",
-                "description": "Enter your Tuya Cloud API account credentials.",
+                "title": "Cloud-API-Konto konfigurieren",
+                "description": "Gib die Zugangsdaten deines Tuya-Cloud-API-Kontos ein.",
                 "data": {
-                    "region": "API server region",
-                    "client_id": "Client ID",
-                    "client_secret": "Client secret",
-                    "user_id": "User ID",
-                    "user_name": "Username",
-                    "no_cloud": "Do not configure a Cloud API account"
+                    "region": "API-Serverregion",
+                    "client_id": "Client-ID",
+                    "client_secret": "Client-Secret",
+                    "user_id": "Benutzer-ID",
+                    "user_name": "Benutzername",
+                    "no_cloud": "Kein Cloud-API-Konto konfigurieren"
                 }
             },
             "configure_device": {
-                "title": "Configure device",
-                "description": "Enter the details for the device {for_device}.",
+                "title": "Gerät konfigurieren",
+                "description": "Gib die Details für das Gerät {for_device} ein.",
                 "data": {
                     "friendly_name": "Name",
-                    "host": "IP address / Host",
-                    "device_id": "Device ID",
-                    "local_key": "Local key",
-                    "protocol_version": "Protocol version",
-                    "enable_debug": "Enable debug for this device",
-                    "scan_interval": "Scan interval",
-                    "entities": "Configured entities",
+                    "host": "IP-Adresse / Host",
+                    "device_id": "Geräte-ID",
+                    "local_key": "Lokaler Schlüssel",
+                    "protocol_version": "Protokollversion",
+                    "enable_debug": "Debugging für dieses Gerät aktivieren",
+                    "scan_interval": "Abfrageintervall",
+                    "entities": "Konfigurierte Entitäten",
                     "add_entities": "Add more entities in 'edit device' mode",
                     "manual_dps_strings": "Manual DPS to add (separated by commas ',') - used when detection is not working (optional)",
-                    "reset_dpids": "DPIDs to send in the RESET command, separated by commas (optional; use when the device does not answer status requests after power-on)",
-                    "manual_dps": "Manual DPS to add, separated by commas (optional; use only when automatic detection does not work)",
-                    "enable_add_entities": "Add more entities"
+                    "reset_dpids": "DPIDs für den RESET-Befehl, durch Kommas getrennt (optional; verwenden, wenn das Gerät nach dem Einschalten nicht auf Statusanfragen antwortet)",
+                    "manual_dps": "Manuelle DPS, durch Kommas getrennt (optional; nur verwenden, wenn die automatische Erkennung nicht funktioniert)",
+                    "enable_add_entities": "Weitere Entitäten hinzufügen"
                 }
             },
             "pick_entity_type": {
-                "title": "Select entity type",
-                "description": "Choose the type of entity you want to add.",
+                "title": "Entitätstyp auswählen",
+                "description": "Wähle den Typ der hinzuzufügenden Entität.",
                 "data": {
-                    "platform_to_add": "Platform",
-                    "no_additional_entities": "Do not add more entities"
+                    "platform_to_add": "Plattform",
+                    "no_additional_entities": "Keine weiteren Entitäten hinzufügen"
                 }
             },
             "configure_entity": {
-                "title": "Configure entity",
+                "title": "Entität konfigurieren",
                 "description": "Please fill out the details for {entity} with type `{platform}`. All settings except for `ID` can be changed from the Options page later.",
                 "data": {
                     "id": "ID",
-                    "friendly_name": "Friendly name",
+                    "friendly_name": "Name",
                     "current": "Current",
                     "current_consumption": "Current Consumption",
                     "voltage": "Voltage",
@@ -179,7 +179,7 @@
                     "fan_direction": "fan direction dps",
                     "fan_direction_forward": "forward dps string",
                     "fan_direction_reverse": "reverse dps string",
-                    "fan_dps_type": "DP value type",
+                    "fan_dps_type": "DP-Werttyp",
                     "current_temperature_dp": "Current Temperature",
                     "target_temperature_dp": "Target Temperature",
                     "temperature_step": "Temperature Step (optional)",
@@ -203,21 +203,21 @@
                     "eco_dp": "Eco DP (optional)",
                     "eco_value": "Eco value (optional)",
                     "heuristic_action": "Enable heuristic action (optional)",
-                    "dps_default_value": "Default value when uninitialized (optional)",
-                    "restore_on_reconnect": "Restore the last value set in Home Assistant after a lost connection",
-                    "min_value": "Minimum value",
-                    "max_value": "Maximum value",
-                    "step_size": "Minimum increment",
-                    "is_passive_entity": "Passive entity - requires the integration to send an initialization value",
-                    "default_value": "Default value when uninitialized (optional)",
-                    "away_temperature_dp": "Away/Holiday temperature DP"
+                    "dps_default_value": "Standardwert bei nicht initialisiertem Zustand (optional)",
+                    "restore_on_reconnect": "Letzten in Home Assistant gesetzten Wert nach einem Verbindungsverlust wiederherstellen",
+                    "min_value": "Minimalwert",
+                    "max_value": "Maximalwert",
+                    "step_size": "Minimale Schrittweite",
+                    "is_passive_entity": "Passive Entität - die Integration muss einen Initialisierungswert senden",
+                    "default_value": "Standardwert bei nicht initialisiertem Zustand (optional)",
+                    "away_temperature_dp": "Temperatur-DP für Abwesenheit/Urlaub"
                 }
             },
             "review_auto_entities": {
-                "title": "Review automatically detected entities",
-                "description": "LocalTuya resolved entity suggestions using LAN-observed DPS together with available metadata and device-catalog mappings. Verified, Community, and reliable Auto-detected entities are preselected. Experimental and Suggested entities require review. You can still add entities manually.",
+                "title": "Automatisch erkannte Entitäten prüfen",
+                "description": "LocalTuya hat Entitätsvorschläge anhand der im lokalen Netzwerk erkannten DPS, verfügbarer Metadaten und des Gerätekatalogs erstellt. Verifizierte, aus der Community stammende und zuverlässig automatisch erkannte Entitäten sind vorausgewählt. Experimentelle und vorgeschlagene Entitäten müssen geprüft werden.",
                 "data": {
-                    "auto_entity_selection": "Automatically detected entities"
+                    "auto_entity_selection": "Automatisch erkannte Entitäten"
                 }
             }
         }
@@ -248,13 +248,13 @@
     },
     "title": "LocalTuya",
     "common": {
-        "mapping_status_verified": "Verified",
-        "mapping_status_community": "Community",
-        "mapping_status_experimental": "Experimental",
-        "mapping_status_auto_detected": "Auto-detected",
-        "mapping_status_suggested": "Suggested",
-        "action_add_device": "Add a new device",
-        "action_edit_device": "Edit a device",
-        "action_setup_cloud": "Reconfigure Cloud API account"
+        "mapping_status_verified": "Verifiziert",
+        "mapping_status_community": "Aus der Community",
+        "mapping_status_experimental": "Experimentell",
+        "mapping_status_auto_detected": "Automatisch erkannt",
+        "mapping_status_suggested": "Vorgeschlagen",
+        "action_add_device": "Neues Gerät hinzufügen",
+        "action_edit_device": "Gerät bearbeiten",
+        "action_setup_cloud": "Cloud-API-Konto neu konfigurieren"
     }
 }

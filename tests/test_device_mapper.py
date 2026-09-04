@@ -3,13 +3,89 @@
 import unittest
 
 from custom_components.localtuya.device_mapper import (
+    EntityCandidate,
     MappingConfidence,
+    MappingSource,
+    MappingTrust,
     build_entity_candidates,
 )
 
 
 class DeviceMapperTests(unittest.TestCase):
     """Test generic entity mapping."""
+
+    def test_candidate_user_facing_statuses(self):
+        """Internal confidence and user-facing trust stay separate."""
+        generic_high = EntityCandidate(
+            platform="switch",
+            primary_dp=1,
+            confidence=MappingConfidence.HIGH,
+            config={},
+            matched_codes=(),
+        )
+
+        generic_medium = EntityCandidate(
+            platform="number",
+            primary_dp=2,
+            confidence=MappingConfidence.MEDIUM,
+            config={},
+            matched_codes=(),
+        )
+
+        verified = EntityCandidate(
+            platform="climate",
+            primary_dp=3,
+            confidence=MappingConfidence.HIGH,
+            config={},
+            matched_codes=(),
+            source=MappingSource.CATALOG,
+            trust=MappingTrust.VERIFIED,
+        )
+
+        community = EntityCandidate(
+            platform="light",
+            primary_dp=4,
+            confidence=MappingConfidence.HIGH,
+            config={},
+            matched_codes=(),
+            source=MappingSource.CATALOG,
+            trust=MappingTrust.COMMUNITY,
+        )
+
+        experimental = EntityCandidate(
+            platform="select",
+            primary_dp=5,
+            confidence=MappingConfidence.MEDIUM,
+            config={},
+            matched_codes=(),
+            source=MappingSource.CATALOG,
+            trust=MappingTrust.EXPERIMENTAL,
+        )
+
+        self.assertEqual(
+            generic_high.display_status_key,
+            "mapping_status_auto_detected",
+        )
+
+        self.assertEqual(
+            generic_medium.display_status_key,
+            "mapping_status_suggested",
+        )
+
+        self.assertEqual(
+            verified.display_status_key,
+            "mapping_status_verified",
+        )
+
+        self.assertEqual(
+            community.display_status_key,
+            "mapping_status_community",
+        )
+
+        self.assertEqual(
+            experimental.display_status_key,
+            "mapping_status_experimental",
+        )
 
     @staticmethod
     def candidate(candidates, platform, dp_id):

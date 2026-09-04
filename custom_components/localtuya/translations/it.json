@@ -56,65 +56,77 @@
                 "title": "Configurazione LocalTuya",
                 "description": "Seleziona l'azione desiderata.",
                 "data": {
+                    "action": "Azione",
                     "add_device": "Aggiungi un nuovo dispositivo",
                     "edit_device": "Modifica un dispositivo",
-                    "setup_cloud": "Riconfigurare l'account Cloud API"
+                    "setup_cloud": "Riconfigura account Cloud API"
                 }
             },
             "add_device": {
                 "title": "Aggiungi un nuovo dispositivo",
-                "description": "Scegli uno dei dispositivi trovati automaticamente o `...` per aggiungere manualmente un dispositivo.",
+                "description": "Seleziona un dispositivo rilevato automaticamente oppure scegli `...` per configurarlo manualmente.",
                 "data": {
-                    "selected_device": "Dispositivi trovati"
+                    "selected_device": "Dispositivi rilevati"
                 }
             },
             "edit_device": {
                 "title": "Modifica un dispositivo",
-                "description": "Scegli il dispositivo configurato che si desidera modificare.",
+                "description": "Seleziona il dispositivo configurato che desideri modificare.",
                 "data": {
-                    "selected_device": "Dispositivi configurati"
+                    "selected_device": "Dispositivi configurati",
+                    "hvac_fan_mode_dp": "DP modalità ventola HVAC",
+                    "hvac_fan_mode_set": "Set modalità ventola HVAC",
+                    "hvac_swing_mode_dp": "DP modalità oscillazione HVAC",
+                    "hvac_swing_mode_set": "Set modalità oscillazione HVAC",
+                    "max_temperature_const": "Temperatura massima",
+                    "min_temperature_const": "Temperatura minima"
                 }
             },
             "cloud_setup": {
-                "title": "Configurazione dell'account Cloud API",
-                "description": "Inserisci le credenziali per l'account Cloud API Tuya.",
+                "title": "Configurazione account Cloud API",
+                "description": "Inserisci le credenziali dell'account Tuya Cloud API.",
                 "data": {
-                    "region": "Regione del server API",
+                    "region": "Regione server API",
                     "client_id": "Client ID",
-                    "client_secret": "Secret",
+                    "client_secret": "Client secret",
                     "user_id": "User ID",
-                    "user_name": "Username",
-                    "no_cloud": "Non configurare l'account Cloud API"
+                    "user_name": "Nome utente",
+                    "no_cloud": "Non configurare un account Cloud API"
                 }
             },
             "configure_device": {
-                "title": "Configura il dispositivo",
-                "description": "Compila i dettagli del dispositivo {for_device}.",
+                "title": "Configura dispositivo",
+                "description": "Inserisci i dettagli del dispositivo {for_device}.",
                 "data": {
                     "friendly_name": "Nome",
-                    "host": "Host",
-                    "device_id": "ID del dispositivo",
+                    "host": "Indirizzo IP / Host",
+                    "device_id": "ID dispositivo",
                     "local_key": "Chiave locale",
-                    "protocol_version": "Versione del protocollo",
-                    "enable_debug": "Abilita il debugging per questo device (il debug va abilitato anche in configuration.yaml)",
-                    "scan_interval": "Intervallo di scansione (secondi, solo quando non si aggiorna automaticamente)",
-                    "entities": "Entities (deseleziona un'entity per rimuoverla)"
+                    "protocol_version": "Versione protocollo",
+                    "enable_debug": "Abilita debug per questo dispositivo",
+                    "scan_interval": "Intervallo di scansione",
+                    "entities": "Entità configurate",
+                    "manual_dps": "DPS manuali da aggiungere, separati da virgole (opzionale; usare solo se il rilevamento automatico non funziona)",
+                    "reset_dpids": "DPID da inviare nel comando RESET, separati da virgole (opzionale; usare se il dispositivo non risponde alle richieste di stato dopo l'accensione)",
+                    "enable_add_entities": "Aggiungi altre entità",
+                    "add_entities": "Aggiungi entità",
+                    "manual_dps_strings": "DPS manuali"
                 }
             },
             "pick_entity_type": {
-                "title": "Selezione del tipo di entity",
-                "description": "Scegli il tipo di entity che desideri aggiungere.",
+                "title": "Selezione tipo di entità",
+                "description": "Scegli il tipo di entità che desideri aggiungere.",
                 "data": {
-                    "platform_to_add": "piattaforma",
-                    "no_additional_entities": "Non aggiungere altre entity"
+                    "platform_to_add": "Piattaforma",
+                    "no_additional_entities": "Non aggiungere altre entità"
                 }
             },
             "configure_entity": {
-                "title": "Configurare entity",
+                "title": "Configura entità",
                 "description": "Compila i dettagli per {entity} con tipo `{platform}`.Tutte le impostazioni ad eccezione di `id` possono essere modificate dalla pagina delle opzioni in seguito.",
                 "data": {
                     "id": "ID",
-                    "friendly_name": "Nome amichevole",
+                    "friendly_name": "Nome",
                     "current": "Corrente",
                     "current_consumption": "Potenza",
                     "voltage": "Tensione",
@@ -183,14 +195,29 @@
                     "preset_set": "Set di preset (opzionale)",
                     "eco_dp": "DP per Eco (opzionale)",
                     "eco_value": "Valore Eco (opzionale)",
-                    "heuristic_action": "Abilita azione euristica (opzionale)"
+                    "heuristic_action": "Abilita azione euristica (opzionale)",
+                    "restore_on_reconnect": "Ripristina l'ultimo valore impostato in Home Assistant dopo una perdita di connessione",
+                    "is_passive_entity": "Entità passiva - richiede che l'integrazione invii un valore di inizializzazione",
+                    "dps_default_value": "Valore predefinito quando non inizializzato (opzionale)",
+                    "default_value": "Valore predefinito quando non inizializzato (opzionale)",
+                    "fan_dps_type": "Tipo di valore DP",
+                    "away_temperature_dp": "DP temperatura modalità Assenza/Vacanza",
+                    "min_value": "Valore minimo",
+                    "max_value": "Valore massimo",
+                    "step_size": "Incremento minimo",
+                    "hvac_fan_mode_dp": "DP modalità ventola HVAC",
+                    "hvac_fan_mode_set": "Set modalità ventola HVAC",
+                    "hvac_swing_mode_dp": "DP modalità oscillazione HVAC",
+                    "hvac_swing_mode_set": "Set modalità oscillazione HVAC",
+                    "max_temperature_const": "Temperatura massima",
+                    "min_temperature_const": "Temperatura minima"
                 }
             },
             "review_auto_entities": {
-                "title": "Verifica delle entity rilevate automaticamente",
-                "description": "I metadati Tuya Cloud hanno prodotto dei suggerimenti. Le entity ad alta affidabilità sono preselezionate; quelle a media affidabilità vengono mostrate ma non selezionate. Puoi verificarle e aggiungere comunque altre entity manualmente.",
+                "title": "Controlla le entità rilevate automaticamente",
+                "description": "LocalTuya ha rilevato le entità usando i DPS osservati in rete locale insieme ai metadati disponibili e al catalogo dei dispositivi. Le entità Verificate, Dalla community e quelle rilevate automaticamente con buona affidabilità sono preselezionate. Le entità Sperimentali e Suggerite richiedono conferma. Puoi comunque aggiungere altre entità manualmente.",
                 "data": {
-                    "auto_entity_selection": "Entity rilevate automaticamente"
+                    "auto_entity_selection": "Entità rilevate automaticamente"
                 }
             }
         }
@@ -219,5 +246,15 @@
             }
         }
     },
-    "title": "LocalTuya"
+    "title": "LocalTuya",
+    "common": {
+        "mapping_status_verified": "Verificato",
+        "mapping_status_community": "Dalla community",
+        "mapping_status_experimental": "Sperimentale",
+        "mapping_status_auto_detected": "Rilevato automaticamente",
+        "mapping_status_suggested": "Suggerito",
+        "action_add_device": "Aggiungi un nuovo dispositivo",
+        "action_edit_device": "Modifica un dispositivo",
+        "action_setup_cloud": "Riconfigura account Cloud API"
+    }
 }

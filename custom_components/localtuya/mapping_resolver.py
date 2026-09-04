@@ -15,10 +15,27 @@ from homeassistant.const import (
 from .device_mapper import (
     EntityCandidate,
     MappingConfidence,
+    MappingSource,
+    MappingTrust,
     build_entity_candidates,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _catalog_trust(
+    confidence: str,
+) -> MappingTrust:
+    """Convert catalog confidence into a conservative UI trust value."""
+    try:
+        return MappingTrust(
+            confidence
+        )
+    except ValueError:
+        # Runtime validation should normally make this
+        # unreachable. Unknown catalog trust is treated
+        # conservatively rather than promoted.
+        return MappingTrust.EXPERIMENTAL
 
 
 def _merge_catalog_match(
@@ -241,6 +258,43 @@ def _merge_catalog_match(
                     existing.confidence
                 )
 
+            if (
+                catalog_match.confidence
+                in {
+                    "verified",
+                    "community",
+                }
+            ):
+                merged_source = (
+                    MappingSource.CATALOG
+                )
+                merged_trust = (
+                    _catalog_trust(
+                        catalog_match.confidence
+                    )
+                )
+
+            elif override_applied:
+                # An experimental catalog mapping becomes
+                # user-visible only when it actually replaces
+                # generic knowledge.
+                merged_source = (
+                    MappingSource.CATALOG
+                )
+                merged_trust = (
+                    MappingTrust.EXPERIMENTAL
+                )
+
+            else:
+                # Generic mapping remains the owner when an
+                # experimental catalog entry did not override it.
+                merged_source = (
+                    existing.source
+                )
+                merged_trust = (
+                    existing.trust
+                )
+
             result[
                 existing_index
             ] = EntityCandidate(
@@ -260,6 +314,8 @@ def _merge_catalog_match(
                 referenced_dps=tuple(
                     referenced_dps
                 ),
+                source=merged_source,
+                trust=merged_trust,
             )
 
             continue
@@ -288,6 +344,12 @@ def _merge_catalog_match(
                 ),
                 referenced_dps=tuple(
                     catalog_refs
+                ),
+                source=(
+                    MappingSource.CATALOG
+                ),
+                trust=_catalog_trust(
+                    catalog_match.confidence
                 ),
             )
         )

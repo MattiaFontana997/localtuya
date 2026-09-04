@@ -1,4 +1,4 @@
-"""Tests for Cloud mapper review flow."""
+"""Tests for unified mapper review flow."""
 
 import unittest
 from types import SimpleNamespace
@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from custom_components.localtuya.config_flow import (
     AUTO_ENTITY_SELECTION,
     LocalTuyaOptionsFlowHandler,
+    _candidate_review_label,
     async_get_entity_candidates,
 )
 from custom_components.localtuya.const import (
@@ -190,6 +191,56 @@ class ConfigFlowMapperTests(
         self.assertFalse(
             set(defaults)
             & set(medium_indexes)
+        )
+
+        high_candidate = next(
+            candidate
+            for candidate in candidates
+            if (
+                candidate.confidence.value
+                == "high"
+            )
+        )
+
+        medium_candidate = next(
+            candidate
+            for candidate in candidates
+            if (
+                candidate.confidence.value
+                == "medium"
+            )
+        )
+
+        high_label = (
+            _candidate_review_label(
+                high_candidate
+            )
+        )
+
+        medium_label = (
+            _candidate_review_label(
+                medium_candidate
+            )
+        )
+
+        self.assertIn(
+            "· Auto-detected",
+            high_label,
+        )
+
+        self.assertIn(
+            "· Suggested",
+            medium_label,
+        )
+
+        self.assertNotIn(
+            "[HIGH]",
+            high_label,
+        )
+
+        self.assertNotIn(
+            "switch_1",
+            high_label,
         )
 
 
@@ -517,6 +568,23 @@ class ConfigFlowMapperTests(
             "medium",
         )
 
+        self.assertEqual(
+            climate.source.value,
+            "catalog",
+        )
+
+        self.assertEqual(
+            climate.trust.value,
+            "experimental",
+        )
+
+        self.assertIn(
+            "· Experimental",
+            _candidate_review_label(
+                climate
+            ),
+        )
+
         self.assertIn(
             "catalog:wxmbjwpt8yea7bag-test",
             climate.matched_codes,
@@ -601,6 +669,23 @@ class ConfigFlowMapperTests(
         self.assertEqual(
             number_candidate.confidence.value,
             "high",
+        )
+
+        self.assertEqual(
+            number_candidate.source.value,
+            "catalog",
+        )
+
+        self.assertEqual(
+            number_candidate.trust.value,
+            "verified",
+        )
+
+        self.assertIn(
+            "· Verified",
+            _candidate_review_label(
+                number_candidate
+            ),
         )
 
         self.assertIn(

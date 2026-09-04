@@ -53,27 +53,27 @@
                 "description": "Options cannot be edited when configured via YAML."
             },
             "init": {
-                "title": "LocalTuya Configuration",
-                "description": "Select the desired action.",
+                "title": "LocalTuya 配置",
+                "description": "请选择要执行的操作。",
                 "data": {
                     "add_device": "Add a new device",
                     "edit_device": "Edit a device",
                     "setup_cloud": "Reconfigure Cloud API account",
-                    "action": "Action"
+                    "action": "操作"
                 }
             },
             "add_device": {
-                "title": "Add a new device",
-                "description": "Select an automatically discovered device or choose `...` to configure one manually.",
+                "title": "添加新设备",
+                "description": "选择自动检测到的设备，或选择 `...` 手动配置设备。",
                 "data": {
-                    "selected_device": "Discovered devices"
+                    "selected_device": "检测到的设备"
                 }
             },
             "edit_device": {
-                "title": "Edit a device",
-                "description": "Select the configured device you want to edit.",
+                "title": "编辑设备",
+                "description": "选择要编辑的已配置设备。",
                 "data": {
-                    "selected_device": "Configured devices",
+                    "selected_device": "已配置设备",
                     "max_temperature_const": "Max Temperature Constant (optional)",
                     "min_temperature_const": "Min Temperature Constant (optional)",
                     "hvac_fan_mode_dp": "HVAC Fan Mode DP (optional)",
@@ -83,50 +83,50 @@
                 }
             },
             "cloud_setup": {
-                "title": "Cloud API account configuration",
-                "description": "Enter your Tuya Cloud API account credentials.",
+                "title": "云 API 账户配置",
+                "description": "请输入 Tuya 云 API 账户凭据。",
                 "data": {
-                    "region": "API server region",
-                    "client_id": "Client ID",
-                    "client_secret": "Client secret",
-                    "user_id": "User ID",
-                    "user_name": "Username",
-                    "no_cloud": "Do not configure a Cloud API account"
+                    "region": "API 服务器区域",
+                    "client_id": "客户端 ID",
+                    "client_secret": "客户端密钥",
+                    "user_id": "用户 ID",
+                    "user_name": "用户名",
+                    "no_cloud": "不配置云 API 账户"
                 }
             },
             "configure_device": {
-                "title": "Configure device",
-                "description": "Enter the details for the device {for_device}.",
+                "title": "配置设备",
+                "description": "请输入设备 {for_device} 的详细信息。",
                 "data": {
-                    "friendly_name": "Name",
-                    "host": "IP address / Host",
-                    "device_id": "Device ID",
-                    "local_key": "Local key",
-                    "protocol_version": "Protocol version",
-                    "enable_debug": "Enable debug for this device",
-                    "scan_interval": "Scan interval",
-                    "entities": "Configured entities",
+                    "friendly_name": "名称",
+                    "host": "IP 地址 / 主机",
+                    "device_id": "设备 ID",
+                    "local_key": "本地密钥",
+                    "protocol_version": "协议版本",
+                    "enable_debug": "启用此设备的调试",
+                    "scan_interval": "扫描间隔",
+                    "entities": "已配置实体",
                     "add_entities": "Add more entities in 'edit device' mode",
                     "manual_dps_strings": "Manual DPS to add (separated by commas ',') - used when detection is not working (optional)",
-                    "reset_dpids": "DPIDs to send in the RESET command, separated by commas (optional; use when the device does not answer status requests after power-on)",
-                    "manual_dps": "Manual DPS to add, separated by commas (optional; use only when automatic detection does not work)",
-                    "enable_add_entities": "Add more entities"
+                    "reset_dpids": "RESET 命令中发送的 DPID，以逗号分隔（可选，设备开机后不响应状态请求时使用）",
+                    "manual_dps": "手动添加 DPS，以逗号分隔（可选，仅在自动检测失败时使用）",
+                    "enable_add_entities": "添加更多实体"
                 }
             },
             "pick_entity_type": {
-                "title": "Select entity type",
-                "description": "Choose the type of entity you want to add.",
+                "title": "选择实体类型",
+                "description": "选择要添加的实体类型。",
                 "data": {
-                    "platform_to_add": "Platform",
-                    "no_additional_entities": "Do not add more entities"
+                    "platform_to_add": "平台",
+                    "no_additional_entities": "不添加更多实体"
                 }
             },
             "configure_entity": {
-                "title": "Configure entity",
+                "title": "配置实体",
                 "description": "Please fill out the details for {entity} with type `{platform}`. All settings except for `ID` can be changed from the Options page later.",
                 "data": {
                     "id": "ID",
-                    "friendly_name": "Friendly name",
+                    "friendly_name": "名称",
                     "current": "Current",
                     "current_consumption": "Current Consumption",
                     "voltage": "Voltage",
@@ -179,7 +179,7 @@
                     "fan_direction": "fan direction dps",
                     "fan_direction_forward": "forward dps string",
                     "fan_direction_reverse": "reverse dps string",
-                    "fan_dps_type": "DP value type",
+                    "fan_dps_type": "DP 值类型",
                     "current_temperature_dp": "Current Temperature",
                     "target_temperature_dp": "Target Temperature",
                     "temperature_step": "Temperature Step (optional)",
@@ -203,21 +203,21 @@
                     "eco_dp": "Eco DP (optional)",
                     "eco_value": "Eco value (optional)",
                     "heuristic_action": "Enable heuristic action (optional)",
-                    "dps_default_value": "Default value when uninitialized (optional)",
-                    "restore_on_reconnect": "Restore the last value set in Home Assistant after a lost connection",
-                    "min_value": "Minimum value",
-                    "max_value": "Maximum value",
-                    "step_size": "Minimum increment",
-                    "is_passive_entity": "Passive entity - requires the integration to send an initialization value",
-                    "default_value": "Default value when uninitialized (optional)",
-                    "away_temperature_dp": "Away/Holiday temperature DP"
+                    "dps_default_value": "未初始化时的默认值（可选）",
+                    "restore_on_reconnect": "连接中断后恢复 Home Assistant 中最后设置的值",
+                    "min_value": "最小值",
+                    "max_value": "最大值",
+                    "step_size": "最小步进值",
+                    "is_passive_entity": "被动实体 - 需要集成发送初始化值",
+                    "default_value": "未初始化时的默认值（可选）",
+                    "away_temperature_dp": "离家/假期温度 DP"
                 }
             },
             "review_auto_entities": {
-                "title": "Review automatically detected entities",
-                "description": "LocalTuya resolved entity suggestions using LAN-observed DPS together with available metadata and device-catalog mappings. Verified, Community, and reliable Auto-detected entities are preselected. Experimental and Suggested entities require review. You can still add entities manually.",
+                "title": "检查自动检测到的实体",
+                "description": "LocalTuya 根据局域网中检测到的 DPS、可用元数据以及设备目录生成实体建议。已验证、社区提供以及可靠的自动检测实体会默认选中。实验性和建议实体需要手动确认。你仍然可以继续手动添加实体。",
                 "data": {
-                    "auto_entity_selection": "Automatically detected entities"
+                    "auto_entity_selection": "自动检测到的实体"
                 }
             }
         }
@@ -248,13 +248,13 @@
     },
     "title": "LocalTuya",
     "common": {
-        "mapping_status_verified": "Verified",
-        "mapping_status_community": "Community",
-        "mapping_status_experimental": "Experimental",
-        "mapping_status_auto_detected": "Auto-detected",
-        "mapping_status_suggested": "Suggested",
-        "action_add_device": "Add a new device",
-        "action_edit_device": "Edit a device",
-        "action_setup_cloud": "Reconfigure Cloud API account"
+        "mapping_status_verified": "已验证",
+        "mapping_status_community": "社区提供",
+        "mapping_status_experimental": "实验性",
+        "mapping_status_auto_detected": "自动检测",
+        "mapping_status_suggested": "建议",
+        "action_add_device": "添加新设备",
+        "action_edit_device": "编辑设备",
+        "action_setup_cloud": "重新配置云 API 账户"
     }
 }

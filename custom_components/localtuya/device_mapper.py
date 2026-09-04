@@ -60,11 +60,26 @@ from .const import (
 
 
 class MappingConfidence(str, Enum):
-    """Confidence assigned to an automatically mapped entity."""
+    """Internal confidence assigned to an automatically mapped entity."""
 
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
+
+
+class MappingSource(str, Enum):
+    """Source that owns the user-visible mapping decision."""
+
+    GENERIC = "generic"
+    CATALOG = "catalog"
+
+
+class MappingTrust(str, Enum):
+    """User-facing trust level for catalog mappings."""
+
+    VERIFIED = "verified"
+    COMMUNITY = "community"
+    EXPERIMENTAL = "experimental"
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,7 +96,7 @@ class DpMetadata:
 
 @dataclass(frozen=True, slots=True)
 class EntityCandidate:
-    """One entity proposed by the generic mapper."""
+    """One entity proposed by the unified mapping resolver."""
 
     platform: str
     primary_dp: int
@@ -89,6 +104,30 @@ class EntityCandidate:
     config: dict[str, Any]
     matched_codes: tuple[str, ...]
     referenced_dps: tuple[int, ...] = ()
+    source: MappingSource = MappingSource.GENERIC
+    trust: MappingTrust | None = None
+
+    @property
+    def display_status_key(self) -> str:
+        """Return the translation key for the user-facing status."""
+        if (
+            self.source == MappingSource.CATALOG
+            and self.trust is not None
+        ):
+            return (
+                f"mapping_status_"
+                f"{self.trust.value}"
+            )
+
+        if (
+            self.confidence
+            == MappingConfidence.HIGH
+        ):
+            return (
+                "mapping_status_auto_detected"
+            )
+
+        return "mapping_status_suggested"
 
 
 _LIGHT_POWER_CODES = (
