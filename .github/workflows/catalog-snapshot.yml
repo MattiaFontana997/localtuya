@@ -1,0 +1,43 @@
+name: Catalog Snapshot
+
+on:
+  push:
+    paths:
+      - "custom_components/localtuya/builtin_catalog.json"
+      - "tools/sync_builtin_catalog.py"
+      - ".github/workflows/catalog-snapshot.yml"
+
+  pull_request:
+    paths:
+      - "custom_components/localtuya/builtin_catalog.json"
+      - "tools/sync_builtin_catalog.py"
+      - ".github/workflows/catalog-snapshot.yml"
+
+  schedule:
+    - cron: "17 4 * * 1"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: catalog-snapshot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Bundled catalog is current
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Check bundled device catalog
+        run: python tools/sync_builtin_catalog.py --check
