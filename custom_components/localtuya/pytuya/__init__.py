@@ -689,21 +689,56 @@ class MessageDispatcher(ContextualLogger):
         return self.listeners.pop(seqno)
 
     def add_data(self, data):
-        """Add new data to the buffer and try to parse messages."""
+        """Add data to the buffer and dispatch complete Tuya frames."""
         self.buffer += data
-        header_len = struct.calcsize(MESSAGE_RECV_HEADER_FMT)
 
         while self.buffer:
-            # Check if enough data for measage header
+            # We need at least the prefix before deciding which
+            # Tuya framing format is being received.
+            if len(self.buffer) < 4:
+                break
+
+            if self.buffer.startswith(PREFIX_6699_BIN):
+                header_len = struct.calcsize(
+                    MESSAGE_HEADER_FMT_6699
+                )
+            else:
+                header_len = struct.calcsize(
+                    MESSAGE_HEADER_FMT_55AA
+                )
+
+            # TCP may split a Tuya header across multiple packets.
             if len(self.buffer) < header_len:
                 break
 
             header = parse_header(self.buffer)
-            hmac_key = self.local_key if self.version == 3.4 else None
-            msg = unpack_message(
-                self.buffer, header=header, hmac_key=hmac_key, logger=self
+
+            # Do not attempt authentication/decryption until the
+            # complete frame has arrived.
+            if len(self.buffer) < header.total_length:
+                break
+
+            frame = self.buffer[:header.total_length]
+
+            # Remove exactly one complete frame. Any additional
+            # frame received in the same TCP chunk remains queued.
+            self.buffer = self.buffer[header.total_length:]
+
+            # Protocol 3.4 uses the key for HMAC framing and
+            # protocol 3.5 uses it for 6699 AES-GCM framing.
+            hmac_key = (
+                self.local_key
+                if self.version >= 3.4
+                else None
             )
-            self.buffer = self.buffer[header_len - 4 + header.length :]
+
+            msg = unpack_message(
+                frame,
+                header=header,
+                hmac_key=hmac_key,
+                logger=self,
+            )
+
             self._dispatch(msg)
 
     def _dispatch(self, msg):
