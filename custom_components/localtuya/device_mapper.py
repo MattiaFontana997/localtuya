@@ -149,12 +149,14 @@ _LIGHT_MODE_CODES = (
     "work_mode",
 )
 
-# LocalTuya's current light implementation expects the older encoded
-# string representation for the color DP. Tuya colour_data_v2 is often
-# structured JSON, so it must not be mapped automatically yet.
+# LocalTuya light color handling expects Tuya's encoded string/raw format.
+# Map both legacy and v2 color codes only when metadata reports a compatible
+# string/raw type; structured JSON variants remain excluded below.
 _LIGHT_COLOR_CODES = (
     "colour_data",
     "color_data",
+    "colour_data_v2",
+    "color_data_v2",
 )
 
 _THERMOSTAT_CATEGORIES = {
