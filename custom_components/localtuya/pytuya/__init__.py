@@ -51,6 +51,7 @@ from hashlib import md5, sha256
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 version_tuple = (10, 0, 0)
 version = version_string = __version__ = "%d.%d.%d" % version_tuple
@@ -59,14 +60,23 @@ __author__ = "rospogrigio"
 _LOGGER = logging.getLogger(__name__)
 
 # Tuya Packet Format
-TuyaHeader = namedtuple("TuyaHeader", "prefix seqno cmd length")
+TuyaHeader = namedtuple(
+    "TuyaHeader",
+    "prefix seqno cmd length total_length",
+    defaults=(None,),
+)
 MessagePayload = namedtuple("MessagePayload", "cmd payload")
 try:
     TuyaMessage = namedtuple(
-        "TuyaMessage", "seqno cmd retcode payload crc crc_good", defaults=(True,)
+        "TuyaMessage",
+        "seqno cmd retcode payload crc crc_good prefix iv",
+        defaults=(True, 0x000055AA, None),
     )
 except Exception:
-    TuyaMessage = namedtuple("TuyaMessage", "seqno cmd retcode payload crc crc_good")
+    TuyaMessage = namedtuple(
+        "TuyaMessage",
+        "seqno cmd retcode payload crc crc_good prefix iv",
+    )
 
 # TinyTuya Error Response Codes
 ERR_JSON = 900
@@ -143,15 +153,30 @@ PROTOCOL_VERSION_BYTES_34 = b"3.4"
 PROTOCOL_3x_HEADER = 12 * b"\x00"
 PROTOCOL_33_HEADER = PROTOCOL_VERSION_BYTES_33 + PROTOCOL_3x_HEADER
 PROTOCOL_34_HEADER = PROTOCOL_VERSION_BYTES_34 + PROTOCOL_3x_HEADER
-MESSAGE_HEADER_FMT = ">4I"  # 4*uint32: prefix, seqno, cmd, length [, retcode]
-MESSAGE_RECV_HEADER_FMT = ">5I"  # 4*uint32: prefix, seqno, cmd, length, retcode
-MESSAGE_RETCODE_FMT = ">I"  # retcode for received messages
-MESSAGE_END_FMT = ">2I"  # 2*uint32: crc, suffix
-MESSAGE_END_FMT_HMAC = ">32sI"  # 32s:hmac, uint32:suffix
-PREFIX_VALUE = 0x000055AA
-PREFIX_BIN = b"\x00\x00U\xaa"
-SUFFIX_VALUE = 0x0000AA55
-SUFFIX_BIN = b"\x00\x00\xaaU"
+MESSAGE_HEADER_FMT = MESSAGE_HEADER_FMT_55AA = ">4I"
+MESSAGE_RECV_HEADER_FMT = ">5I"
+MESSAGE_HEADER_FMT_6699 = ">IHIII"
+
+MESSAGE_RETCODE_FMT = ">I"
+
+MESSAGE_END_FMT = MESSAGE_END_FMT_55AA = ">2I"
+MESSAGE_END_FMT_HMAC = ">32sI"
+MESSAGE_END_FMT_6699 = ">16sI"
+
+PREFIX_VALUE = PREFIX_55AA_VALUE = 0x000055AA
+PREFIX_BIN = PREFIX_55AA_BIN = b"\x00\x00U\xaa"
+
+SUFFIX_VALUE = SUFFIX_55AA_VALUE = 0x0000AA55
+SUFFIX_BIN = SUFFIX_55AA_BIN = b"\x00\x00\xaaU"
+
+PREFIX_6699_VALUE = 0x00006699
+PREFIX_6699_BIN = b"\x00\x00\x66\x99"
+
+SUFFIX_6699_VALUE = 0x00009966
+SUFFIX_6699_BIN = b"\x00\x00\x99\x66"
+
+MAX_PAYLOAD_LENGTH_55AA = 1000
+MAX_PAYLOAD_LENGTH_6699 = 1440
 NO_PROTOCOL_HEADER_CMDS = [
     DP_QUERY,
     DP_QUERY_NEW,
@@ -266,117 +291,319 @@ class ContextualLogger:
 
 def pack_message(msg, hmac_key=None):
     """Pack a TuyaMessage into bytes."""
-    end_fmt = MESSAGE_END_FMT_HMAC if hmac_key else MESSAGE_END_FMT
-    # Create full message excluding CRC and suffix
-    buffer = (
-        struct.pack(
-            MESSAGE_HEADER_FMT,
-            PREFIX_VALUE,
-            msg.seqno,
-            msg.cmd,
-            len(msg.payload) + struct.calcsize(end_fmt),
+    prefix = getattr(msg, "prefix", PREFIX_55AA_VALUE)
+
+    if prefix == PREFIX_55AA_VALUE:
+        end_fmt = MESSAGE_END_FMT_HMAC if hmac_key else MESSAGE_END_FMT_55AA
+
+        buffer = (
+            struct.pack(
+                MESSAGE_HEADER_FMT_55AA,
+                PREFIX_55AA_VALUE,
+                msg.seqno,
+                msg.cmd,
+                len(msg.payload) + struct.calcsize(end_fmt),
+            )
+            + msg.payload
         )
-        + msg.payload
+
+        if hmac_key:
+            checksum = hmac.new(hmac_key, buffer, sha256).digest()
+        else:
+            checksum = binascii.crc32(buffer) & 0xFFFFFFFF
+
+        return buffer + struct.pack(
+            end_fmt,
+            checksum,
+            SUFFIX_55AA_VALUE,
+        )
+
+    if prefix != PREFIX_6699_VALUE:
+        raise ValueError(
+            f"Unsupported Tuya message prefix 0x{prefix:08X}"
+        )
+
+    if not hmac_key:
+        raise TypeError("A key is required for Tuya 6699 messages")
+
+    retcode_bytes = (
+        struct.pack(MESSAGE_RETCODE_FMT, msg.retcode)
+        if isinstance(msg.retcode, int)
+        else b""
     )
-    if hmac_key:
-        crc = hmac.new(hmac_key, buffer, sha256).digest()
-    else:
-        crc = binascii.crc32(buffer) & 0xFFFFFFFF
-    # Calculate CRC, add it together with suffix
-    buffer += struct.pack(end_fmt, crc, SUFFIX_VALUE)
-    return buffer
 
+    plaintext = retcode_bytes + msg.payload
 
-def unpack_message(data, hmac_key=None, header=None, no_retcode=False, logger=None):
-    """Unpack bytes into a TuyaMessage."""
-    end_fmt = MESSAGE_END_FMT_HMAC if hmac_key else MESSAGE_END_FMT
-    # 4-word header plus return code
-    header_len = struct.calcsize(MESSAGE_HEADER_FMT)
-    retcode_len = 0 if no_retcode else struct.calcsize(MESSAGE_RETCODE_FMT)
-    end_len = struct.calcsize(end_fmt)
-    headret_len = header_len + retcode_len
+    iv = getattr(msg, "iv", None)
+    if iv is None or iv is True:
+        iv = secrets.token_bytes(12)
 
-    if len(data) < headret_len + end_len:
-        logger.debug(
-            "unpack_message(): not enough data to unpack header! need %d but only have %d",
-            headret_len + end_len,
-            len(data),
+    if not isinstance(iv, bytes) or len(iv) != 12:
+        raise ValueError(
+            "Tuya 6699 AES-GCM IV must be exactly 12 bytes"
         )
-        raise DecodeError("Not enough data to unpack header")
 
+    # Length includes IV + ciphertext + 16-byte GCM tag.
+    # The four-byte 6699 suffix is not included.
+    msg_len = len(plaintext) + 12 + 16
+
+    header = struct.pack(
+        MESSAGE_HEADER_FMT_6699,
+        PREFIX_6699_VALUE,
+        0,
+        msg.seqno,
+        msg.cmd,
+        msg_len,
+    )
+
+    # Tuya authenticates all header bytes after the prefix.
+    aad = header[4:]
+
+    encrypted_and_tag = AESGCM(hmac_key).encrypt(
+        iv,
+        plaintext,
+        aad,
+    )
+
+    return (
+        header
+        + iv
+        + encrypted_and_tag
+        + SUFFIX_6699_BIN
+    )
+
+
+def unpack_message(
+    data,
+    hmac_key=None,
+    header=None,
+    no_retcode=False,
+    logger=None,
+):
+    """Unpack bytes into a TuyaMessage."""
     if header is None:
         header = parse_header(data)
 
-    if len(data) < header_len + header.length:
-        logger.debug(
-            "unpack_message(): not enough data to unpack payload! need %d but only have %d",
-            header_len + header.length,
-            len(data),
+    if header.prefix == PREFIX_55AA_VALUE:
+        header_len = struct.calcsize(MESSAGE_HEADER_FMT_55AA)
+        end_fmt = MESSAGE_END_FMT_HMAC if hmac_key else MESSAGE_END_FMT_55AA
+        retcode_len = 0 if no_retcode else struct.calcsize(MESSAGE_RETCODE_FMT)
+        end_len = struct.calcsize(end_fmt)
+        headret_len = header_len + retcode_len
+
+        if len(data) < headret_len + end_len:
+            if logger:
+                logger.debug(
+                    "unpack_message(): not enough data to unpack header! need %d but only have %d",
+                    headret_len + end_len,
+                    len(data),
+                )
+            raise DecodeError("Not enough data to unpack header")
+
+        if len(data) < header_len + header.length:
+            if logger:
+                logger.debug(
+                    "unpack_message(): not enough data to unpack payload! need %d but only have %d",
+                    header_len + header.length,
+                    len(data),
+                )
+            raise DecodeError("Not enough data to unpack payload")
+
+        retcode = (
+            0
+            if no_retcode
+            else struct.unpack(
+                MESSAGE_RETCODE_FMT,
+                data[header_len:headret_len],
+            )[0]
         )
-        raise DecodeError("Not enough data to unpack payload")
 
-    retcode = (
-        0
-        if no_retcode
-        else struct.unpack(MESSAGE_RETCODE_FMT, data[header_len:headret_len])[0]
-    )
-    # the retcode is technically part of the payload, but strip it as we do not want it here
-    payload = data[header_len + retcode_len : header_len + header.length]
-    crc, suffix = struct.unpack(end_fmt, payload[-end_len:])
+        payload = data[
+            header_len + retcode_len:
+            header_len + header.length
+        ]
 
-    if hmac_key:
-        have_crc = hmac.new(
-            hmac_key, data[: (header_len + header.length) - end_len], sha256
-        ).digest()
-    else:
-        have_crc = (
-            binascii.crc32(data[: (header_len + header.length) - end_len]) & 0xFFFFFFFF
+        crc, suffix = struct.unpack(
+            end_fmt,
+            payload[-end_len:],
         )
 
-    if suffix != SUFFIX_VALUE:
-        logger.debug("Suffix wrong! %08X != %08X", suffix, SUFFIX_VALUE)
-        raise DecodeError("Invalid message suffix")
-
-    if crc != have_crc:
         if hmac_key:
-            logger.debug(
-                "HMAC checksum wrong! %r != %r",
-                binascii.hexlify(have_crc),
-                binascii.hexlify(crc),
+            have_crc = hmac.new(
+                hmac_key,
+                data[: (header_len + header.length) - end_len],
+                sha256,
+            ).digest()
+        else:
+            have_crc = (
+                binascii.crc32(
+                    data[: (header_len + header.length) - end_len]
+                )
+                & 0xFFFFFFFF
             )
-            raise DecodeError("Invalid HMAC checksum")
 
-        logger.debug("CRC wrong! %08X != %08X", have_crc, crc)
-        raise DecodeError("Invalid CRC checksum")
+        if suffix != SUFFIX_55AA_VALUE:
+            if logger:
+                logger.debug(
+                    "Suffix wrong! %08X != %08X",
+                    suffix,
+                    SUFFIX_55AA_VALUE,
+                )
+            raise DecodeError("Invalid message suffix")
+
+        if crc != have_crc:
+            if hmac_key:
+                if logger:
+                    logger.debug(
+                        "HMAC checksum wrong! %r != %r",
+                        binascii.hexlify(have_crc),
+                        binascii.hexlify(crc),
+                    )
+                raise DecodeError("Invalid HMAC checksum")
+
+            if logger:
+                logger.debug(
+                    "CRC wrong! %08X != %08X",
+                    have_crc,
+                    crc,
+                )
+            raise DecodeError("Invalid CRC checksum")
+
+        return TuyaMessage(
+            header.seqno,
+            header.cmd,
+            retcode,
+            payload[:-end_len],
+            crc,
+            True,
+            PREFIX_55AA_VALUE,
+            None,
+        )
+
+    if header.prefix != PREFIX_6699_VALUE:
+        raise DecodeError("Unsupported Tuya message prefix")
+
+    if not hmac_key:
+        raise TypeError("A key is required for Tuya 6699 messages")
+
+    header_len = struct.calcsize(MESSAGE_HEADER_FMT_6699)
+    total_length = (
+        header.total_length
+        if header.total_length is not None
+        else header_len + header.length + 4
+    )
+
+    if len(data) < total_length:
+        raise DecodeError(
+            "Not enough data to unpack Tuya 6699 payload"
+        )
+
+    body_end = header_len + header.length
+
+    if data[body_end:body_end + 4] != SUFFIX_6699_BIN:
+        raise DecodeError("Invalid Tuya 6699 message suffix")
+
+    body = data[header_len:body_end]
+
+    if len(body) < 28:
+        raise DecodeError("Invalid Tuya 6699 payload length")
+
+    iv = body[:12]
+    encrypted_and_tag = body[12:]
+
+    try:
+        plaintext = AESGCM(hmac_key).decrypt(
+            iv,
+            encrypted_and_tag,
+            data[4:header_len],
+        )
+    except Exception as ex:
+        raise DecodeError(
+            "Invalid Tuya 6699 AES-GCM authentication"
+        ) from ex
+
+    if no_retcode is True:
+        retcode = 0
+        payload = plaintext
+    else:
+        if len(plaintext) < 4:
+            raise DecodeError(
+                "Tuya 6699 payload is missing retcode"
+            )
+
+        retcode = struct.unpack(
+            MESSAGE_RETCODE_FMT,
+            plaintext[:4],
+        )[0]
+        payload = plaintext[4:]
 
     return TuyaMessage(
-        header.seqno, header.cmd, retcode, payload[:-end_len], crc, True
+        header.seqno,
+        header.cmd,
+        retcode,
+        payload,
+        encrypted_and_tag[-16:],
+        True,
+        PREFIX_6699_VALUE,
+        iv,
     )
 
 
 def parse_header(data):
     """Unpack bytes into a TuyaHeader."""
-    header_len = struct.calcsize(MESSAGE_HEADER_FMT)
+    if data[:4] == PREFIX_6699_BIN:
+        fmt = MESSAGE_HEADER_FMT_6699
+    else:
+        fmt = MESSAGE_HEADER_FMT_55AA
+
+    header_len = struct.calcsize(fmt)
 
     if len(data) < header_len:
         raise DecodeError("Not enough data to unpack header")
 
-    prefix, seqno, cmd, payload_len = struct.unpack(
-        MESSAGE_HEADER_FMT, data[:header_len]
+    unpacked = struct.unpack(
+        fmt,
+        data[:header_len],
     )
 
-    if prefix != PREFIX_VALUE:
-        # self.debug('Header prefix wrong! %08X != %08X', prefix, PREFIX_VALUE)
-        raise DecodeError("Header prefix wrong! %08X != %08X" % (prefix, PREFIX_VALUE))
+    prefix = unpacked[0]
 
-    # sanity check. currently the max payload length is somewhere around 300 bytes
-    if payload_len > 1000:
+    if prefix == PREFIX_55AA_VALUE:
+        prefix, seqno, cmd, payload_len = unpacked
+        total_length = header_len + payload_len
+
+    elif prefix == PREFIX_6699_VALUE:
+        prefix, _unknown, seqno, cmd, payload_len = unpacked
+        total_length = header_len + payload_len + 4
+
+    else:
         raise DecodeError(
-            "Header claims the packet size is over 1000 bytes! It is most likely corrupt. Claimed size: %d bytes"
-            % payload_len
+            "Header prefix wrong! "
+            f"{prefix:08X} is not "
+            f"{PREFIX_55AA_VALUE:08X} or "
+            f"{PREFIX_6699_VALUE:08X}"
         )
 
-    return TuyaHeader(prefix, seqno, cmd, payload_len)
+    max_payload_length = (
+        MAX_PAYLOAD_LENGTH_6699
+        if prefix == PREFIX_6699_VALUE
+        else MAX_PAYLOAD_LENGTH_55AA
+    )
+
+    if payload_len > max_payload_length:
+        raise DecodeError(
+            "Header claims the packet size is over "
+            f"{max_payload_length} bytes! "
+            f"Claimed size: {payload_len} bytes"
+        )
+
+    return TuyaHeader(
+        prefix,
+        seqno,
+        cmd,
+        payload_len,
+        total_length,
+    )
 
 
 class AESCipher:
