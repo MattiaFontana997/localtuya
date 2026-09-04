@@ -1,9 +1,10 @@
-"""Translation structure regression tests."""
+"""Translation completeness regression tests."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import unittest
 
 from custom_components.localtuya import (
@@ -15,34 +16,56 @@ ROOT = Path(
     localtuya_device_mapper.__file__
 ).resolve().parent
 
-TRANSLATIONS = (
-    ROOT / "translations"
+TRANSLATIONS = ROOT / "translations"
+
+LANGUAGES = (
+    "it",
+    "de",
+    "zh-Hans",
+    "pt-BR",
+)
+
+# Values that are intentionally identical across languages.
+ALLOW_IDENTICAL_VALUES = {
+    "LocalTuya",
+    "ID",
+    "DP",
+    "Client ID",
+    "User ID",
+}
+
+# Specific translations that are correctly identical to English.
+ALLOW_IDENTICAL_PATHS = {
+    "pt-BR": {
+        (
+            "common",
+            "mapping_status_experimental",
+        ),
+    },
+}
+
+PLACEHOLDER_RE = re.compile(
+    r"\{[^{}]+\}"
 )
 
 
-def leaf_paths(
+def flatten(
     value,
     prefix=(),
 ):
-    """Return every leaf JSON path."""
-    result = set()
+    """Flatten translation JSON into path/value pairs."""
+    result = {}
 
-    if isinstance(
-        value,
-        dict,
-    ):
+    if isinstance(value, dict):
         for key, child in value.items():
             result.update(
-                leaf_paths(
+                flatten(
                     child,
                     prefix + (key,),
                 )
             )
-        return result
-
-    result.add(
-        prefix
-    )
+    else:
+        result[prefix] = value
 
     return result
 
@@ -50,12 +73,11 @@ def leaf_paths(
 class TranslationCoverageTests(
     unittest.TestCase
 ):
-    """Ensure supported languages follow the English schema."""
+    """Validate complete LocalTuya translations."""
 
-    def test_supported_languages_have_english_keys(
-        self,
-    ):
-        english = json.loads(
+    @classmethod
+    def setUpClass(cls):
+        cls.english = json.loads(
             (
                 TRANSLATIONS
                 / "en.json"
@@ -64,15 +86,19 @@ class TranslationCoverageTests(
             )
         )
 
-        required = leaf_paths(
-            english
+        cls.english_flat = flatten(
+            cls.english
         )
 
-        for language in (
-            "it",
-            "de",
-            "zh-Hans",
-        ):
+    def test_supported_languages_have_all_keys(
+        self,
+    ):
+        """Every supported language must contain every English key."""
+        required = set(
+            self.english_flat
+        )
+
+        for language in LANGUAGES:
             payload = json.loads(
                 (
                     TRANSLATIONS
@@ -82,8 +108,8 @@ class TranslationCoverageTests(
                 )
             )
 
-            available = leaf_paths(
-                payload
+            available = set(
+                flatten(payload)
             )
 
             missing = sorted(
@@ -94,46 +120,16 @@ class TranslationCoverageTests(
                 missing,
                 [],
                 (
-                    f"{language} is missing "
-                    f"{len(missing)} translation keys: "
-                    f"{missing[:20]}"
+                    f"{language} has missing "
+                    f"translation keys: {missing}"
                 ),
             )
 
-    def test_critical_localized_ui_strings(
+    def test_translation_placeholders_match_english(
         self,
     ):
-        expected = {
-            "it": {
-                "action":
-                    "Azione",
-                "edit":
-                    "Modifica un dispositivo",
-                "verified":
-                    "Verificato",
-            },
-            "de": {
-                "action":
-                    "Aktion",
-                "edit":
-                    "Gerät bearbeiten",
-                "verified":
-                    "Verifiziert",
-            },
-            "zh-Hans": {
-                "action":
-                    "操作",
-                "edit":
-                    "编辑设备",
-                "verified":
-                    "已验证",
-            },
-        }
-
-        for (
-            language,
-            wanted,
-        ) in expected.items():
+        """Translations must preserve HA placeholders."""
+        for language in LANGUAGES:
             payload = json.loads(
                 (
                     TRANSLATIONS
@@ -143,43 +139,95 @@ class TranslationCoverageTests(
                 )
             )
 
-            self.assertEqual(
-                payload[
-                    "options"
-                ][
-                    "step"
-                ][
-                    "init"
-                ][
-                    "data"
-                ][
-                    "action"
-                ],
-                wanted[
-                    "action"
-                ],
+            current = flatten(
+                payload
             )
 
-            self.assertEqual(
-                payload[
-                    "common"
-                ][
-                    "action_edit_device"
-                ],
-                wanted[
-                    "edit"
-                ],
+            for path, en_value in (
+                self.english_flat.items()
+            ):
+                translated = current[path]
+
+                if (
+                    not isinstance(en_value, str)
+                    or not isinstance(
+                        translated,
+                        str,
+                    )
+                ):
+                    continue
+
+                self.assertEqual(
+                    sorted(
+                        PLACEHOLDER_RE.findall(
+                            translated
+                        )
+                    ),
+                    sorted(
+                        PLACEHOLDER_RE.findall(
+                            en_value
+                        )
+                    ),
+                    (
+                        f"{language}: "
+                        f"{'.'.join(path)}"
+                    ),
+                )
+
+    def test_no_unexpected_english_fallbacks(
+        self,
+    ):
+        """Non-English translations must not silently fall back to English."""
+        for language in LANGUAGES:
+            payload = json.loads(
+                (
+                    TRANSLATIONS
+                    / f"{language}.json"
+                ).read_text(
+                    encoding="utf-8"
+                )
             )
 
+            current = flatten(
+                payload
+            )
+
+            allowed_paths = (
+                ALLOW_IDENTICAL_PATHS.get(
+                    language,
+                    set(),
+                )
+            )
+
+            leftovers = []
+
+            for path, en_value in (
+                self.english_flat.items()
+            ):
+                if not isinstance(
+                    en_value,
+                    str,
+                ):
+                    continue
+
+                if (
+                    current[path] == en_value
+                    and en_value
+                    not in ALLOW_IDENTICAL_VALUES
+                    and path not in allowed_paths
+                ):
+                    leftovers.append(
+                        ".".join(path)
+                    )
+
             self.assertEqual(
-                payload[
-                    "common"
-                ][
-                    "mapping_status_verified"
-                ],
-                wanted[
-                    "verified"
-                ],
+                leftovers,
+                [],
+                (
+                    f"{language} still contains "
+                    f"English fallbacks: "
+                    f"{leftovers}"
+                ),
             )
 
 

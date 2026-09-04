@@ -22,9 +22,9 @@
                 "data": {
                     "region": "Regione del server API",
                     "client_id": "Client ID",
-                    "client_secret": "Secret",
+                    "client_secret": "Segreto client",
                     "user_id": "User ID",
-                    "user_name": "Username",
+                    "user_name": "Nome utente",
                     "no_cloud": "Non configurare un account Cloud API"
                 }
             }
@@ -88,7 +88,7 @@
                 "data": {
                     "region": "Regione server API",
                     "client_id": "Client ID",
-                    "client_secret": "Client secret",
+                    "client_secret": "Segreto client",
                     "user_id": "User ID",
                     "user_name": "Nome utente",
                     "no_cloud": "Non configurare un account Cloud API"
@@ -224,24 +224,24 @@
     },
     "services": {
         "reload": {
-            "name": "Reload",
-            "description": "Reload localtuya and reconnect to all devices."
+            "name": "Ricarica",
+            "description": "Ricarica LocalTuya e riconnetti tutti i dispositivi."
         },
         "set_dp": {
-            "name": "Set datapoint",
-            "description": "Change the value of a datapoint (DP)",
+            "name": "Imposta datapoint",
+            "description": "Modifica il valore di un datapoint (DP).",
             "fields": {
                 "device_id": {
-                    "name": "Device ID",
-                    "description": "Device ID of device to change datapoint value for"
+                    "name": "ID dispositivo",
+                    "description": "ID del dispositivo sul quale modificare il datapoint."
                 },
                 "dp": {
                     "name": "DP",
-                    "description": "Datapoint index"
+                    "description": "Indice del datapoint."
                 },
                 "value": {
-                    "name": "Value",
-                    "description": "New value to set"
+                    "name": "Valore",
+                    "description": "Nuovo valore da impostare."
                 }
             }
         }

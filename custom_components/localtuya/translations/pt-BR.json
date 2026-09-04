@@ -11,7 +11,7 @@
             "invalid_auth": "Falha ao autenticar com o dispositivo. Verifique se o ID do dispositivo e a chave local estão corretos.",
             "unknown": "Ocorreu um erro desconhecido. Consulte o registro para obter detalhes.",
             "entity_already_configured": "A entidade com este ID já foi configurada.",
-            "address_in_use": "AddresO endereço usado para descoberta já está em uso. Certifique-se de que nenhum outro aplicativo o esteja usando (porta TCP 6668).s used for discovery is already in use. Make sure no other application is using it (TCP port 6668).",
+            "address_in_use": "O endereço usado para descoberta já está em uso. Certifique-se de que nenhum outro aplicativo esteja usando-o (porta TCP 6668).",
             "discovery_failed": "Algo falhou ao descobrir dispositivos. Consulte o registro para obter detalhes.",
             "empty_dps": "A conexão com o dispositivo foi bem-sucedida, mas nenhum ponto de dados foi encontrado. Tente novamente. Crie um novo issue e inclua os logs de depuração se o problema persistir."
         },
@@ -22,7 +22,7 @@
                 "data": {
                     "region": "Região do servidor de API",
                     "client_id": "ID do cliente",
-                    "client_secret": "Secret",
+                    "client_secret": "Segredo do cliente",
                     "user_id": "ID de usuário",
                     "user_name": "Nome de usuário",
                     "no_cloud": "Não configure uma conta de API da Cloud"
@@ -58,7 +58,8 @@
                 "data": {
                     "add_device": "Adicionar um novo dispositivo",
                     "edit_device": "Editar um dispositivo",
-                    "setup_cloud": "Reconfigurar a conta da API da Cloud"
+                    "setup_cloud": "Reconfigurar a conta da API da Cloud",
+                    "action": "Ação"
                 }
             },
             "add_device": {
@@ -72,7 +73,13 @@
                 "title": "Editar um novo dispositivo",
                 "description": "Escolha o dispositivo configurado que você deseja editar.",
                 "data": {
-                    "selected_device": "Dispositivos configurados"
+                    "selected_device": "Dispositivos configurados",
+                    "max_temperature_const": "Constante de temperatura máxima (opcional)",
+                    "min_temperature_const": "Constante de temperatura mínima (opcional)",
+                    "hvac_fan_mode_dp": "DP do modo do ventilador HVAC (opcional)",
+                    "hvac_fan_mode_set": "Conjunto de modos do ventilador HVAC (opcional)",
+                    "hvac_swing_mode_dp": "DP do modo de oscilação HVAC (opcional)",
+                    "hvac_swing_mode_set": "Conjunto de modos de oscilação HVAC (opcional)"
                 }
             },
             "cloud_setup": {
@@ -81,7 +88,7 @@
                 "data": {
                     "region": "Região do servidor de API",
                     "client_id": "ID do Cliente",
-                    "client_secret": "Secret",
+                    "client_secret": "Segredo do cliente",
                     "user_id": "ID do usuário",
                     "user_name": "Nome de usuário",
                     "no_cloud": "Não configure a conta da API da Cloud"
@@ -92,13 +99,18 @@
                 "description": "Preencha os detalhes do dispositivo {for_device}.",
                 "data": {
                     "friendly_name": "Nome",
-                    "host": "Host",
+                    "host": "Endereço IP / Host",
                     "device_id": "ID do dispositivo",
-                    "local_key": "Local key",
+                    "local_key": "Chave local",
                     "protocol_version": "Versão do protocolo",
                     "enable_debug": "Ative a depuração para este dispositivo (a depuração também deve ser ativada em configuration.yaml)",
                     "scan_interval": "Intervalo de escaneamento (segundos, somente quando não estiver atualizando automaticamente)",
-                    "entities": "Entidades (desmarque uma entidade para removê-la)"
+                    "entities": "Entidades (desmarque uma entidade para removê-la)",
+                    "add_entities": "Adicionar mais entidades no modo “editar dispositivo”",
+                    "manual_dps_strings": "DPS manuais a adicionar, separados por vírgulas; use somente quando a detecção automática não funcionar (opcional)",
+                    "reset_dpids": "DPIDs a enviar no comando RESET, separados por vírgulas (opcional; use quando o dispositivo não responder às solicitações de estado após ser ligado)",
+                    "manual_dps": "DPS manuais a adicionar, separados por vírgulas (opcional; use somente quando a detecção automática não funcionar)",
+                    "enable_add_entities": "Adicionar mais entidades"
                 }
             },
             "pick_entity_type": {
@@ -164,7 +176,7 @@
                     "fan_speed_min": "Velocidade mínima do ventilador inteiro",
                     "fan_speed_max": "Velocidade máxima do ventilador inteiro",
                     "fan_speed_ordered_list": "Lista de modos de velocidade do ventilador (substitui a velocidade min/max)",
-                    "fan_direction":"Direção do ventilador dps",
+                    "fan_direction": "Direção do ventilador dps",
                     "fan_direction_forward": "Seqüência de dps para frente",
                     "fan_direction_reverse": "String dps reversa",
                     "current_temperature_dp": "Temperatura atual",
@@ -183,34 +195,66 @@
                     "preset_set": "Conjunto de predefinições (opcional)",
                     "eco_dp": "Eco DP (opcional)",
                     "eco_value": "Valor eco (opcional)",
-                    "heuristic_action": "Ativar ação heurística (opcional)"
+                    "heuristic_action": "Ativar ação heurística (opcional)",
+                    "fan_dps_type": "Tipo de valor do DP",
+                    "max_temperature_const": "Constante de temperatura máxima (opcional)",
+                    "min_temperature_const": "Constante de temperatura mínima (opcional)",
+                    "hvac_fan_mode_dp": "DP do modo do ventilador HVAC (opcional)",
+                    "hvac_fan_mode_set": "Conjunto de modos do ventilador HVAC (opcional)",
+                    "hvac_swing_mode_dp": "DP do modo de oscilação HVAC (opcional)",
+                    "hvac_swing_mode_set": "Conjunto de modos de oscilação HVAC (opcional)",
+                    "dps_default_value": "Valor padrão quando não inicializado (opcional)",
+                    "restore_on_reconnect": "Restaurar o último valor definido no Home Assistant após uma perda de conexão",
+                    "min_value": "Valor mínimo",
+                    "max_value": "Valor máximo",
+                    "step_size": "Incremento mínimo",
+                    "is_passive_entity": "Entidade passiva — requer que a integração envie um valor de inicialização",
+                    "default_value": "Valor padrão quando não inicializado (opcional)",
+                    "away_temperature_dp": "DP da temperatura do modo Ausente/Férias"
+                }
+            },
+            "review_auto_entities": {
+                "title": "Revisar entidades detectadas automaticamente",
+                "description": "O LocalTuya gerou sugestões de entidades usando os DPS observados na rede local em conjunto com os metadados disponíveis e os mapeamentos do catálogo de dispositivos. Entidades Verificadas, Da comunidade e detectadas automaticamente com boa confiabilidade são pré-selecionadas. Entidades Experimentais e Sugeridas exigem revisão. Você ainda pode adicionar entidades manualmente.",
+                "data": {
+                    "auto_entity_selection": "Entidades detectadas automaticamente"
                 }
             }
         }
     },
     "services": {
         "reload": {
-            "name": "Reload",
-            "description": "Reload localtuya and reconnect to all devices."
+            "name": "Recarregar",
+            "description": "Recarrega o LocalTuya e reconecta todos os dispositivos."
         },
         "set_dp": {
-            "name": "Set datapoint",
-            "description": "Change the value of a datapoint (DP)",
+            "name": "Definir datapoint",
+            "description": "Altera o valor de um datapoint (DP).",
             "fields": {
                 "device_id": {
-                    "name": "Device ID",
-                    "description": "Device ID of device to change datapoint value for"
+                    "name": "ID do dispositivo",
+                    "description": "ID do dispositivo cujo datapoint será alterado."
                 },
                 "dp": {
                     "name": "DP",
-                    "description": "Datapoint index"
+                    "description": "Índice do datapoint."
                 },
                 "value": {
-                    "name": "Value",
-                    "description": "New value to set"
+                    "name": "Valor",
+                    "description": "Novo valor a definir."
                 }
             }
         }
     },
-    "title": "LocalTuya"
+    "title": "LocalTuya",
+    "common": {
+        "mapping_status_verified": "Verificado",
+        "mapping_status_community": "Da comunidade",
+        "mapping_status_experimental": "Experimental",
+        "mapping_status_auto_detected": "Detectado automaticamente",
+        "mapping_status_suggested": "Sugerido",
+        "action_add_device": "Adicionar um novo dispositivo",
+        "action_edit_device": "Editar um dispositivo",
+        "action_setup_cloud": "Reconfigurar a conta da API da nuvem"
+    }
 }
