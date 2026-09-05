@@ -12,6 +12,7 @@ from homeassistant.components.light import (
     ATTR_COLOR_TEMP_KELVIN,
     ATTR_EFFECT,
     ATTR_HS_COLOR,
+    ATTR_WHITE,
     DOMAIN,
     ColorMode,
     LightEntity,
@@ -36,6 +37,7 @@ from .const import (
     CONF_EFFECT_VALUES,
     CONF_MUSIC_MODE,
     CONF_SCENE_VALUES,
+    CONF_WHITE_MODE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -374,6 +376,12 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             self._config.get(CONF_MUSIC_MODE, False)
         )
 
+        # Catalog mappings can mark RGBW lights whose dedicated white mode
+        # uses the normal brightness DP but has no color-temperature DP.
+        self._white_mode_enabled = bool(
+            self._config.get(CONF_WHITE_MODE, False)
+        )
+
         self._attr_supported_color_modes = (
             self._build_supported_color_modes()
         )
@@ -510,6 +518,12 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         if self.has_config(CONF_COLOR):
             color_modes.add(ColorMode.HS)
 
+        if (
+            self._white_mode_enabled
+            and self.has_config(CONF_BRIGHTNESS)
+        ):
+            color_modes.add(ColorMode.WHITE)
+
         if color_modes:
             return color_modes
 
@@ -578,6 +592,12 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             and ColorMode.COLOR_TEMP in supported
         ):
             return ColorMode.COLOR_TEMP
+
+        if (
+            self._is_white_mode(mode)
+            and ColorMode.WHITE in supported
+        ):
+            return ColorMode.WHITE
 
         if (
             self._attr_color_mode is not None
@@ -873,8 +893,24 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         requested_brightness = kwargs.get(ATTR_BRIGHTNESS)
         requested_hs = kwargs.get(ATTR_HS_COLOR)
         requested_kelvin = kwargs.get(ATTR_COLOR_TEMP_KELVIN)
+        requested_white = kwargs.get(ATTR_WHITE)
 
         if (
+            requested_white is not None
+            and ColorMode.WHITE in self._attr_supported_color_modes
+        ):
+            self._set_configured_dp(
+                states,
+                CONF_COLOR_MODE,
+                self._modes.white,
+            )
+            self._set_configured_dp(
+                states,
+                CONF_BRIGHTNESS,
+                self._ha_brightness_to_raw(int(requested_white)),
+            )
+
+        elif (
             requested_hs is not None
             and ColorMode.HS in self._attr_supported_color_modes
         ):
@@ -1019,8 +1055,12 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             and self.has_config(CONF_COLOR)
             and (
                 self._is_color_mode(mode)
-                or ColorMode.COLOR_TEMP
-                not in self._attr_supported_color_modes
+                or (
+                    ColorMode.COLOR_TEMP
+                    not in self._attr_supported_color_modes
+                    and ColorMode.WHITE
+                    not in self._attr_supported_color_modes
+                )
             )
         ):
             decoded = self._decode_color(
