@@ -257,6 +257,116 @@ class TestDeviceCatalogV2(unittest.TestCase):
         )
         self.assertEqual(catalog["mappings"], [])
 
+    def test_raw_state_extra_attribute_name_is_rejected(self):
+        catalog = validate_catalog(
+            payload(
+                v2_mapping(
+                    required_dps=[1, 2],
+                    entities=[
+                        {
+                            "platform": "light",
+                            "config": {
+                                "id": 1,
+                                "platform": "light",
+                                "extra_state_attributes_dps": {
+                                    "raw_state": 2
+                                },
+                            },
+                        }
+                    ],
+                )
+            )
+        )
+        self.assertEqual(catalog["mappings"], [])
+
+    def test_extra_state_attribute_dp_must_be_declared(self):
+        catalog = validate_catalog(
+            payload(
+                v2_mapping(
+                    entities=[
+                        {
+                            "platform": "light",
+                            "config": {
+                                "id": 1,
+                                "platform": "light",
+                                "extra_state_attributes_dps": {
+                                    "work_mode": 2
+                                },
+                            },
+                        }
+                    ]
+                )
+            )
+        )
+        self.assertEqual(catalog["mappings"], [])
+
+    def test_absent_optional_extra_state_attribute_is_pruned(self):
+        catalog = validate_catalog(
+            payload(
+                v2_mapping(
+                    optional_dps=[2, 3],
+                    entities=[
+                        {
+                            "platform": "light",
+                            "config": {
+                                "id": 1,
+                                "platform": "light",
+                                "extra_state_attributes_dps": {
+                                    "work_mode": 2,
+                                    "aux": 3,
+                                },
+                            },
+                        }
+                    ],
+                )
+            )
+        )
+
+        result = match_catalog_mapping(
+            catalog,
+            {"product_id": "product-a", "category": "kg"},
+            {1, 3},
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(
+            result.entities[0]["config"]["extra_state_attributes_dps"],
+            {"aux": 3},
+        )
+
+    def test_all_absent_optional_extra_state_attributes_remove_config(self):
+        catalog = validate_catalog(
+            payload(
+                v2_mapping(
+                    optional_dps=[2],
+                    entities=[
+                        {
+                            "platform": "light",
+                            "config": {
+                                "id": 1,
+                                "platform": "light",
+                                "extra_state_attributes_dps": {
+                                    "work_mode": 2
+                                },
+                            },
+                        }
+                    ],
+                )
+            )
+        )
+
+        result = match_catalog_mapping(
+            catalog,
+            {"product_id": "product-a", "category": "kg"},
+            {1},
+        )
+
+        self.assertIsNotNone(result)
+        self.assertNotIn(
+            "extra_state_attributes_dps",
+            result.entities[0]["config"],
+        )
+
     def test_provenance_is_preserved(self):
         provenance = {
             "source": "make-all/tuya-local",

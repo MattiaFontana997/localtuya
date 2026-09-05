@@ -49,6 +49,7 @@ CONF_MANUAL_DPS = "manual_dps_strings"
 CONF_DEFAULT_VALUE = "dps_default_value"
 CONF_RESET_DPIDS = "reset_dpids"
 CONF_PASSIVE_ENTITY = "is_passive_entity"
+CONF_EXTRA_STATE_ATTRIBUTES_DPS = "extra_state_attributes_dps"
 
 # light
 CONF_BRIGHTNESS_LOWER = "brightness_lower"
