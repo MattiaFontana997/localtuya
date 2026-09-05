@@ -33,6 +33,7 @@ from .const import (
     ATTR_UPDATED_AT,
     CONF_DEFAULT_VALUE,
     CONF_ENABLE_DEBUG,
+    CONF_EXTRA_STATE_ATTRIBUTES_DPS,
     CONF_LOCAL_KEY,
     CONF_MODEL,
     CONF_PASSIVE_ENTITY,
@@ -47,6 +48,36 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+
+
+MAX_EXTRA_STATE_ATTRIBUTES = 32
+
+
+def get_extra_state_attribute_dps(config):
+    """Return validated catalog-provided raw DPS state attributes."""
+    configured = config.get(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
+    if not isinstance(configured, dict):
+        return {}
+
+    result = {}
+    for raw_name, raw_dp in configured.items():
+        if not isinstance(raw_name, str):
+            continue
+        name = raw_name.strip()
+        if not name or name == ATTR_STATE or name in result:
+            continue
+        if isinstance(raw_dp, bool):
+            continue
+        try:
+            dp_id = int(raw_dp)
+        except (TypeError, ValueError):
+            continue
+        if dp_id <= 0 or dp_id > 65535:
+            continue
+        result[name] = dp_id
+        if len(result) >= MAX_EXTRA_STATE_ATTRIBUTES:
+            break
+    return result
 
 
 async def async_setup_entry(
@@ -75,6 +106,9 @@ async def async_setup_entry(
                 dp_id = entity_config.get(dp_conf)
                 if dp_id is not None:
                     device.dps_to_request[dp_id] = None
+
+            for dp_id in get_extra_state_attribute_dps(entity_config).values():
+                device.dps_to_request[dp_id] = None
 
             entity = entity_class(
                 device,
@@ -513,6 +547,9 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         self._status = {}
         self._state = None
         self._last_state = None
+        self._extra_state_attribute_dps = get_extra_state_attribute_dps(
+            self._config
+        )
 
         # Default value is available to be provided by Platform entities if required
         self._default_value = self._config.get(CONF_DEFAULT_VALUE)
@@ -571,6 +608,11 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
             attributes[ATTR_STATE] = self._state
         elif self._last_state is not None:
             attributes[ATTR_STATE] = self._last_state
+
+        for name, dp_id in self._extra_state_attribute_dps.items():
+            dp_key = str(dp_id)
+            if dp_key in self._status:
+                attributes[name] = self._status[dp_key]
 
         self.debug("Entity %s - Additional attributes: %s", self.name, attributes)
         return attributes

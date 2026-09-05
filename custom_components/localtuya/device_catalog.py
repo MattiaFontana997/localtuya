@@ -14,6 +14,8 @@ from aiohttp import ClientError, ClientTimeout
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 
+from .const import CONF_EXTRA_STATE_ATTRIBUTES_DPS
+
 _LOGGER = logging.getLogger(__name__)
 
 CATALOG_SCHEMA_VERSION = 2
@@ -185,6 +187,19 @@ def _is_dp_reference_key(key: str) -> bool:
 def _config_dp_references(config: dict[str, Any]) -> set[int]:
     """Return DP IDs referenced by a LocalTuya entity config."""
     result: set[int] = set()
+
+    extra_attributes = config.get(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
+    if isinstance(extra_attributes, dict):
+        for value in extra_attributes.values():
+            if isinstance(value, bool):
+                continue
+            try:
+                dp_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if 0 < dp_id <= MAX_DP_ID:
+                result.add(dp_id)
+
     for key, value in config.items():
         if not _is_dp_reference_key(str(key)) or isinstance(value, bool):
             continue
@@ -299,6 +314,31 @@ def _validate_entity(entity: Any) -> dict[str, Any] | None:
             override_keys.append(key)
 
     config = copy.deepcopy(config)
+
+    extra_attributes = config.get(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
+    if extra_attributes is not None:
+        if not isinstance(extra_attributes, dict) or not extra_attributes:
+            return None
+        if len(extra_attributes) > 32:
+            return None
+        normalized_extra: dict[str, int] = {}
+        for raw_name, raw_dp in extra_attributes.items():
+            if not isinstance(raw_name, str):
+                return None
+            name = raw_name.strip()
+            if not name or name in {"state", "raw_state"} or name in normalized_extra:
+                return None
+            if isinstance(raw_dp, bool):
+                return None
+            try:
+                dp_id = int(raw_dp)
+            except (TypeError, ValueError):
+                return None
+            if dp_id <= 0 or dp_id > MAX_DP_ID:
+                return None
+            normalized_extra[name] = dp_id
+        config[CONF_EXTRA_STATE_ATTRIBUTES_DPS] = normalized_extra
+
     configured_platform = config.get("platform")
     if configured_platform is not None and configured_platform != platform:
         return None
@@ -470,6 +510,17 @@ def _adapt_entity_for_available_dps(
         return None
 
     removed_keys: set[str] = set()
+
+    extra_attributes = config.get(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
+    if isinstance(extra_attributes, dict):
+        for name, value in list(extra_attributes.items()):
+            dp_id = int(value)
+            if dp_id in optional_dps and dp_id not in available_dps:
+                del extra_attributes[name]
+        if not extra_attributes:
+            del config[CONF_EXTRA_STATE_ATTRIBUTES_DPS]
+            removed_keys.add(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
+
     for key, value in list(config.items()):
         if key in {"id", "platform"} or not _is_dp_reference_key(str(key)):
             continue
