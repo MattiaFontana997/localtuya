@@ -225,6 +225,39 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self._connect_task = task
         task.add_done_callback(self._connection_task_done)
 
+    def _install_raw_status_listener(self):
+        """Expose exact unsolicited DPS deltas without changing PyTuya's API.
+
+        The protocol dispatcher invokes its ``listener`` only for unsolicited
+        STATUS frames; command responses and explicit status polls are handled by
+        request waiters. Wrapping that callback therefore gives event-like
+        entities the exact pushed DPS payload while avoiding stale events during
+        initial polls and reconnects.
+        """
+        interface = self._interface
+        dispatcher = getattr(interface, "dispatcher", None)
+        original_listener = getattr(dispatcher, "listener", None)
+        decode_payload = getattr(interface, "_decode_payload", None)
+        if dispatcher is None or not callable(original_listener) or not callable(decode_payload):
+            return
+
+        def _raw_status_listener(message):
+            received = {}
+            try:
+                decoded = decode_payload(message.payload)
+                if isinstance(decoded, dict) and isinstance(decoded.get("dps"), dict):
+                    received = dict(decoded["dps"])
+            except Exception as ex:  # pylint: disable=broad-except
+                self.debug("Unable to decode raw unsolicited status payload: %s", ex)
+
+            # Preserve the normal PyTuya state-cache and listener behaviour first.
+            original_listener(message)
+
+            if received:
+                self._dispatch_raw_status(received)
+
+        dispatcher.listener = _raw_status_listener
+
     async def _make_connection(self):
         """Subscribe localtuya entity events."""
         self.info("Trying to connect to %s...", self._dev_config_entry[CONF_HOST])
@@ -239,6 +272,7 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                 self,
             )
             self._interface.add_dps_to_request(self.dps_to_request)
+            self._install_raw_status_listener()
         except Exception as ex:  # pylint: disable=broad-except
             self.warning(
                 f"Failed to connect to {self._dev_config_entry[CONF_HOST]}: %s", ex
@@ -506,6 +540,20 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         """Device updated status."""
         self._status.update(status)
         self._dispatch_status()
+
+    @callback
+    def _dispatch_raw_status(self, received):
+        """Dispatch only the DPS included in one unsolicited Tuya STATUS push."""
+        if not isinstance(received, dict):
+            return
+        normalized = {
+            str(dp_id): value
+            for dp_id, value in received.items()
+        }
+        if not normalized:
+            return
+        signal = f"localtuya_raw_{self._dev_config_entry[CONF_DEVICE_ID]}"
+        async_dispatcher_send(self._hass, signal, normalized)
 
     def _dispatch_status(self):
         signal = f"localtuya_{self._dev_config_entry[CONF_DEVICE_ID]}"
