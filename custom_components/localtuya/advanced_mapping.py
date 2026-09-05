@@ -6,36 +6,10 @@ from numbers import Number
 from typing import Any
 
 CONF_ADVANCED_MAPPING = "advanced_mapping"
-
 _MAX_RULES = 64
 _MAX_CONDITIONS = 16
-_RULE_KEYS = {
-    "dps_val",
-    "value",
-    "scale",
-    "invert",
-    "step",
-    "range",
-    "target_range",
-    "constraint_dp",
-    "conditions",
-    "value_redirect_dp",
-    "hidden",
-    "invalid",
-    "default",
-}
-_CONDITION_KEYS = {
-    "dps_val",
-    "value",
-    "scale",
-    "invert",
-    "step",
-    "range",
-    "target_range",
-    "value_redirect_dp",
-    "hidden",
-    "invalid",
-}
+_RULE_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "constraint_dp", "conditions", "value_redirect_dp", "hidden", "invalid", "default"}
+_CONDITION_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "value_redirect_dp", "hidden", "invalid"}
 
 
 def _valid_scalar(value: Any) -> bool:
@@ -55,15 +29,8 @@ def _normalize_dp(value: Any) -> int | None:
 def _normalize_range(value: Any) -> dict[str, float] | None:
     if not isinstance(value, dict) or set(value) != {"min", "max"}:
         return None
-    minimum = value.get("min")
-    maximum = value.get("max")
-    if (
-        not isinstance(minimum, Number)
-        or isinstance(minimum, bool)
-        or not isinstance(maximum, Number)
-        or isinstance(maximum, bool)
-        or float(minimum) >= float(maximum)
-    ):
+    minimum, maximum = value.get("min"), value.get("max")
+    if not isinstance(minimum, Number) or isinstance(minimum, bool) or not isinstance(maximum, Number) or isinstance(maximum, bool) or float(minimum) >= float(maximum):
         return None
     return {"min": float(minimum), "max": float(maximum)}
 
@@ -71,10 +38,8 @@ def _normalize_range(value: Any) -> dict[str, float] | None:
 def _normalize_rule(raw: Any, *, condition: bool = False) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
-    allowed = _CONDITION_KEYS if condition else _RULE_KEYS
-    if set(raw) - allowed:
+    if set(raw) - (_CONDITION_KEYS if condition else _RULE_KEYS):
         return None
-
     result: dict[str, Any] = {}
     for key in ("dps_val", "value"):
         if key in raw:
@@ -87,34 +52,29 @@ def _normalize_rule(raw: Any, *, condition: bool = False) -> dict[str, Any] | No
                 return None
             else:
                 result[key] = value
-
     for key in ("scale", "step"):
         if key in raw:
             value = raw[key]
             if not isinstance(value, Number) or isinstance(value, bool) or float(value) <= 0:
                 return None
             result[key] = float(value)
-
     for key in ("invert", "hidden", "invalid", "default"):
         if key in raw:
             if not isinstance(raw[key], bool):
                 return None
             result[key] = raw[key]
-
     for key in ("range", "target_range"):
         if key in raw:
             normalized = _normalize_range(raw[key])
             if normalized is None:
                 return None
             result[key] = normalized
-
     for key in ("constraint_dp", "value_redirect_dp"):
         if key in raw:
             dp_id = _normalize_dp(raw[key])
             if dp_id is None:
                 return None
             result[key] = dp_id
-
     if "conditions" in raw:
         conditions = raw["conditions"]
         if condition or not isinstance(conditions, list) or len(conditions) > _MAX_CONDITIONS:
@@ -126,17 +86,11 @@ def _normalize_rule(raw: Any, *, condition: bool = False) -> dict[str, Any] | No
                 return None
             normalized_conditions.append(normalized)
         result["conditions"] = normalized_conditions
-
     return result
 
 
 def validate_advanced_mapping(value: Any) -> list[dict[str, Any]] | None:
-    """Validate one declarative mapping rule list.
-
-    The grammar intentionally contains no expressions, templates or executable
-    callbacks. It covers exact value maps, scaling, inversion, range remapping,
-    stepping, constraints and multi-DP redirects.
-    """
+    """Validate one declarative, non-executable mapping rule list."""
     if not isinstance(value, list) or not value or len(value) > _MAX_RULES:
         return None
     result = []
@@ -149,7 +103,6 @@ def validate_advanced_mapping(value: Any) -> list[dict[str, Any]] | None:
 
 
 def advanced_mapping_dp_references(value: Any) -> set[int]:
-    """Return secondary DPS referenced by a validated advanced mapping."""
     rules = validate_advanced_mapping(value)
     if rules is None:
         return set()
@@ -164,30 +117,17 @@ def advanced_mapping_dp_references(value: Any) -> set[int]:
     return result
 
 
-def prune_advanced_mapping(
-    value: Any,
-    optional_dps: set[int],
-    available_dps: set[int],
-) -> list[dict[str, Any]] | None:
-    """Prune rules whose optional secondary DPS are absent."""
+def prune_advanced_mapping(value: Any, optional_dps: set[int], available_dps: set[int]) -> list[dict[str, Any]] | None:
     rules = validate_advanced_mapping(value)
     if rules is None:
         return None
     result = []
     for rule in rules:
-        references = {
-            int(rule[key])
-            for key in ("constraint_dp", "value_redirect_dp")
-            if key in rule
-        }
+        references = {int(rule[key]) for key in ("constraint_dp", "value_redirect_dp") if key in rule}
         conditions = []
         for condition in rule.get("conditions", []):
-            condition_refs = {
-                int(condition["value_redirect_dp"])
-                for _ in (0,)
-                if "value_redirect_dp" in condition
-            }
-            if any(dp in optional_dps and dp not in available_dps for dp in condition_refs):
+            refs = {int(condition["value_redirect_dp"])} if "value_redirect_dp" in condition else set()
+            if any(dp in optional_dps and dp not in available_dps for dp in refs):
                 continue
             conditions.append(condition)
         if "conditions" in rule:
@@ -231,17 +171,17 @@ def _find_rule_for_value(rules: list[dict[str, Any]], value: Any) -> dict[str, A
     nearest = None
     nearest_distance = float("inf")
     for rule in rules:
-        if rule.get("hidden", False) or rule.get("dps_val") is None:
+        if rule.get("hidden", False):
             continue
         if "dps_val" not in rule:
             default = rule
+            continue
         if "value" in rule and _matches(rule["value"], value):
             return rule
         if isinstance(rule.get("value"), Number) and isinstance(value, Number):
             distance = abs(float(rule["value"]) - float(value))
             if distance < nearest_distance:
-                nearest = rule
-                nearest_distance = distance
+                nearest, nearest_distance = rule, distance
         for condition in rule.get("conditions", []):
             if not condition.get("hidden", False) and "value" in condition and _matches(condition["value"], value):
                 return rule
@@ -254,14 +194,9 @@ def _transform_numeric(value: Any, rule: dict[str, Any], *, reverse: bool) -> An
     result = float(value)
     source_range = rule.get("range")
     target_range = rule.get("target_range")
-
     if reverse:
         if target_range and source_range:
-            result = source_range["min"] + (
-                (result - target_range["min"])
-                * (source_range["max"] - source_range["min"])
-                / (target_range["max"] - target_range["min"])
-            )
+            result = source_range["min"] + ((result - target_range["min"]) * (source_range["max"] - source_range["min"]) / (target_range["max"] - target_range["min"]))
         if "scale" in rule:
             result *= float(rule["scale"])
         if rule.get("invert") and source_range:
@@ -275,23 +210,11 @@ def _transform_numeric(value: Any, rule: dict[str, Any], *, reverse: bool) -> An
         if "scale" in rule:
             result /= float(rule["scale"])
         if target_range and source_range:
-            result = target_range["min"] + (
-                (result - source_range["min"])
-                * (target_range["max"] - target_range["min"])
-                / (source_range["max"] - source_range["min"])
-            )
-
-    if result.is_integer():
-        return int(result)
-    return result
+            result = target_range["min"] + ((result - source_range["min"]) * (target_range["max"] - target_range["min"]) / (source_range["max"] - source_range["min"]))
+    return int(result) if result.is_integer() else result
 
 
-def map_value_from_dps(
-    raw: Any,
-    rules: list[dict[str, Any]],
-    status: dict[str, Any],
-) -> tuple[Any, int | None]:
-    """Map one raw Tuya value to an HA value and optional redirected DP."""
+def map_value_from_dps(raw: Any, rules: list[dict[str, Any]], status: dict[str, Any]) -> tuple[Any, int | None]:
     rule = _find_rule_for_raw(rules, raw)
     if rule is None:
         return raw, None
@@ -301,34 +224,23 @@ def map_value_from_dps(
     effective = dict(rule)
     if active:
         effective.update({key: value for key, value in active.items() if key != "dps_val"})
-    value = effective.get("value", raw)
-    value = _transform_numeric(value, effective, reverse=False)
+    value = _transform_numeric(effective.get("value", raw), effective, reverse=False)
     return value, effective.get("value_redirect_dp")
 
 
-def map_value_to_dps(
-    value: Any,
-    rules: list[dict[str, Any]],
-    status: dict[str, Any],
-    primary_dp: int,
-) -> dict[int, Any]:
-    """Map one HA value to one or more Tuya DPS writes."""
+def map_value_to_dps(value: Any, rules: list[dict[str, Any]], status: dict[str, Any], primary_dp: int) -> dict[int, Any]:
     rule = _find_rule_for_value(rules, value)
     if rule is None:
         return {primary_dp: value}
-
     active = _active_condition(rule, status)
     effective = dict(rule)
     if active:
         effective.update({key: item for key, item in active.items() if key != "dps_val"})
     if effective.get("invalid", False):
         raise ValueError("Value is invalid for the active advanced mapping")
-
-    result = effective.get("dps_val", value)
-    result = _transform_numeric(result, effective, reverse=True)
+    result = _transform_numeric(effective.get("dps_val", value), effective, reverse=True)
     target_dp = int(effective.get("value_redirect_dp", primary_dp))
     writes = {target_dp: result}
-
     constraint_dp = rule.get("constraint_dp")
     if constraint_dp is not None:
         for condition in rule.get("conditions", []):
