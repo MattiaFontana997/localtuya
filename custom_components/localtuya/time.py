@@ -1,8 +1,9 @@
 """Platform to expose Tuya time datapoints as Home Assistant time entities."""
 
-from datetime import time
-import logging
+from datetime import time as dt_time
 from functools import partial
+import logging
+from time import time as time
 
 import voluptuous as vol
 from homeassistant.components.time import DOMAIN, TimeEntity
@@ -71,12 +72,12 @@ def _parse_hms(value):
                 hour = int(value[:-4])
                 minute = int(value[-4:-2])
                 second = int(value[-2:])
-        return time(hour, minute, second)
+        return dt_time(hour, minute, second)
     except (TypeError, ValueError):
         return None
 
 
-def _format_hms(value: time, format_name: str) -> str:
+def _format_hms(value: dt_time, format_name: str) -> str:
     """Encode a Home Assistant time using the configured exact Tuya shape."""
     if format_name == "hm":
         return f"{value.hour:02d}:{value.minute:02d}"
@@ -96,7 +97,7 @@ class LocaltuyaTime(LocalTuyaEntity, TimeEntity):
         self._hms_format = self._config.get(CONF_TIME_HMS_FORMAT, "hms")
 
     @property
-    def native_value(self) -> time | None:
+    def native_value(self) -> dt_time | None:
         """Return the current time."""
         hms_dp = self._config.get(CONF_TIME_HMS_DP)
         if hms_dp is not None:
@@ -117,9 +118,13 @@ class LocaltuyaTime(LocalTuyaEntity, TimeEntity):
         if total_seconds < 0:
             return None
         total_seconds %= 24 * 3600
-        return time(total_seconds // 3600, (total_seconds // 60) % 60, total_seconds % 60)
+        return dt_time(
+            total_seconds // 3600,
+            (total_seconds // 60) % 60,
+            total_seconds % 60,
+        )
 
-    async def async_set_value(self, value: time) -> None:
+    async def async_set_value(self, value: dt_time) -> None:
         """Set the exact catalog-provided Tuya time representation."""
         hms_dp = self._config.get(CONF_TIME_HMS_DP)
         if hms_dp is not None:
