@@ -40,16 +40,25 @@ CATALOG_STORAGE_VERSION = 1
 CATALOG_STORAGE_KEY = "localtuya.device_catalog"
 
 SUPPORTED_PLATFORMS = {
+    "alarm_control_panel",
     "binary_sensor",
+    "button",
     "climate",
     "cover",
     "fan",
+    "humidifier",
     "light",
+    "lock",
     "number",
     "select",
     "sensor",
+    "siren",
     "switch",
+    "text",
+    "time",
     "vacuum",
+    "valve",
+    "water_heater",
 }
 
 _FORBIDDEN_CONFIG_KEYS = {
@@ -563,6 +572,30 @@ def _adapt_entity_for_available_dps(
             "tilt_position_min", "tilt_position_max", "tilt_position_step",
             "tilt_position_inverted",
         ),
+        "humidifier_switch_dp": ("humidifier_switch_on", "humidifier_switch_off"),
+        "humidifier_mode_dp": ("humidifier_mode_values",),
+        "humidifier_action_dp": ("humidifier_action_values",),
+        "lock_state_dp": ("lock_state_values",),
+        "lock_open_dp": ("lock_open_values", "lock_open_writable"),
+        "lock_jammed_dp": ("lock_jammed_values",),
+        "valve_switch_dp": ("valve_switch_on", "valve_switch_off"),
+        "valve_current_position_dp": (),
+        "time_hms_dp": ("time_hms_format",),
+        "water_heater_power_dp": ("water_heater_power_on", "water_heater_power_off"),
+        "water_heater_temperature_unit_dp": ("water_heater_temperature_unit_values",),
+        "water_heater_mode_dp": (
+            "water_heater_mode_values", "water_heater_away_mode",
+            "water_heater_default_mode",
+        ),
+        "water_heater_away_dp": ("water_heater_away_on", "water_heater_away_off"),
+        "siren_switch_dp": ("siren_switch_on", "siren_switch_off"),
+        "siren_tone_dp": ("siren_tone_values", "siren_default_tone"),
+        "siren_duration_dp": ("siren_duration_scaling",),
+        "siren_volume_dp": (
+            "siren_volume_values", "siren_volume_min", "siren_volume_max",
+        ),
+        "alarm_state_dp": ("alarm_state_values",),
+        "alarm_trigger_dp": ("alarm_trigger_on", "alarm_trigger_off"),
     }
     for reference_key in tuple(removed_keys):
         for dependent_key in dependent_config.get(reference_key, ()):
