@@ -25,6 +25,6 @@ jobs:
       - name: Delete premature tag
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code --tags "https://github.com/$GITHUB_REPOSITORY.git" refs/tags/v6.4.0 >/dev/null 2>&1; then
-            git -c http.extraheader="AUTHORIZATION: bearer $GH_TOKEN" push "https://github.com/$GITHUB_REPOSITORY.git" :refs/tags/v6.4.0
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v6.4.0" >/dev/null 2>&1; then
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/v6.4.0"
           fi
