@@ -549,6 +549,20 @@ def _adapt_entity_for_available_dps(
         "target_temperature_high_dp": ("target_temperature_high_precision",),
         "target_humidity_dp": ("target_humidity_precision", "min_humidity_const", "max_humidity_const"),
         "current_humidity_dp": ("current_humidity_precision",),
+        "cover_action_dp": ("cover_action_values",),
+        "cover_open_dp": ("cover_open_values",),
+        "set_position_dp": (
+            "set_position_min", "set_position_max", "set_position_step",
+            "set_position_inverted",
+        ),
+        "current_position_dp": (
+            "current_position_min", "current_position_max",
+            "current_position_inverted",
+        ),
+        "tilt_position_dp": (
+            "tilt_position_min", "tilt_position_max", "tilt_position_step",
+            "tilt_position_inverted",
+        ),
     }
     for reference_key in tuple(removed_keys):
         for dependent_key in dependent_config.get(reference_key, ()):
