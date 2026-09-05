@@ -1,0 +1,30 @@
+name: Apply catalog platforms core 2
+on:
+  push:
+    branches: [catalog-platforms-core-2]
+    paths:
+      - tools/_apply_catalog_platforms_core2.py
+      - .github/workflows/apply-catalog-platforms-core2.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: catalog-platforms-core-2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python tools/_apply_catalog_platforms_core2.py
+      - run: python -m compileall -q custom_components/localtuya tests/test_catalog_platforms_core2.py
+      - run: git diff --check
+      - name: Commit patch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/const.py custom_components/localtuya/device_catalog.py custom_components/localtuya/time.py custom_components/localtuya/water_heater.py custom_components/localtuya/alarm_control_panel.py custom_components/localtuya/siren.py custom_components/localtuya/camera.py tests/test_catalog_platforms_core2.py
+          git commit -m 'Add catalog-driven time water heater alarm siren and camera runtimes' || exit 0
+          git push origin HEAD:catalog-platforms-core-2
