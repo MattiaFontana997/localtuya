@@ -65,7 +65,7 @@ def _decode(values, raw):
 def _scaled(value, scaling):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return float(value) * scaling
+    return round(float(value) * scaling, 10)
 
 
 def _unscaled(value, scaling):
