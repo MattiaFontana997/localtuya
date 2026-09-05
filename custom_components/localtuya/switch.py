@@ -4,7 +4,12 @@ import logging
 from functools import partial
 
 import voluptuous as vol
-from homeassistant.components.switch import DOMAIN, SwitchEntity
+from homeassistant.components.switch import (
+    DOMAIN,
+    SwitchDeviceClass,
+    SwitchEntity,
+)
+from homeassistant.const import CONF_DEVICE_CLASS
 
 from .common import LocalTuyaEntity, async_setup_entry
 from .const import (
@@ -28,6 +33,9 @@ def flow_schema(dps):
         vol.Optional(CONF_CURRENT): vol.In(dps),
         vol.Optional(CONF_CURRENT_CONSUMPTION): vol.In(dps),
         vol.Optional(CONF_VOLTAGE): vol.In(dps),
+        vol.Optional(CONF_DEVICE_CLASS): vol.In(
+            [device_class.value for device_class in SwitchDeviceClass]
+        ),
         vol.Required(CONF_RESTORE_ON_RECONNECT): bool,
         vol.Required(CONF_PASSIVE_ENTITY): bool,
         vol.Optional(CONF_DEFAULT_VALUE): str,
@@ -47,6 +55,16 @@ class LocaltuyaSwitch(LocalTuyaEntity, SwitchEntity):
         """Initialize the Tuya switch."""
         super().__init__(device, config_entry, switchid, _LOGGER, **kwargs)
         self._state = None
+
+        device_class = self._config.get(CONF_DEVICE_CLASS)
+        if device_class:
+            try:
+                self._attr_device_class = SwitchDeviceClass(device_class)
+            except ValueError:
+                self.warning(
+                    "Ignoring unsupported switch device class %r",
+                    device_class,
+                )
 
     @property
     def is_on(self) -> bool | None:

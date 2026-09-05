@@ -1,11 +1,13 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "mappings": [
     {
       "id": "r7sn2fda7l5hwzvx-0cc115f608",
       "confidence": "verified",
       "match": {
-        "product_id": "r7sn2fda7l5hwzvx",
+        "product_ids": [
+          "r7sn2fda7l5hwzvx"
+        ],
         "category": "dj",
         "required_dps": [
           20,
@@ -13,7 +15,8 @@
           22,
           23,
           24
-        ]
+        ],
+        "optional_dps": []
       },
       "entities": [
         {
@@ -39,7 +42,9 @@
       "id": "wxmbjwpt8yea7bag-ef945de926",
       "confidence": "verified",
       "match": {
-        "product_id": "wxmbjwpt8yea7bag",
+        "product_ids": [
+          "wxmbjwpt8yea7bag"
+        ],
         "category": "wk",
         "required_dps": [
           1,
@@ -49,7 +54,8 @@
           32,
           33,
           103
-        ]
+        ],
+        "optional_dps": []
       },
       "entities": [
         {

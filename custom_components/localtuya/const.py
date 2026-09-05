@@ -53,6 +53,8 @@ CONF_PASSIVE_ENTITY = "is_passive_entity"
 # light
 CONF_BRIGHTNESS_LOWER = "brightness_lower"
 CONF_BRIGHTNESS_UPPER = "brightness_upper"
+CONF_COLOR_BRIGHTNESS_LOWER = "color_brightness_lower"
+CONF_COLOR_BRIGHTNESS_UPPER = "color_brightness_upper"
 CONF_COLOR = "color"
 CONF_COLOR_MODE = "color_mode"
 CONF_COLOR_MODE_SET = "color_mode_set"
@@ -60,6 +62,7 @@ CONF_COLOR_TEMP_MIN_KELVIN = "color_temp_min_kelvin"
 CONF_COLOR_TEMP_MAX_KELVIN = "color_temp_max_kelvin"
 CONF_COLOR_TEMP_REVERSE = "color_temp_reverse"
 CONF_MUSIC_MODE = "music_mode"
+CONF_SCENE_VALUES = "scene_values"
 
 # switch
 CONF_CURRENT = "current"

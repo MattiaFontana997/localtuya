@@ -24,12 +24,15 @@ from .const import (
     CONF_BRIGHTNESS_LOWER,
     CONF_BRIGHTNESS_UPPER,
     CONF_COLOR,
+    CONF_COLOR_BRIGHTNESS_LOWER,
+    CONF_COLOR_BRIGHTNESS_UPPER,
     CONF_COLOR_MODE,
     CONF_COLOR_MODE_SET,
     CONF_COLOR_TEMP_MAX_KELVIN,
     CONF_COLOR_TEMP_MIN_KELVIN,
     CONF_COLOR_TEMP_REVERSE,
     CONF_MUSIC_MODE,
+    CONF_SCENE_VALUES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -255,6 +258,28 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             self._lower_brightness = DEFAULT_LOWER_BRIGHTNESS
             self._upper_brightness = DEFAULT_UPPER_BRIGHTNESS
 
+        self._lower_color_brightness = int(
+            self._config.get(
+                CONF_COLOR_BRIGHTNESS_LOWER,
+                self._lower_brightness,
+            )
+        )
+        self._upper_color_brightness = int(
+            self._config.get(
+                CONF_COLOR_BRIGHTNESS_UPPER,
+                self._upper_brightness,
+            )
+        )
+
+        if self._upper_color_brightness <= self._lower_color_brightness:
+            self.warning(
+                "Invalid color brightness range %s..%s; using white brightness range",
+                self._lower_color_brightness,
+                self._upper_color_brightness,
+            )
+            self._lower_color_brightness = self._lower_brightness
+            self._upper_color_brightness = self._upper_brightness
+
         configured_min_kelvin = int(
             self._config.get(
                 CONF_COLOR_TEMP_MIN_KELVIN,
@@ -319,9 +344,9 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         self._modes = MAP_MODE_SET.get(mode_set, Mode())
 
         self._color_uses_rgb_encoding = False
-        self._scenes = {}
+        self._scenes = self._configured_scenes()
 
-        if self.has_config(CONF_SCENE):
+        if not self._scenes and self.has_config(CONF_SCENE):
             try:
                 scene_dp = int(self._config[CONF_SCENE])
             except (TypeError, ValueError):
@@ -351,7 +376,10 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
         effects = list(self._scenes)
 
-        if self._music_mode_enabled:
+        if (
+            self._music_mode_enabled
+            and SCENE_MUSIC not in effects
+        ):
             effects.append(SCENE_MUSIC)
 
         self._attr_effect_list = effects or None
@@ -359,6 +387,49 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         if ColorMode.COLOR_TEMP in self._attr_supported_color_modes:
             self._attr_min_color_temp_kelvin = self._min_kelvin
             self._attr_max_color_temp_kelvin = self._max_kelvin
+
+    def _configured_scenes(self) -> dict[str, str]:
+        """Return valid catalog-provided Tuya scene values."""
+        configured = self._config.get(CONF_SCENE_VALUES)
+
+        if configured is None:
+            return {}
+
+        if not isinstance(configured, dict):
+            self.warning(
+                "Invalid scene_values config; using legacy scene presets"
+            )
+            return {}
+
+        scenes: dict[str, str] = {}
+
+        for name, value in configured.items():
+            if (
+                not isinstance(name, str)
+                or not name.strip()
+                or not isinstance(value, str)
+                or not value
+            ):
+                self.warning(
+                    "Ignoring invalid custom light scene entry %r: %r",
+                    name,
+                    value,
+                )
+                continue
+
+            if (
+                not value.startswith(self._modes.scene)
+                and not self.has_config(CONF_SCENE)
+            ):
+                self.warning(
+                    "Ignoring payload scene %s because no scene DP is configured",
+                    name,
+                )
+                continue
+
+            scenes[name.strip()] = value
+
+        return scenes
 
     def _build_supported_color_modes(self) -> set[ColorMode]:
         """Return supported Home Assistant color modes."""
@@ -484,6 +555,34 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             self._upper_brightness,
         )
 
+    def _raw_color_brightness_to_ha(self, value) -> int | None:
+        """Convert a Tuya HSV value to HA's 0..255 brightness range."""
+        if value is None or isinstance(value, bool):
+            return None
+
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+
+        return map_range(
+            value,
+            self._lower_color_brightness,
+            self._upper_color_brightness,
+            0,
+            255,
+        )
+
+    def _ha_brightness_to_raw_color(self, value) -> int:
+        """Convert HA brightness to the Tuya HSV value range."""
+        return map_range(
+            int(value),
+            0,
+            255,
+            self._lower_color_brightness,
+            self._upper_color_brightness,
+        )
+
     def _raw_color_temp_to_kelvin(self, value) -> int | None:
         """Convert a Tuya color-temperature DP to Kelvin."""
         if value is None or isinstance(value, bool):
@@ -589,7 +688,7 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                 min(max(saturation / 10.0, 0.0), 100.0),
             )
 
-            brightness = self._raw_brightness_to_ha(value)
+            brightness = self._raw_color_brightness_to_ha(value)
 
             return hs, brightness
 
@@ -618,7 +717,7 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                 f"{brightness:02x}"
             )
 
-        raw_brightness = self._ha_brightness_to_raw(
+        raw_brightness = self._ha_brightness_to_raw_color(
             brightness
         )
 

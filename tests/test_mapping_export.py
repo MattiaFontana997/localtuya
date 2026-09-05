@@ -4,20 +4,17 @@ import json
 import unittest
 from urllib.parse import parse_qs, urlparse
 
+from custom_components.localtuya.device_catalog import validate_catalog
 from custom_components.localtuya.mapping_export import (
     build_mapping_contribution_package,
     build_mapping_submission,
 )
 
 
-class TestMappingExport(
-    unittest.TestCase
-):
+class TestMappingExport(unittest.TestCase):
     """Community export tests."""
 
-    def test_private_device_data_is_not_exported(
-        self,
-    ):
+    def test_private_device_data_is_not_exported(self):
         device_data = {
             "device_id": "private-device-id",
             "host": "192.168.1.99",
@@ -49,45 +46,54 @@ class TestMappingExport(
             },
         )
 
-        serialized = json.dumps(
-            result
-        )
-
-        self.assertNotIn(
+        serialized = json.dumps(result)
+        for private_value in (
             "super-secret-key",
-            serialized,
-        )
-        self.assertNotIn(
             "192.168.1.99",
-            serialized,
-        )
-        self.assertNotIn(
             "private-device-id",
-            serialized,
-        )
-        self.assertNotIn(
             "Kitchen Plug",
-            serialized,
-        )
-        self.assertNotIn(
             "My private kitchen device",
-            serialized,
-        )
+        ):
+            self.assertNotIn(private_value, serialized)
 
-        mapping = result[
-            "mappings"
-        ][0]
+        self.assertEqual(result["schema_version"], 2)
+        mapping = result["mappings"][0]
+        self.assertEqual(mapping["match"]["product_ids"], ["product123"])
+        self.assertEqual(mapping["match"]["optional_dps"], [])
+        self.assertEqual(result["fingerprint"]["optional_dps"], [])
 
-        self.assertEqual(
-            mapping["match"][
-                "product_id"
+    def test_exported_runtime_mapping_validates(self):
+        device_data = {
+            "product_key": "product123",
+            "protocol_version": "3.5",
+            "dps_strings": [
+                "1 (value: True)",
+                "18 (value: 123)",
             ],
-            "product123",
+            "entities": [
+                {
+                    "id": 1,
+                    "platform": "switch",
+                    "current": 18,
+                }
+            ],
+        }
+
+        submission = build_mapping_submission(device_data)
+        catalog = validate_catalog(
+            {
+                "schema_version": submission["schema_version"],
+                "mappings": submission["mappings"],
+            }
         )
 
-    def test_all_referenced_dps_are_collected(
-        self,
-    ):
+        self.assertEqual(len(catalog["mappings"]), 1)
+        self.assertEqual(
+            catalog["mappings"][0]["match"]["product_ids"],
+            ["product123"],
+        )
+
+    def test_all_referenced_dps_are_collected(self):
         device_data = {
             "product_key": "thermostat123",
             "protocol_version": "3.3",
@@ -111,51 +117,24 @@ class TestMappingExport(
             ],
         }
 
-        result = build_mapping_submission(
-            device_data
-        )
+        result = build_mapping_submission(device_data)
+        required = result["mappings"][0]["match"]["required_dps"]
+        self.assertEqual(required, [1, 16, 24, 103])
+        self.assertEqual(result["mappings"][0]["match"]["optional_dps"], [])
 
-        required = result[
-            "mappings"
-        ][0]["match"][
-            "required_dps"
-        ]
-
-        self.assertEqual(
-            required,
-            [1, 16, 24, 103],
-        )
-
-    def test_product_identifier_is_required(
-        self,
-    ):
+    def test_product_identifier_is_required(self):
         device_data = {
-            "dps_strings": [
-                "1 (value: True)",
-            ],
-            "entities": [
-                {
-                    "id": 1,
-                    "platform": "switch",
-                }
-            ],
+            "dps_strings": ["1 (value: True)"],
+            "entities": [{"id": 1, "platform": "switch"}],
         }
 
-        with self.assertRaises(
-            ValueError
-        ):
-            build_mapping_submission(
-                device_data
-            )
+        with self.assertRaises(ValueError):
+            build_mapping_submission(device_data)
 
-    def test_missing_lan_dp_is_rejected(
-        self,
-    ):
+    def test_missing_lan_dp_is_rejected(self):
         device_data = {
             "product_key": "product123",
-            "dps_strings": [
-                "1 (value: True)",
-            ],
+            "dps_strings": ["1 (value: True)"],
             "entities": [
                 {
                     "id": 1,
@@ -165,17 +144,11 @@ class TestMappingExport(
             ],
         }
 
-        with self.assertRaises(
-            ValueError
-        ):
-            build_mapping_submission(
-                device_data
-            )
+        with self.assertRaises(ValueError):
+            build_mapping_submission(device_data)
 
 
-class TestMappingContributionPackage(
-    unittest.TestCase
-):
+class TestMappingContributionPackage(unittest.TestCase):
     """Community contribution UX package tests."""
 
     @staticmethod
@@ -201,9 +174,7 @@ class TestMappingContributionPackage(
             ],
         }
 
-    def test_package_contains_submission_preview_and_filename(
-        self,
-    ):
+    def test_package_contains_submission_preview_and_filename(self):
         package = build_mapping_contribution_package(
             self._device_data(),
             cloud_device={
@@ -217,178 +188,57 @@ class TestMappingContributionPackage(
         mapping = submission["mappings"][0]
         preview = package["preview"]
 
-        self.assertEqual(
-            preview["mapping_id"],
-            mapping["id"],
-        )
+        self.assertEqual(preview["mapping_id"], mapping["id"])
+        self.assertEqual(preview["product_id"], "product123")
+        self.assertEqual(preview["product_ids"], ["product123"])
+        self.assertEqual(preview["category"], "cz")
+        self.assertEqual(preview["confidence"], "experimental")
+        self.assertEqual(preview["entity_count"], 1)
+        self.assertEqual(preview["observed_dps"], [1, 18])
+        self.assertEqual(preview["required_dps"], [1, 18])
+        self.assertEqual(preview["optional_dps"], [])
+        self.assertEqual(preview["protocol_version"], "3.4")
+        self.assertEqual(package["suggested_filename"], f'{mapping["id"]}.json')
 
-        self.assertEqual(
-            preview["product_id"],
-            "product123",
-        )
-
-        self.assertEqual(
-            preview["category"],
-            "cz",
-        )
-
-        self.assertEqual(
-            preview["confidence"],
-            "experimental",
-        )
-
-        self.assertEqual(
-            preview["entity_count"],
-            1,
-        )
-
-        self.assertEqual(
-            preview["observed_dps"],
-            [1, 18],
-        )
-
-        self.assertEqual(
-            preview["required_dps"],
-            [1, 18],
-        )
-
-        self.assertEqual(
-            preview["protocol_version"],
-            "3.4",
-        )
-
-        self.assertEqual(
-            package["suggested_filename"],
-            f'{mapping["id"]}.json',
-        )
-
-
-    def test_package_prefills_github_filename_and_json(
-        self,
-    ):
-        package = build_mapping_contribution_package(
-            self._device_data(),
-        )
-
+    def test_package_prefills_github_filename_and_json(self):
+        package = build_mapping_contribution_package(self._device_data())
         self.assertEqual(
             package["repository_url"],
+            "https://github.com/MattiaFontana997/localtuya-device-catalog",
+        )
+
+        parsed = urlparse(package["new_submission_url"])
+        self.assertEqual(
+            f"{parsed.scheme}://{parsed.netloc}{parsed.path}",
             (
-                "https://github.com/"
-                "MattiaFontana997/"
-                "localtuya-device-catalog"
+                "https://github.com/MattiaFontana997/"
+                "localtuya-device-catalog/new/main/submissions"
             ),
         )
 
-        parsed = urlparse(
-            package["new_submission_url"]
-        )
+        query = parse_qs(parsed.query)
+        self.assertEqual(query["filename"], [package["suggested_filename"]])
+        self.assertEqual(query["value"], [package["submission_json"]])
+        self.assertFalse(package["privacy"]["automatic_upload"])
 
-        self.assertEqual(
-            (
-                f"{parsed.scheme}://"
-                f"{parsed.netloc}"
-                f"{parsed.path}"
-            ),
-            (
-                "https://github.com/"
-                "MattiaFontana997/"
-                "localtuya-device-catalog/"
-                "new/main/submissions"
-            ),
-        )
-
-        query = parse_qs(
-            parsed.query
-        )
-
-        self.assertEqual(
-            query["filename"],
-            [
-                package[
-                    "suggested_filename"
-                ]
-            ],
-        )
-
-        self.assertEqual(
-            query["value"],
-            [
-                package[
-                    "submission_json"
-                ]
-            ],
-        )
-
-        self.assertFalse(
-            package["privacy"][
-                "automatic_upload"
-            ]
-        )
-
-
-    def test_package_large_json_falls_back_to_filename_only(
-        self,
-    ):
+    def test_package_large_json_falls_back_to_filename_only(self):
         device_data = self._device_data()
+        device_data["entities"][0]["large_safe_value"] = "x" * 10000
 
-        device_data[
-            "entities"
-        ][0][
-            "large_safe_value"
-        ] = "x" * 10000
+        package = build_mapping_contribution_package(device_data)
+        query = parse_qs(urlparse(package["new_submission_url"]).query)
 
-        package = build_mapping_contribution_package(
-            device_data,
-        )
+        self.assertEqual(query["filename"], [package["suggested_filename"]])
+        self.assertNotIn("value", query)
 
-        parsed = urlparse(
-            package["new_submission_url"]
-        )
+    def test_package_json_is_pretty_and_round_trips(self):
+        package = build_mapping_contribution_package(self._device_data())
+        parsed = json.loads(package["submission_json"])
 
-        query = parse_qs(
-            parsed.query
-        )
+        self.assertEqual(parsed, package["submission"])
+        self.assertIn("\n  \"schema_version\"", package["submission_json"])
 
-        self.assertEqual(
-            query["filename"],
-            [
-                package[
-                    "suggested_filename"
-                ]
-            ],
-        )
-
-        self.assertNotIn(
-            "value",
-            query,
-        )
-
-
-    def test_package_json_is_pretty_and_round_trips(
-        self,
-    ):
-        package = build_mapping_contribution_package(
-            self._device_data(),
-        )
-
-        parsed = json.loads(
-            package["submission_json"]
-        )
-
-        self.assertEqual(
-            parsed,
-            package["submission"],
-        )
-
-        self.assertIn(
-            "\n  \"schema_version\"",
-            package["submission_json"],
-        )
-
-
-    def test_package_never_reintroduces_private_data(
-        self,
-    ):
+    def test_package_never_reintroduces_private_data(self):
         package = build_mapping_contribution_package(
             self._device_data(),
             cloud_device={
@@ -402,11 +252,7 @@ class TestMappingContributionPackage(
             },
         )
 
-        serialized = json.dumps(
-            package,
-            ensure_ascii=False,
-        )
-
+        serialized = json.dumps(package, ensure_ascii=False)
         for private_value in (
             "private-device-id",
             "192.168.50.44",
@@ -418,25 +264,16 @@ class TestMappingContributionPackage(
             "10.20.30.40",
             "cloud-secret",
         ):
-            self.assertNotIn(
-                private_value,
-                serialized,
-            )
+            self.assertNotIn(private_value, serialized)
 
 
-class TestMappingExportOverrides(
-    unittest.TestCase
-):
+class TestMappingExportOverrides(unittest.TestCase):
     """Catalog overrides are explicit and minimal."""
 
-    def test_generic_difference_becomes_override(
-        self,
-    ):
+    def test_generic_difference_becomes_override(self):
         device_data = {
-            "product_key":
-                "thermostat123",
-            "protocol_version":
-                "3.3",
+            "product_key": "thermostat123",
+            "protocol_version": "3.3",
             "dps_strings": [
                 "1 (value: True)",
                 "2 (value: manual)",
@@ -447,116 +284,64 @@ class TestMappingExportOverrides(
             "entities": [
                 {
                     "id": 1,
-                    "platform":
-                        "climate",
-                    "target_temperature_dp":
-                        16,
-                    "current_temperature_dp":
-                        24,
-                    "preset_dp":
-                        2,
-                    "preset_set":
-                        (
-                            "auto/manual/"
-                            "temporary/boost/"
-                            "holiday"
-                        ),
-                    "away_temperature_dp":
-                        32,
+                    "platform": "climate",
+                    "target_temperature_dp": 16,
+                    "current_temperature_dp": 24,
+                    "preset_dp": 2,
+                    "preset_set": "auto/manual/temporary/boost/holiday",
+                    "away_temperature_dp": 32,
                 }
             ],
         }
-
         baseline_entities = [
             {
-                "platform":
-                    "climate",
+                "platform": "climate",
                 "config": {
                     "id": 1,
-                    "platform":
-                        "climate",
-                    "target_temperature_dp":
-                        16,
-                    "current_temperature_dp":
-                        24,
-                    "preset_dp":
-                        2,
-                    "preset_set":
-                        "auto/manual/holiday",
+                    "platform": "climate",
+                    "target_temperature_dp": 16,
+                    "current_temperature_dp": 24,
+                    "preset_dp": 2,
+                    "preset_set": "auto/manual/holiday",
                 },
             }
         ]
 
-        result = (
-            build_mapping_contribution_package(
-                device_data,
-                baseline_entities=(
-                    baseline_entities
-                ),
-            )
+        result = build_mapping_contribution_package(
+            device_data,
+            baseline_entities=baseline_entities,
         )
+        entity = result["submission"]["mappings"][0]["entities"][0]
 
-        entity = (
-            result["submission"]
-            ["mappings"][0]
-            ["entities"][0]
-        )
-
-        self.assertEqual(
-            entity["override_keys"],
-            ["preset_set"],
-        )
-
-        # away_temperature_dp does not exist
-        # in the generic baseline, so this is
-        # enrichment rather than replacement.
-        self.assertNotIn(
-            "away_temperature_dp",
-            entity["override_keys"],
-        )
+        self.assertEqual(entity["override_keys"], ["preset_set"])
+        self.assertNotIn("away_temperature_dp", entity["override_keys"])
 
 
-
-class TestMappingExportSensitiveKeyVariants(
-    unittest.TestCase
-):
+class TestMappingExportSensitiveKeyVariants(unittest.TestCase):
     """Reject sensitive key spelling variants recursively."""
 
-    def test_sensitive_key_variants_are_removed(
-        self,
-    ):
+    def test_sensitive_key_variants_are_removed(self):
         device_data = {
             "product_key": "product123",
             "protocol_version": "3.4",
-            "dps_strings": [
-                "1 (value: True)",
-            ],
+            "dps_strings": ["1 (value: True)"],
             "entities": [
                 {
                     "id": 1,
                     "platform": "switch",
-                    "localKey":
-                        "secret-one",
-                    "device-id":
-                        "secret-two",
-                    "clientSecret":
-                        "secret-three",
+                    "localKey": "secret-one",
+                    "device-id": "secret-two",
+                    "clientSecret": "secret-three",
                     "nested": {
-                        "User_ID":
-                            "secret-four",
-                        "friendlyName":
-                            "Private Room",
+                        "User_ID": "secret-four",
+                        "friendlyName": "Private Room",
                     },
                 }
             ],
         }
 
-        result = build_mapping_submission(
-            device_data
-        )
-
         serialized = json.dumps(
-            result,
+            build_mapping_submission(device_data),
             ensure_ascii=False,
         )
 
@@ -567,10 +352,7 @@ class TestMappingExportSensitiveKeyVariants(
             "secret-four",
             "Private Room",
         ):
-            self.assertNotIn(
-                secret,
-                serialized,
-            )
+            self.assertNotIn(secret, serialized)
 
 
 if __name__ == "__main__":
