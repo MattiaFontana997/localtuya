@@ -51,23 +51,26 @@ def load_source(source: str) -> dict:
 def _normalize_mapping(mapping: dict, schema_version: int) -> dict:
     """Normalize a V1/V2 source mapping to the bundled V2 representation."""
     normalized = copy.deepcopy(mapping)
-    match = normalized.get("match")
-    if not isinstance(match, dict):
+    source_match = normalized.get("match")
+    if not isinstance(source_match, dict):
         return normalized
 
     if schema_version == 1:
-        product_id = match.pop("product_id", None)
-        match["product_ids"] = [product_id] if product_id else []
-        match["optional_dps"] = []
+        product_id = source_match.get("product_id")
+        product_ids = [product_id] if product_id else []
+        optional_dps = []
     else:
-        match.setdefault("optional_dps", [])
+        product_ids = source_match.get("product_ids", [])
+        optional_dps = source_match.get("optional_dps", [])
 
-    if isinstance(match.get("product_ids"), list):
-        match["product_ids"] = sorted(match["product_ids"])
-    if isinstance(match.get("required_dps"), list):
-        match["required_dps"] = sorted(match["required_dps"])
-    if isinstance(match.get("optional_dps"), list):
-        match["optional_dps"] = sorted(match["optional_dps"])
+    # Rebuild the selector rather than mutating it so snapshot output remains
+    # byte-for-byte deterministic across a V1 -> V2 source transition.
+    normalized["match"] = {
+        "product_ids": sorted(product_ids),
+        "category": source_match.get("category"),
+        "required_dps": sorted(source_match.get("required_dps", [])),
+        "optional_dps": sorted(optional_dps),
+    }
 
     return normalized
 
