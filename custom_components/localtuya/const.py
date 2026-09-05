@@ -8,15 +8,20 @@ DATA_CLOUD = "cloud_data"
 # Platforms in this list must support config flows
 PLATFORMS = [
     "binary_sensor",
+    "button",
     "climate",
     "cover",
     "fan",
+    "humidifier",
     "light",
+    "lock",
     "number",
     "select",
     "sensor",
     "switch",
+    "text",
     "vacuum",
+    "valve",
 ]
 
 TUYA_DEVICES = "tuya_devices"
@@ -36,7 +41,6 @@ CONF_PRODUCT_KEY = "product_key"
 CONF_PRODUCT_NAME = "product_name"
 CONF_USER_ID = "user_id"
 CONF_ENABLE_ADD_ENTITIES = "add_entities"
-
 
 CONF_ACTION = "action"
 CONF_ADD_DEVICE = "add_device"
@@ -197,6 +201,52 @@ CONF_VACUUM_DIRECTION_DP = "vacuum_direction_dp"
 CONF_VACUUM_DIRECTION_VALUES = "vacuum_direction_values"
 CONF_VACUUM_FAN_SPEED_VALUES = "vacuum_fan_speed_values"
 CONF_VACUUM_LOCATE_ON = "vacuum_locate_on"
+
+# button
+CONF_BUTTON_PRESS_VALUE = "button_press_value"
+
+# text
+CONF_TEXT_MIN = "text_min"
+CONF_TEXT_MAX = "text_max"
+CONF_TEXT_PATTERN = "text_pattern"
+CONF_TEXT_MODE = "text_mode"
+
+# valve
+CONF_VALVE_SWITCH_DP = "valve_switch_dp"
+CONF_VALVE_CURRENT_POSITION_DP = "valve_current_position_dp"
+CONF_VALVE_POSITION_CONTROL = "valve_position_control"
+CONF_VALVE_POSITION_MIN = "valve_position_min"
+CONF_VALVE_POSITION_MAX = "valve_position_max"
+CONF_VALVE_POSITION_INVERTED = "valve_position_inverted"
+CONF_VALVE_OPEN_VALUE = "valve_open_value"
+CONF_VALVE_CLOSED_VALUE = "valve_closed_value"
+CONF_VALVE_SWITCH_ON = "valve_switch_on"
+CONF_VALVE_SWITCH_OFF = "valve_switch_off"
+
+# lock
+CONF_LOCK_COMMAND_VALUES = "lock_command_values"
+CONF_LOCK_STATE_DP = "lock_state_dp"
+CONF_LOCK_STATE_VALUES = "lock_state_values"
+CONF_LOCK_OPEN_DP = "lock_open_dp"
+CONF_LOCK_OPEN_VALUES = "lock_open_values"
+CONF_LOCK_OPEN_WRITABLE = "lock_open_writable"
+CONF_LOCK_JAMMED_DP = "lock_jammed_dp"
+CONF_LOCK_JAMMED_VALUES = "lock_jammed_values"
+
+# humidifier
+CONF_HUMIDIFIER_SWITCH_DP = "humidifier_switch_dp"
+CONF_HUMIDIFIER_SWITCH_ON = "humidifier_switch_on"
+CONF_HUMIDIFIER_SWITCH_OFF = "humidifier_switch_off"
+CONF_HUMIDIFIER_CURRENT_HUMIDITY_DP = "humidifier_current_humidity_dp"
+CONF_HUMIDIFIER_TARGET_HUMIDITY_DP = "humidifier_target_humidity_dp"
+CONF_HUMIDIFIER_HUMIDITY_MIN = "humidifier_humidity_min"
+CONF_HUMIDIFIER_HUMIDITY_MAX = "humidifier_humidity_max"
+CONF_HUMIDIFIER_HUMIDITY_STEP = "humidifier_humidity_step"
+CONF_HUMIDIFIER_HUMIDITY_SCALING = "humidifier_humidity_scaling"
+CONF_HUMIDIFIER_MODE_DP = "humidifier_mode_dp"
+CONF_HUMIDIFIER_MODE_VALUES = "humidifier_mode_values"
+CONF_HUMIDIFIER_ACTION_DP = "humidifier_action_dp"
+CONF_HUMIDIFIER_ACTION_VALUES = "humidifier_action_values"
 
 # number
 CONF_MIN_VALUE = "min_value"
