@@ -22,16 +22,13 @@ from .advanced_mapping import (
 from .const import CONF_EXTRA_STATE_ATTRIBUTES_DPS, PLATFORMS
 
 _LOGGER = logging.getLogger(__name__)
-
-CATALOG_SCHEMA_VERSION = 3
+CATALOG_SCHEMA_VERSION = 2
+FINGERPRINT_SCHEMA_VERSION = 3
 SUPPORTED_CATALOG_SCHEMA_VERSIONS = {1, 2, 3}
-CATALOG_URL = (
-    "https://raw.githubusercontent.com/"
-    "MattiaFontana997/localtuya-device-catalog/main/catalog.json"
-)
+CATALOG_URL = "https://raw.githubusercontent.com/MattiaFontana997/localtuya-device-catalog/main/catalog.json"
 REQUEST_TIMEOUT = ClientTimeout(total=10)
 MAX_REMOTE_CATALOG_BYTES = 2 * 1024 * 1024
-MAX_CATALOG_MAPPINGS = 4096
+MAX_CATALOG_MAPPINGS = 2048
 MAX_PRODUCT_IDS = 64
 MAX_DP_ID = 65535
 MAX_CONFIG_DEPTH = 12
@@ -40,24 +37,14 @@ BUILTIN_CATALOG_PATH = Path(__file__).with_name("builtin_catalog.json")
 CATALOG_STORAGE_VERSION = 1
 CATALOG_STORAGE_KEY = "localtuya.device_catalog"
 SUPPORTED_PLATFORMS = frozenset(PLATFORMS)
-
-_FORBIDDEN_CONFIG_KEYS = {
-    "local_key", "device_id", "host", "ip", "gwid", "client_id",
-    "client_secret", "user_id", "username", "region",
-}
+_FORBIDDEN_CONFIG_KEYS = {"local_key", "device_id", "host", "ip", "gwid", "client_id", "client_secret", "user_id", "username", "region"}
 _PROTECTED_OVERRIDE_KEYS = {"id", "platform", "friendly_name"}
-_DP_REFERENCE_KEYS = {
-    "id", "brightness", "color_temp", "color_mode", "color", "scene",
-    "effect", "current", "current_consumption", "voltage",
-    "fan_speed_control", "fan_oscillating_control", "fan_direction",
-}
+_DP_REFERENCE_KEYS = {"id", "brightness", "color_temp", "color_mode", "color", "scene", "effect", "current", "current_consumption", "voltage", "fan_speed_control", "fan_oscillating_control", "fan_direction"}
 _PROVENANCE_KEYS = {"source", "path", "revision", "license"}
 
 
 @dataclass(frozen=True, slots=True)
 class CatalogMatch:
-    """A validated mapping returned by the device catalog."""
-
     mapping_id: str
     product_id: str
     confidence: str
@@ -70,20 +57,19 @@ class CatalogMatch:
     match_kind: str = "product"
 
 
-def _device_product_id(device: dict[str, Any]) -> str | None:
+def _device_product_id(device):
     for key in ("product_id", "productId", "product_key", "productKey"):
-        value = device.get(key)
-        if value:
-            return str(value).strip()
+        if device.get(key):
+            return str(device[key]).strip()
     return None
 
 
-def _device_category(device: dict[str, Any]) -> str:
+def _device_category(device):
     value = device.get("category")
     return str(value).strip().lower() if value else ""
 
 
-def _normalize_config_key(value: Any) -> str:
+def _normalize_config_key(value):
     return "".join(char for char in str(value).casefold() if char.isalnum())
 
 
@@ -91,7 +77,7 @@ _FORBIDDEN_CONFIG_KEY_TOKENS = {_normalize_config_key(key) for key in _FORBIDDEN
 _PROTECTED_OVERRIDE_KEY_TOKENS = {_normalize_config_key(key) for key in _PROTECTED_OVERRIDE_KEYS}
 
 
-def _json_structure_safe(value: Any) -> bool:
+def _json_structure_safe(value):
     stack = [(value, 0)]
     nodes = 0
     while stack:
@@ -111,7 +97,7 @@ def _json_structure_safe(value: Any) -> bool:
     return True
 
 
-def _contains_forbidden_keys(value: Any) -> bool:
+def _contains_forbidden_keys(value):
     stack = [value]
     while stack:
         current = stack.pop()
@@ -125,12 +111,12 @@ def _contains_forbidden_keys(value: Any) -> bool:
     return False
 
 
-def _is_dp_reference_key(key: str) -> bool:
+def _is_dp_reference_key(key):
     return key in _DP_REFERENCE_KEYS or key.endswith("_dp")
 
 
-def _config_dp_references(config: dict[str, Any]) -> set[int]:
-    result: set[int] = set()
+def _config_dp_references(config):
+    result = set()
     extra = config.get(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
     if isinstance(extra, dict):
         for value in extra.values():
@@ -155,15 +141,15 @@ def _config_dp_references(config: dict[str, Any]) -> set[int]:
     return result
 
 
-def _normalize_dps(value: Any) -> list[int] | None:
+def _normalize_dps(value):
     if not isinstance(value, list):
         return None
-    result: list[int] = []
-    for raw_dp in value:
-        if isinstance(raw_dp, bool):
+    result = []
+    for raw in value:
+        if isinstance(raw, bool):
             return None
         try:
-            dp_id = int(raw_dp)
+            dp_id = int(raw)
         except (TypeError, ValueError):
             return None
         if dp_id <= 0 or dp_id > MAX_DP_ID:
@@ -173,29 +159,26 @@ def _normalize_dps(value: Any) -> list[int] | None:
     return sorted(result)
 
 
-def _normalize_product_ids(value: Any, *, allow_empty: bool = False) -> list[str] | None:
+def _normalize_product_ids(value, *, allow_empty=False):
     if not isinstance(value, list) or len(value) > MAX_PRODUCT_IDS or (not value and not allow_empty):
         return None
-    result: list[str] = []
+    result = []
     for raw in value:
         if not isinstance(raw, str) or not raw.strip():
             return None
-        product_id = raw.strip()
-        if product_id not in result:
-            result.append(product_id)
+        item = raw.strip()
+        if item not in result:
+            result.append(item)
     return sorted(result)
 
 
-def _validate_fingerprint(value: Any) -> dict[str, str] | None:
-    """Validate deliberately small, non-heuristic fingerprint grammar."""
-    if not isinstance(value, dict) or set(value) != {"mode"}:
-        return None
-    if value.get("mode") != "exact_dps":
+def _validate_fingerprint(value):
+    if not isinstance(value, dict) or set(value) != {"mode"} or value.get("mode") != "exact_dps":
         return None
     return {"mode": "exact_dps"}
 
 
-def _validate_provenance(value: Any) -> dict[str, str] | None:
+def _validate_provenance(value):
     if value is None:
         return None
     if not isinstance(value, dict) or not _json_structure_safe(value) or set(value) - _PROVENANCE_KEYS:
@@ -214,48 +197,42 @@ def _validate_provenance(value: Any) -> dict[str, str] | None:
     return result
 
 
-def _validate_entity(entity: Any) -> dict[str, Any] | None:
-    if not isinstance(entity, dict):
+def _validate_entity(entity):
+    if not isinstance(entity, dict) or entity.get("platform") not in SUPPORTED_PLATFORMS:
         return None
-    platform = entity.get("platform")
-    if platform not in SUPPORTED_PLATFORMS:
-        return None
+    platform = entity["platform"]
     config = entity.get("config")
     if not isinstance(config, dict) or not _json_structure_safe(config) or _contains_forbidden_keys(config):
         return None
     config = copy.deepcopy(config)
-
-    advanced = config.get(CONF_ADVANCED_MAPPING)
-    if advanced is not None:
-        normalized_advanced = validate_advanced_mapping(advanced)
-        if normalized_advanced is None:
+    if CONF_ADVANCED_MAPPING in config:
+        advanced = validate_advanced_mapping(config[CONF_ADVANCED_MAPPING])
+        if advanced is None:
             return None
-        config[CONF_ADVANCED_MAPPING] = normalized_advanced
-
-    raw_override_keys = entity.get("override_keys", [])
-    if not isinstance(raw_override_keys, list):
+        config[CONF_ADVANCED_MAPPING] = advanced
+    raw_overrides = entity.get("override_keys", [])
+    if not isinstance(raw_overrides, list):
         return None
-    override_keys: list[str] = []
-    for raw_key in raw_override_keys:
-        if not isinstance(raw_key, str):
+    overrides = []
+    for raw in raw_overrides:
+        if not isinstance(raw, str):
             return None
-        key = raw_key.strip()
+        key = raw.strip()
         token = _normalize_config_key(key)
         if not key or token in _PROTECTED_OVERRIDE_KEY_TOKENS or token in _FORBIDDEN_CONFIG_KEY_TOKENS or key not in config:
             return None
-        if key not in override_keys:
-            override_keys.append(key)
-
+        if key not in overrides:
+            overrides.append(key)
     extra = config.get(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
     if extra is not None:
         if not isinstance(extra, dict) or not extra or len(extra) > 32:
             return None
-        normalized_extra: dict[str, int] = {}
+        normalized = {}
         for raw_name, raw_dp in extra.items():
             if not isinstance(raw_name, str):
                 return None
             name = raw_name.strip()
-            if not name or name in {"state", "raw_state"} or name in normalized_extra or isinstance(raw_dp, bool):
+            if not name or name in {"state", "raw_state"} or name in normalized or isinstance(raw_dp, bool):
                 return None
             try:
                 dp_id = int(raw_dp)
@@ -263,44 +240,39 @@ def _validate_entity(entity: Any) -> dict[str, Any] | None:
                 return None
             if dp_id <= 0 or dp_id > MAX_DP_ID:
                 return None
-            normalized_extra[name] = dp_id
-        config[CONF_EXTRA_STATE_ATTRIBUTES_DPS] = normalized_extra
-
-    configured_platform = config.get("platform")
-    if configured_platform is not None and configured_platform != platform:
+            normalized[name] = dp_id
+        config[CONF_EXTRA_STATE_ATTRIBUTES_DPS] = normalized
+    if config.get("platform") is not None and config.get("platform") != platform:
         return None
-    primary_dp = config.get("id")
-    if isinstance(primary_dp, bool):
+    if isinstance(config.get("id"), bool):
         return None
     try:
-        primary_dp = int(primary_dp)
+        primary = int(config.get("id"))
     except (TypeError, ValueError):
         return None
-    if primary_dp <= 0 or primary_dp > MAX_DP_ID:
+    if primary <= 0 or primary > MAX_DP_ID:
         return None
-    config["id"] = primary_dp
+    config["id"] = primary
     config["platform"] = platform
     result = {"platform": platform, "config": config}
-    if override_keys:
-        result["override_keys"] = override_keys
+    if overrides:
+        result["override_keys"] = overrides
     return result
 
 
-def validate_catalog(payload: Any) -> dict[str, Any]:
-    """Validate schema v1-v3 and normalize to the current schema."""
+def validate_catalog(payload):
     if not isinstance(payload, dict):
         raise ValueError("Catalog root must be an object")
-    schema_version = payload.get("schema_version")
-    if schema_version not in SUPPORTED_CATALOG_SCHEMA_VERSIONS:
+    source_schema = payload.get("schema_version")
+    if source_schema not in SUPPORTED_CATALOG_SCHEMA_VERSIONS:
         raise ValueError("Unsupported catalog schema version")
     mappings = payload.get("mappings")
     if not isinstance(mappings, list):
         raise ValueError("Catalog mappings must be a list")
     if len(mappings) > MAX_CATALOG_MAPPINGS:
         raise ValueError("Catalog contains too many mappings")
-
-    validated: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    validated = []
+    seen = set()
     for raw_mapping in mappings:
         if not isinstance(raw_mapping, dict):
             continue
@@ -313,92 +285,70 @@ def validate_catalog(payload: Any) -> dict[str, Any]:
         if mapping_id in seen:
             raise ValueError(f"Duplicate catalog mapping ID: {mapping_id}")
         seen.add(mapping_id)
-
         fingerprint = None
-        if schema_version == 1:
+        if source_schema == 1:
             raw_product = match.get("product_id")
             if not isinstance(raw_product, str) or not raw_product.strip():
                 continue
             product_ids = [raw_product.strip()]
-            optional_dps: list[int] = []
+            optional = []
         else:
-            fingerprint = _validate_fingerprint(match.get("fingerprint")) if schema_version >= 3 and match.get("fingerprint") is not None else None
-            if schema_version >= 3 and match.get("fingerprint") is not None and fingerprint is None:
-                continue
+            if source_schema >= 3 and match.get("fingerprint") is not None:
+                fingerprint = _validate_fingerprint(match.get("fingerprint"))
+                if fingerprint is None:
+                    continue
             product_ids = _normalize_product_ids(match.get("product_ids"), allow_empty=fingerprint is not None)
-            optional_dps = _normalize_dps(match.get("optional_dps", []))
-            if product_ids is None or optional_dps is None:
+            optional = _normalize_dps(match.get("optional_dps", []))
+            if product_ids is None or optional is None or (fingerprint is not None and product_ids):
                 continue
-            # Fingerprints exist only for profiles lacking a trustworthy product ID.
-            if fingerprint is not None and product_ids:
-                continue
-
         category = match.get("category")
         if category is not None:
             if not isinstance(category, str):
                 continue
             category = category.strip().lower() or None
-        required_dps = _normalize_dps(match.get("required_dps", []))
-        if required_dps is None or set(required_dps) & set(optional_dps):
+        required = _normalize_dps(match.get("required_dps", []))
+        if required is None or set(required) & set(optional) or (fingerprint is not None and not required):
             continue
-        if fingerprint is not None and not required_dps:
-            continue
-
-        normalized_entities: list[dict[str, Any]] = []
-        referenced: set[int] = set()
+        normalized_entities = []
+        referenced = set()
         valid = True
         for entity in entities:
             normalized = _validate_entity(entity)
             if normalized is None:
                 valid = False
                 break
-            referenced.update(_config_dp_references(normalized["config"]))
             normalized_entities.append(normalized)
+            referenced.update(_config_dp_references(normalized["config"]))
         if not valid or not normalized_entities:
             continue
-
-        declared = set(required_dps) | set(optional_dps)
-        if schema_version == 1:
-            required_dps = sorted(set(required_dps) | referenced)
+        declared = set(required) | set(optional)
+        if source_schema == 1:
+            required = sorted(set(required) | referenced)
         elif not referenced.issubset(declared):
             continue
-        if not required_dps:
+        if not required:
             continue
-
         confidence = raw_mapping.get("confidence", "experimental")
         if not isinstance(confidence, str):
             continue
         confidence = confidence.strip().lower()
-        if confidence not in {"experimental", "community", "verified"}:
+        if confidence not in {"experimental", "community", "verified"} or (fingerprint is not None and confidence == "verified"):
             continue
-        # Productless fingerprints can never self-promote to physically verified.
-        if fingerprint is not None and confidence == "verified":
-            continue
-
         provenance = _validate_provenance(raw_mapping.get("provenance"))
         if raw_mapping.get("provenance") is not None and provenance is None:
             continue
-        normalized_match = {
-            "product_ids": product_ids,
-            "category": category,
-            "required_dps": required_dps,
-            "optional_dps": optional_dps,
-        }
+        normalized_match = {"product_ids": product_ids, "category": category, "required_dps": required, "optional_dps": optional}
         if fingerprint is not None:
             normalized_match["fingerprint"] = fingerprint
-        normalized_mapping = {
-            "id": mapping_id,
-            "match": normalized_match,
-            "confidence": confidence,
-            "entities": normalized_entities,
-        }
+        normalized_mapping = {"id": mapping_id, "match": normalized_match, "confidence": confidence, "entities": normalized_entities}
         if provenance is not None:
             normalized_mapping["provenance"] = provenance
         validated.append(normalized_mapping)
-    return {"schema_version": CATALOG_SCHEMA_VERSION, "mappings": validated}
+    normalized_schema = FINGERPRINT_SCHEMA_VERSION if source_schema == FINGERPRINT_SCHEMA_VERSION else CATALOG_SCHEMA_VERSION
+    return {"schema_version": normalized_schema, "mappings": validated}
 
 
-def _validate_runtime_catalog(payload: Any) -> dict[str, Any]:
+def _validate_runtime_catalog(payload):
     validated = validate_catalog(payload)
     source = payload.get("mappings") if isinstance(payload, dict) else None
     if isinstance(source, list) and source and not validated["mappings"]:
@@ -409,30 +359,24 @@ def _validate_runtime_catalog(payload: Any) -> dict[str, Any]:
 def _adapt_entity_for_available_dps(entity, optional_dps, available_dps):
     adapted = copy.deepcopy(entity)
     config = adapted["config"]
-    primary_dp = int(config["id"])
-    if primary_dp in optional_dps and primary_dp not in available_dps:
+    if int(config["id"]) in optional_dps and int(config["id"]) not in available_dps:
         return None
-    removed: set[str] = set()
-
+    removed = set()
     extra = config.get(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
     if isinstance(extra, dict):
         for name, value in list(extra.items()):
-            dp_id = int(value)
-            if dp_id in optional_dps and dp_id not in available_dps:
+            if int(value) in optional_dps and int(value) not in available_dps:
                 del extra[name]
         if not extra:
             config.pop(CONF_EXTRA_STATE_ATTRIBUTES_DPS, None)
             removed.add(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
-
-    advanced = config.get(CONF_ADVANCED_MAPPING)
-    if advanced is not None:
-        pruned = prune_advanced_mapping(advanced, optional_dps, available_dps)
-        if pruned is None:
+    if CONF_ADVANCED_MAPPING in config:
+        advanced = prune_advanced_mapping(config[CONF_ADVANCED_MAPPING], optional_dps, available_dps)
+        if advanced is None:
             config.pop(CONF_ADVANCED_MAPPING, None)
             removed.add(CONF_ADVANCED_MAPPING)
         else:
-            config[CONF_ADVANCED_MAPPING] = pruned
-
+            config[CONF_ADVANCED_MAPPING] = advanced
     for key, value in list(config.items()):
         if key in {"id", "platform"} or not _is_dp_reference_key(str(key)) or isinstance(value, bool):
             continue
@@ -443,40 +387,33 @@ def _adapt_entity_for_available_dps(entity, optional_dps, available_dps):
         if dp_id in optional_dps and dp_id not in available_dps:
             del config[key]
             removed.add(key)
-
     dependent = {
         "effect": ("effect_values",), "fan_preset_dp": ("fan_preset_values",),
         "fan_oscillating_control": ("fan_oscillating_on", "fan_oscillating_off"),
         "hvac_mode_dp": ("hvac_mode_values",), "hvac_action_dp": ("hvac_action_values",),
         "hvac_fan_mode_dp": ("hvac_fan_mode_values",), "hvac_swing_mode_dp": ("hvac_swing_mode_values",),
-        "hvac_swing_horizontal_mode_dp": ("hvac_swing_horizontal_mode_values",),
-        "preset_dp": ("preset_values",), "temperature_unit_dp": ("temperature_unit_values",),
-        "target_temperature_low_dp": ("target_temperature_low_precision",),
+        "hvac_swing_horizontal_mode_dp": ("hvac_swing_horizontal_mode_values",), "preset_dp": ("preset_values",),
+        "temperature_unit_dp": ("temperature_unit_values",), "target_temperature_low_dp": ("target_temperature_low_precision",),
         "target_temperature_high_dp": ("target_temperature_high_precision",),
         "target_humidity_dp": ("target_humidity_precision", "min_humidity_const", "max_humidity_const"),
-        "current_humidity_dp": ("current_humidity_precision",),
-        "cover_action_dp": ("cover_action_values",), "cover_open_dp": ("cover_open_values",),
-        "set_position_dp": ("set_position_min", "set_position_max", "set_position_step", "set_position_inverted"),
+        "current_humidity_dp": ("current_humidity_precision",), "cover_action_dp": ("cover_action_values",),
+        "cover_open_dp": ("cover_open_values",), "set_position_dp": ("set_position_min", "set_position_max", "set_position_step", "set_position_inverted"),
         "current_position_dp": ("current_position_min", "current_position_max", "current_position_inverted"),
         "tilt_position_dp": ("tilt_position_min", "tilt_position_max", "tilt_position_step", "tilt_position_inverted"),
-        "humidifier_switch_dp": ("humidifier_switch_on", "humidifier_switch_off"),
-        "humidifier_mode_dp": ("humidifier_mode_values",), "humidifier_action_dp": ("humidifier_action_values",),
-        "lock_state_dp": ("lock_state_values",), "lock_open_dp": ("lock_open_values", "lock_open_writable"),
-        "lock_jammed_dp": ("lock_jammed_values",), "valve_switch_dp": ("valve_switch_on", "valve_switch_off"),
-        "time_hms_dp": ("time_hms_format",),
+        "humidifier_switch_dp": ("humidifier_switch_on", "humidifier_switch_off"), "humidifier_mode_dp": ("humidifier_mode_values",),
+        "humidifier_action_dp": ("humidifier_action_values",), "lock_state_dp": ("lock_state_values",),
+        "lock_open_dp": ("lock_open_values", "lock_open_writable"), "lock_jammed_dp": ("lock_jammed_values",),
+        "valve_switch_dp": ("valve_switch_on", "valve_switch_off"), "time_hms_dp": ("time_hms_format",),
         "water_heater_power_dp": ("water_heater_power_on", "water_heater_power_off"),
         "water_heater_temperature_unit_dp": ("water_heater_temperature_unit_values",),
         "water_heater_mode_dp": ("water_heater_mode_values", "water_heater_away_mode", "water_heater_default_mode"),
         "water_heater_away_dp": ("water_heater_away_on", "water_heater_away_off"),
-        "siren_switch_dp": ("siren_switch_on", "siren_switch_off"),
-        "siren_tone_dp": ("siren_tone_values", "siren_default_tone"),
-        "siren_duration_dp": ("siren_duration_scaling",),
-        "siren_volume_dp": ("siren_volume_values", "siren_volume_min", "siren_volume_max"),
+        "siren_switch_dp": ("siren_switch_on", "siren_switch_off"), "siren_tone_dp": ("siren_tone_values", "siren_default_tone"),
+        "siren_duration_dp": ("siren_duration_scaling",), "siren_volume_dp": ("siren_volume_values", "siren_volume_min", "siren_volume_max"),
         "alarm_state_dp": ("alarm_state_values",), "alarm_trigger_dp": ("alarm_trigger_on", "alarm_trigger_off"),
         "event_dp": ("event_types", "event_device_class"), "camera_switch_dp": ("camera_switch_on", "camera_switch_off"),
         "camera_snapshot_dp": ("camera_snapshot_encoding",), "camera_record_dp": ("camera_record_on", "camera_record_off"),
-        "camera_motion_dp": ("camera_motion_on", "camera_motion_off"),
-        "datetime_timestamp_dp": ("datetime_timestamp_scaling",),
+        "camera_motion_dp": ("camera_motion_on", "camera_motion_off"), "datetime_timestamp_dp": ("datetime_timestamp_scaling",),
         "lawn_mower_activity_dp": ("lawn_mower_activity_values",), "lawn_mower_command_dp": ("lawn_mower_command_values",),
         "remote_send_dp": ("remote_send_command", "remote_rf_send_command", "remote_learn_command", "remote_learn_exit_command", "remote_rf_learn_command", "remote_rf_learn_exit_command"),
         "infrared_send_dp": ("infrared_send_command",),
@@ -486,9 +423,8 @@ def _adapt_entity_for_available_dps(entity, optional_dps, available_dps):
             if key in config:
                 config.pop(key, None)
                 removed.add(key)
-    override_keys = adapted.get("override_keys")
-    if isinstance(override_keys, list) and removed:
-        kept = [key for key in override_keys if key not in removed]
+    if isinstance(adapted.get("override_keys"), list) and removed:
+        kept = [key for key in adapted["override_keys"] if key not in removed]
         if kept:
             adapted["override_keys"] = kept
         else:
@@ -508,12 +444,9 @@ def _mapping_compatible(mapping, product_id, category, available_dps):
         if product_id or fingerprint != {"mode": "exact_dps"}:
             return None
         declared = set(match.get("required_dps", [])) | set(match.get("optional_dps", []))
-        # Fail closed: a productless profile may not explain only a subset of
-        # the observed LAN surface. Every observed DP must be declared.
         if available_dps - declared:
             return None
         kind = "fingerprint"
-
     expected_category = match.get("category")
     if expected_category and category and category != expected_category:
         return None
@@ -521,10 +454,7 @@ def _mapping_compatible(mapping, product_id, category, available_dps):
     optional = set(match.get("optional_dps", []))
     if not required.issubset(available_dps):
         return None
-    entities = tuple(
-        adapted for entity in mapping["entities"]
-        if (adapted := _adapt_entity_for_available_dps(entity, optional, available_dps)) is not None
-    )
+    entities = tuple(adapted for entity in mapping["entities"] if (adapted := _adapt_entity_for_available_dps(entity, optional, available_dps)) is not None)
     if not entities:
         return None
     score = len(required) * 4 + len(optional & available_dps)
@@ -536,7 +466,6 @@ def _mapping_compatible(mapping, product_id, category, available_dps):
 
 
 def match_catalog_mapping(catalog, device, available_dps, *, source="remote"):
-    """Find a product match, or an unambiguous exact-DPS fingerprint."""
     if not catalog:
         return None
     product_id = _device_product_id(device)
@@ -544,7 +473,7 @@ def match_catalog_mapping(catalog, device, available_dps, *, source="remote"):
     candidates = []
     for mapping in catalog.get("mappings", []):
         compatible = _mapping_compatible(mapping, product_id, category, available_dps)
-        if compatible is not None:
+        if compatible:
             kind, score, entities = compatible
             candidates.append((score, mapping, entities, kind))
     if not candidates:
@@ -552,39 +481,25 @@ def match_catalog_mapping(catalog, device, available_dps, *, source="remote"):
     candidates.sort(key=lambda item: item[0], reverse=True)
     best_score = candidates[0][0]
     best = [item for item in candidates if item[0] == best_score]
-    # Product IDs are authoritative. Fingerprints are not: an equal best score
-    # means the LAN surface cannot uniquely identify a profile, so match none.
     if len(best) != 1 and best[0][3] == "fingerprint":
         _LOGGER.debug("Rejecting ambiguous LocalTuya fingerprint match: %s candidates", len(best))
         return None
     _, mapping, entities, kind = best[0]
     match = mapping["match"]
     provenance = mapping.get("provenance")
-    return CatalogMatch(
-        mapping_id=mapping["id"], product_id=product_id or "",
-        confidence=mapping["confidence"], required_dps=tuple(match["required_dps"]),
-        entities=entities, source=source, product_ids=tuple(match.get("product_ids", ())),
-        optional_dps=tuple(match.get("optional_dps", ())),
-        provenance=copy.deepcopy(provenance) if provenance else None,
-        match_kind=kind,
-    )
+    return CatalogMatch(mapping["id"], product_id or "", mapping["confidence"], tuple(match["required_dps"]), entities, source, tuple(match.get("product_ids", ())), tuple(match.get("optional_dps", ())), copy.deepcopy(provenance) if provenance else None, kind)
 
 
-def load_builtin_catalog(path: Path = BUILTIN_CATALOG_PATH):
+def load_builtin_catalog(path=BUILTIN_CATALOG_PATH):
     try:
         validated = validate_catalog(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, ValueError) as ex:
         _LOGGER.error("Unable to load bundled LocalTuya device catalog: %s", ex)
         return {"schema_version": CATALOG_SCHEMA_VERSION, "mappings": []}
-    return {
-        "schema_version": CATALOG_SCHEMA_VERSION,
-        "mappings": [mapping for mapping in validated["mappings"] if mapping["confidence"] == "verified"],
-    }
+    return {"schema_version": CATALOG_SCHEMA_VERSION, "mappings": [m for m in validated["mappings"] if m["confidence"] == "verified"]}
 
 
 class DeviceCatalog:
-    """Remote LocalTuya device catalog with persistent fallback."""
-
     def __init__(self, hass, *, url=CATALOG_URL, session=None, store=None):
         self._hass = hass
         self._url = url
@@ -605,24 +520,15 @@ class DeviceCatalog:
         return True
 
     @property
-    def catalog(self):
-        return self._catalog
-
+    def catalog(self): return self._catalog
     @property
-    def bundled_mapping_count(self):
-        return len(self._builtin_catalog.get("mappings", []))
-
+    def bundled_mapping_count(self): return len(self._builtin_catalog.get("mappings", []))
     @property
-    def remote_mapping_count(self):
-        return 0 if self._catalog is None else len(self._catalog.get("mappings", []))
-
+    def remote_mapping_count(self): return 0 if self._catalog is None else len(self._catalog.get("mappings", []))
     @property
-    def mapping_count(self):
-        return self.remote_mapping_count if self._catalog is not None else self.bundled_mapping_count
-
+    def mapping_count(self): return self.remote_mapping_count if self._catalog is not None else self.bundled_mapping_count
     @property
-    def cache_loaded(self):
-        return self._cache_loaded
+    def cache_loaded(self): return self._cache_loaded
 
     async def async_load_cache(self):
         try:
@@ -639,13 +545,11 @@ class DeviceCatalog:
             return False
         self._catalog = validated
         self._cache_loaded = True
-        if isinstance(stored.get("etag"), str):
-            self._etag = stored["etag"]
+        if isinstance(stored.get("etag"), str): self._etag = stored["etag"]
         return True
 
     async def _async_save_cache(self):
-        if self._catalog is None:
-            return False
+        if self._catalog is None: return False
         try:
             await self._store.async_save({"url": self._url, "etag": self._etag, "catalog": self._catalog})
         except Exception as ex:  # pylint: disable=broad-except
@@ -657,15 +561,11 @@ class DeviceCatalog:
         headers = {"If-None-Match": self._etag} if self._etag else {}
         try:
             async with self._session.get(self._url, headers=headers, timeout=REQUEST_TIMEOUT) as response:
-                if response.status == 304:
-                    return self._catalog is not None
-                if response.status != 200:
-                    return False
-                if isinstance(response.content_length, int) and response.content_length > MAX_REMOTE_CATALOG_BYTES:
-                    return False
+                if response.status == 304: return self._catalog is not None
+                if response.status != 200: return False
+                if isinstance(response.content_length, int) and response.content_length > MAX_REMOTE_CATALOG_BYTES: return False
                 payload = await response.json(content_type=None)
-                if len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > MAX_REMOTE_CATALOG_BYTES:
-                    return False
+                if len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > MAX_REMOTE_CATALOG_BYTES: return False
                 validated = _validate_runtime_catalog(payload)
                 self._catalog = validated
                 etag = response.headers.get("ETag")
@@ -679,9 +579,7 @@ class DeviceCatalog:
     def match(self, device, available_dps):
         remote = match_catalog_mapping(self._catalog, device, available_dps, source="remote")
         bundled = match_catalog_mapping(self._builtin_catalog, device, available_dps, source="bundled")
-        if remote is None:
-            return bundled
-        if bundled is None:
-            return remote
+        if remote is None: return bundled
+        if bundled is None: return remote
         rank = {"experimental": 0, "community": 1, "verified": 2}
         return bundled if rank.get(remote.confidence, 0) < rank.get(bundled.confidence, 0) else remote
