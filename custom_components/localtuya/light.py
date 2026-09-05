@@ -32,6 +32,7 @@ from .const import (
     CONF_COLOR_TEMP_MIN_KELVIN,
     CONF_COLOR_TEMP_REVERSE,
     CONF_MUSIC_MODE,
+    CONF_SCENE_VALUES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -343,9 +344,9 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         self._modes = MAP_MODE_SET.get(mode_set, Mode())
 
         self._color_uses_rgb_encoding = False
-        self._scenes = {}
+        self._scenes = self._configured_scenes()
 
-        if self.has_config(CONF_SCENE):
+        if not self._scenes and self.has_config(CONF_SCENE):
             try:
                 scene_dp = int(self._config[CONF_SCENE])
             except (TypeError, ValueError):
@@ -375,7 +376,10 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
         effects = list(self._scenes)
 
-        if self._music_mode_enabled:
+        if (
+            self._music_mode_enabled
+            and SCENE_MUSIC not in effects
+        ):
             effects.append(SCENE_MUSIC)
 
         self._attr_effect_list = effects or None
@@ -383,6 +387,49 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         if ColorMode.COLOR_TEMP in self._attr_supported_color_modes:
             self._attr_min_color_temp_kelvin = self._min_kelvin
             self._attr_max_color_temp_kelvin = self._max_kelvin
+
+    def _configured_scenes(self) -> dict[str, str]:
+        """Return valid catalog-provided Tuya scene values."""
+        configured = self._config.get(CONF_SCENE_VALUES)
+
+        if configured is None:
+            return {}
+
+        if not isinstance(configured, dict):
+            self.warning(
+                "Invalid scene_values config; using legacy scene presets"
+            )
+            return {}
+
+        scenes: dict[str, str] = {}
+
+        for name, value in configured.items():
+            if (
+                not isinstance(name, str)
+                or not name.strip()
+                or not isinstance(value, str)
+                or not value
+            ):
+                self.warning(
+                    "Ignoring invalid custom light scene entry %r: %r",
+                    name,
+                    value,
+                )
+                continue
+
+            if (
+                not value.startswith(self._modes.scene)
+                and not self.has_config(CONF_SCENE)
+            ):
+                self.warning(
+                    "Ignoring payload scene %s because no scene DP is configured",
+                    name,
+                )
+                continue
+
+            scenes[name.strip()] = value
+
+        return scenes
 
     def _build_supported_color_modes(self) -> set[ColorMode]:
         """Return supported Home Assistant color modes."""
