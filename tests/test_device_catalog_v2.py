@@ -187,6 +187,57 @@ class TestDeviceCatalogV2(unittest.TestCase):
         self.assertEqual(len(result.entities), 1)
         self.assertEqual(result.entities[0]["platform"], "switch")
 
+    def test_absent_optional_light_effect_dp_prunes_effect_capability(self):
+        catalog = validate_catalog(
+            payload(
+                v2_mapping(
+                    optional_dps=[104],
+                    entities=[
+                        {
+                            "platform": "light",
+                            "config": {
+                                "id": 1,
+                                "platform": "light",
+                                "effect": 104,
+                                "effect_values": {"Steady": "8"},
+                            },
+                        }
+                    ],
+                )
+            )
+        )
+
+        result = match_catalog_mapping(
+            catalog,
+            {"product_id": "product-a", "category": "kg"},
+            {1},
+        )
+
+        self.assertIsNotNone(result)
+        config = result.entities[0]["config"]
+        self.assertNotIn("effect", config)
+        self.assertNotIn("effect_values", config)
+
+    def test_undeclared_light_effect_dp_rejects_mapping(self):
+        catalog = validate_catalog(
+            payload(
+                v2_mapping(
+                    entities=[
+                        {
+                            "platform": "light",
+                            "config": {
+                                "id": 1,
+                                "platform": "light",
+                                "effect": 104,
+                                "effect_values": {"Steady": "8"},
+                            },
+                        }
+                    ]
+                )
+            )
+        )
+        self.assertEqual(catalog["mappings"], [])
+
     def test_undeclared_v2_dp_reference_rejects_mapping(self):
         catalog = validate_catalog(
             payload(
