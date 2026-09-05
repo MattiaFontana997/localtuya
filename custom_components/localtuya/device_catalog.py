@@ -534,9 +534,27 @@ def _adapt_entity_for_available_dps(
             del config[key]
             removed_keys.add(key)
 
-    if "effect" in removed_keys:
-        config.pop("effect_values", None)
-        removed_keys.add("effect_values")
+    dependent_config = {
+        "effect": ("effect_values",),
+        "fan_preset_dp": ("fan_preset_values",),
+        "fan_oscillating_control": ("fan_oscillating_on", "fan_oscillating_off"),
+        "hvac_mode_dp": ("hvac_mode_values",),
+        "hvac_action_dp": ("hvac_action_values",),
+        "hvac_fan_mode_dp": ("hvac_fan_mode_values",),
+        "hvac_swing_mode_dp": ("hvac_swing_mode_values",),
+        "hvac_swing_horizontal_mode_dp": ("hvac_swing_horizontal_mode_values",),
+        "preset_dp": ("preset_values",),
+        "temperature_unit_dp": ("temperature_unit_values",),
+        "target_temperature_low_dp": ("target_temperature_low_precision",),
+        "target_temperature_high_dp": ("target_temperature_high_precision",),
+        "target_humidity_dp": ("target_humidity_precision", "min_humidity_const", "max_humidity_const"),
+        "current_humidity_dp": ("current_humidity_precision",),
+    }
+    for reference_key in tuple(removed_keys):
+        for dependent_key in dependent_config.get(reference_key, ()):
+            if dependent_key in config:
+                config.pop(dependent_key, None)
+                removed_keys.add(dependent_key)
 
     override_keys = adapted.get("override_keys")
     if isinstance(override_keys, list) and removed_keys:
