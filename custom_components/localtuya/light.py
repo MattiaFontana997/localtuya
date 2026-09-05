@@ -24,6 +24,8 @@ from .const import (
     CONF_BRIGHTNESS_LOWER,
     CONF_BRIGHTNESS_UPPER,
     CONF_COLOR,
+    CONF_COLOR_BRIGHTNESS_LOWER,
+    CONF_COLOR_BRIGHTNESS_UPPER,
     CONF_COLOR_MODE,
     CONF_COLOR_MODE_SET,
     CONF_COLOR_TEMP_MAX_KELVIN,
@@ -71,7 +73,7 @@ SCENE_LIST_RGBW_1000 = {
         "46460100f003e803e800000000"
     ),
     "Beautiful": (
-        "07464602000003e803e800000000464602007803e803e800000000"
+        "07464602000003e803e800000000464602007803e800000000"
         "46460200f003e803e800000000464602003d03e803e800000000"
         "46460200ae03e803e800000000464602011303e803e800000000"
     ),
@@ -104,7 +106,7 @@ SCENE_LIST_RGB_1000 = {
         "46460100f003e803e800000000"
     ),
     "Music": (
-        "07464602000003e803e800000000464602007803e803e800000000"
+        "07464602000003e803e800000000464602007803e800000000"
         "46460200f003e803e800000000464602003d03e803e800000000"
         "46460200ae03e803e800000000464602011303e803e800000000"
     ),
@@ -254,6 +256,28 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             )
             self._lower_brightness = DEFAULT_LOWER_BRIGHTNESS
             self._upper_brightness = DEFAULT_UPPER_BRIGHTNESS
+
+        self._lower_color_brightness = int(
+            self._config.get(
+                CONF_COLOR_BRIGHTNESS_LOWER,
+                self._lower_brightness,
+            )
+        )
+        self._upper_color_brightness = int(
+            self._config.get(
+                CONF_COLOR_BRIGHTNESS_UPPER,
+                self._upper_brightness,
+            )
+        )
+
+        if self._upper_color_brightness <= self._lower_color_brightness:
+            self.warning(
+                "Invalid color brightness range %s..%s; using white brightness range",
+                self._lower_color_brightness,
+                self._upper_color_brightness,
+            )
+            self._lower_color_brightness = self._lower_brightness
+            self._upper_color_brightness = self._upper_brightness
 
         configured_min_kelvin = int(
             self._config.get(
@@ -484,6 +508,34 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             self._upper_brightness,
         )
 
+    def _raw_color_brightness_to_ha(self, value) -> int | None:
+        """Convert a Tuya HSV value to HA's 0..255 brightness range."""
+        if value is None or isinstance(value, bool):
+            return None
+
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+
+        return map_range(
+            value,
+            self._lower_color_brightness,
+            self._upper_color_brightness,
+            0,
+            255,
+        )
+
+    def _ha_brightness_to_raw_color(self, value) -> int:
+        """Convert HA brightness to the Tuya HSV value range."""
+        return map_range(
+            int(value),
+            0,
+            255,
+            self._lower_color_brightness,
+            self._upper_color_brightness,
+        )
+
     def _raw_color_temp_to_kelvin(self, value) -> int | None:
         """Convert a Tuya color-temperature DP to Kelvin."""
         if value is None or isinstance(value, bool):
@@ -589,7 +641,7 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                 min(max(saturation / 10.0, 0.0), 100.0),
             )
 
-            brightness = self._raw_brightness_to_ha(value)
+            brightness = self._raw_color_brightness_to_ha(value)
 
             return hs, brightness
 
@@ -618,7 +670,7 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                 f"{brightness:02x}"
             )
 
-        raw_brightness = self._ha_brightness_to_raw(
+        raw_brightness = self._ha_brightness_to_raw_color(
             brightness
         )
 
