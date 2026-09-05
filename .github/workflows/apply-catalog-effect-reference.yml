@@ -1,0 +1,56 @@
+name: Apply catalog effect DP reference patch
+
+on:
+  push:
+    branches:
+      - catalog-effect-dp-reference
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: catalog-effect-dp-reference
+      - name: Apply patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('custom_components/localtuya/device_catalog.py')
+          text = path.read_text(encoding='utf-8')
+          old = '    "color",\n    "scene",\n    "current",\n'
+          new = '    "color",\n    "scene",\n    "effect",\n    "current",\n'
+          if old not in text:
+              raise SystemExit('DP reference anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '''        if dp_id in optional_dps and dp_id not in available_dps:\n            del config[key]\n            removed_keys.add(key)\n\n    override_keys = adapted.get("override_keys")\n'''
+          new = '''        if dp_id in optional_dps and dp_id not in available_dps:\n            del config[key]\n            removed_keys.add(key)\n\n    if "effect" in removed_keys:\n        config.pop("effect_values", None)\n        removed_keys.add("effect_values")\n\n    override_keys = adapted.get("override_keys")\n'''
+          if old not in text:
+              raise SystemExit('optional DP prune anchor not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          test_path = Path('tests/test_device_catalog_v2.py')
+          tests = test_path.read_text(encoding='utf-8')
+          anchor = '''    def test_undeclared_v2_dp_reference_rejects_mapping(self):\n'''
+          addition = '''    def test_absent_optional_light_effect_dp_prunes_effect_capability(self):\n        catalog = validate_catalog(\n            payload(\n                v2_mapping(\n                    optional_dps=[104],\n                    entities=[\n                        {\n                            "platform": "light",\n                            "config": {\n                                "id": 1,\n                                "platform": "light",\n                                "effect": 104,\n                                "effect_values": {"Steady": "8"},\n                            },\n                        }\n                    ],\n                )\n            )\n        )\n\n        result = match_catalog_mapping(\n            catalog,\n            {"product_id": "product-a", "category": "kg"},\n            {1},\n        )\n\n        self.assertIsNotNone(result)\n        config = result.entities[0]["config"]\n        self.assertNotIn("effect", config)\n        self.assertNotIn("effect_values", config)\n\n    def test_undeclared_light_effect_dp_rejects_mapping(self):\n        catalog = validate_catalog(\n            payload(\n                v2_mapping(\n                    entities=[\n                        {\n                            "platform": "light",\n                            "config": {\n                                "id": 1,\n                                "platform": "light",\n                                "effect": 104,\n                                "effect_values": {"Steady": "8"},\n                            },\n                        }\n                    ]\n                )\n            )\n        )\n        self.assertEqual(catalog["mappings"], [])\n\n'''
+          if anchor not in tests:
+              raise SystemExit('test insertion anchor not found')
+          test_path.write_text(tests.replace(anchor, addition + anchor, 1), encoding='utf-8')
+          PY
+          git diff --check
+          python -m compileall -q custom_components/localtuya tests
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/localtuya/device_catalog.py tests/test_device_catalog_v2.py
+          git commit -m 'Track dedicated light effects as catalog DP references'
+          git push origin HEAD:catalog-effect-dp-reference
