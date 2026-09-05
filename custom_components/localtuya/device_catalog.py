@@ -76,6 +76,7 @@ _DP_REFERENCE_KEYS = {
     "color_mode",
     "color",
     "scene",
+    "effect",
     "current",
     "current_consumption",
     "voltage",
@@ -481,6 +482,10 @@ def _adapt_entity_for_available_dps(
         if dp_id in optional_dps and dp_id not in available_dps:
             del config[key]
             removed_keys.add(key)
+
+    if "effect" in removed_keys:
+        config.pop("effect_values", None)
+        removed_keys.add("effect_values")
 
     override_keys = adapted.get("override_keys")
     if isinstance(override_keys, list) and removed_keys:
