@@ -4,10 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 from pathlib import Path
 from urllib.request import urlopen
 
+
+CURRENT_SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSIONS = {1, 2}
 
 DEFAULT_SOURCE = (
     "https://raw.githubusercontent.com/"
@@ -25,200 +29,109 @@ DEFAULT_OUTPUT = (
 
 def load_source(source: str) -> dict:
     """Load catalog JSON from a local path or HTTP(S) URL."""
-    if source.startswith(
-        ("http://", "https://")
-    ):
-        with urlopen(
-            source,
-            timeout=15,
-        ) as response:
-            payload = response.read().decode(
-                "utf-8"
-            )
+    if source.startswith(("http://", "https://")):
+        with urlopen(source, timeout=15) as response:
+            payload = response.read().decode("utf-8")
     else:
-        payload = Path(
-            source
-        ).read_text(
-            encoding="utf-8"
-        )
+        payload = Path(source).read_text(encoding="utf-8")
 
-    data = json.loads(
-        payload
-    )
+    data = json.loads(payload)
+    if not isinstance(data, dict):
+        raise ValueError("Catalog root must be an object")
 
-    if not isinstance(
-        data,
-        dict,
-    ):
-        raise ValueError(
-            "Catalog root must be an object"
-        )
+    if data.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS:
+        raise ValueError("Unsupported catalog schema version")
 
-    if (
-        data.get("schema_version")
-        != 1
-    ):
-        raise ValueError(
-            "Unsupported catalog schema version"
-        )
-
-    mappings = data.get(
-        "mappings"
-    )
-
-    if not isinstance(
-        mappings,
-        list,
-    ):
-        raise ValueError(
-            "Catalog mappings must be a list"
-        )
+    if not isinstance(data.get("mappings"), list):
+        raise ValueError("Catalog mappings must be a list")
 
     return data
 
 
-def build_snapshot(
-    catalog: dict,
-) -> dict:
-    """Build the offline snapshot from physically verified mappings only."""
+def _normalize_mapping(mapping: dict, schema_version: int) -> dict:
+    """Normalize a V1/V2 source mapping to the bundled V2 representation."""
+    normalized = copy.deepcopy(mapping)
+    match = normalized.get("match")
+    if not isinstance(match, dict):
+        return normalized
+
+    if schema_version == 1:
+        product_id = match.pop("product_id", None)
+        match["product_ids"] = [product_id] if product_id else []
+        match["optional_dps"] = []
+    else:
+        match.setdefault("optional_dps", [])
+
+    if isinstance(match.get("product_ids"), list):
+        match["product_ids"] = sorted(match["product_ids"])
+    if isinstance(match.get("required_dps"), list):
+        match["required_dps"] = sorted(match["required_dps"])
+    if isinstance(match.get("optional_dps"), list):
+        match["optional_dps"] = sorted(match["optional_dps"])
+
+    return normalized
+
+
+def build_snapshot(catalog: dict) -> dict:
+    """Build the V2 offline snapshot from physically verified mappings only."""
+    schema_version = catalog["schema_version"]
     verified = []
 
-    for mapping in catalog[
-        "mappings"
-    ]:
-        if not isinstance(
-            mapping,
-            dict,
-        ):
+    for mapping in catalog["mappings"]:
+        if not isinstance(mapping, dict):
             continue
-
-        if (
-            mapping.get(
-                "confidence"
-            )
-            != "verified"
-        ):
+        if mapping.get("confidence") != "verified":
             continue
+        verified.append(_normalize_mapping(mapping, schema_version))
 
-        verified.append(
-            mapping
-        )
-
-    verified.sort(
-        key=lambda mapping: str(
-            mapping.get(
-                "id",
-                "",
-            )
-        )
-    )
-
+    verified.sort(key=lambda mapping: str(mapping.get("id", "")))
     return {
-        "schema_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
         "mappings": verified,
     }
 
 
-def serialize(
-    payload: dict,
-) -> str:
+def serialize(payload: dict) -> str:
     """Serialize deterministically."""
-    return (
-        json.dumps(
-            payload,
-            indent=2,
-            ensure_ascii=False,
-        )
-        + "\n"
-    )
+    return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
 
 
 def main() -> None:
-    parser = (
-        argparse.ArgumentParser()
-    )
-
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "--source",
         default=DEFAULT_SOURCE,
-        help=(
-            "Catalog JSON URL or local path"
-        ),
+        help="Catalog JSON URL or local path",
     )
-
     parser.add_argument(
         "--output",
-        default=str(
-            DEFAULT_OUTPUT
-        ),
-        help=(
-            "Bundled catalog output path"
-        ),
+        default=str(DEFAULT_OUTPUT),
+        help="Bundled catalog output path",
     )
-
     parser.add_argument(
         "--check",
         action="store_true",
-        help=(
-            "Fail if the bundled snapshot "
-            "does not match the source catalog"
-        ),
+        help="Fail if the bundled snapshot does not match the source catalog",
     )
-
     args = parser.parse_args()
 
-    source_catalog = load_source(
-        args.source
-    )
-
-    snapshot = build_snapshot(
-        source_catalog
-    )
-
-    serialized = serialize(
-        snapshot
-    )
-
-    output = Path(
-        args.output
-    )
+    snapshot = build_snapshot(load_source(args.source))
+    serialized = serialize(snapshot)
+    output = Path(args.output)
 
     if args.check:
         if not output.exists():
-            raise SystemExit(
-                "Bundled device catalog "
-                "does not exist"
-            )
-
-        current = (
-            output.read_text(
-                encoding="utf-8"
-            )
-        )
-
-        if current != serialized:
-            raise SystemExit(
-                "Bundled device catalog "
-                "is out of date"
-            )
-
+            raise SystemExit("Bundled device catalog does not exist")
+        if output.read_text(encoding="utf-8") != serialized:
+            raise SystemExit("Bundled device catalog is out of date")
         print(
             "Bundled device catalog is current "
             f"({len(snapshot['mappings'])} verified mappings)"
         )
-
         return
 
-    output.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    output.write_text(
-        serialized,
-        encoding="utf-8",
-    )
-
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(serialized, encoding="utf-8")
     print(
         "Updated bundled device catalog: "
         f"{len(snapshot['mappings'])} verified mappings"
