@@ -24,6 +24,7 @@ from .const import (
     CONF_BRIGHTNESS_LOWER,
     CONF_BRIGHTNESS_UPPER,
     CONF_COLOR,
+    CONF_COLOR_RGB_ENCODING,
     CONF_COLOR_BRIGHTNESS_LOWER,
     CONF_COLOR_BRIGHTNESS_UPPER,
     CONF_COLOR_MODE,
@@ -345,7 +346,13 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
         self._modes = MAP_MODE_SET.get(mode_set, Mode())
 
-        self._color_uses_rgb_encoding = False
+        # Catalog mappings can explicitly require Tuya's legacy 14-hex
+        # RRGGBB+HHHH+SS+VV payload. Without this flag, keep the historical
+        # auto-detection behaviour based on the first color payload received.
+        self._color_rgb_encoding_forced = bool(
+            self._config.get(CONF_COLOR_RGB_ENCODING, False)
+        )
+        self._color_uses_rgb_encoding = self._color_rgb_encoding_forced
         self._scenes = self._configured_scenes()
 
         if not self._scenes and self.has_config(CONF_SCENE):
@@ -738,7 +745,11 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             if len(raw_color) < 12:
                 return None
 
-            self._color_uses_rgb_encoding = False
+            # An explicitly configured RGB+HSV device must keep using the
+            # extended layout for writes even if it reports a legacy HSV-only
+            # payload once. Auto-detected devices retain the old behaviour.
+            if not self._color_rgb_encoding_forced:
+                self._color_uses_rgb_encoding = False
 
             hue, saturation, value = [
                 int(chunk, 16)

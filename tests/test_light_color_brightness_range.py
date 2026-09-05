@@ -21,6 +21,7 @@ class LightColorBrightnessRangeTests(unittest.TestCase):
         light._upper_brightness = white_upper
         light._lower_color_brightness = color_lower
         light._upper_color_brightness = color_upper
+        light._color_rgb_encoding_forced = False
         light._color_uses_rgb_encoding = False
         return light
 
@@ -77,6 +78,29 @@ class LightColorBrightnessRangeTests(unittest.TestCase):
                 light._raw_color_brightness_to_ha(raw_value),
                 light._raw_brightness_to_ha(raw_value),
             )
+
+    def test_explicit_rgb_hsv_encoding_is_used_before_first_decode(self):
+        light = self._light()
+        light._color_rgb_encoding_forced = True
+        light._color_uses_rgb_encoding = True
+
+        # RRGGBB + HHHH + SS + VV. Explicit catalog configuration makes the
+        # very first write deterministic instead of waiting for state decode.
+        self.assertEqual(
+            light._encode_color((120.0, 100.0), 128),
+            "0080000078ff80",
+        )
+
+    def test_explicit_rgb_hsv_encoding_survives_standard_payload_decode(self):
+        light = self._light()
+        light._color_rgb_encoding_forced = True
+        light._color_uses_rgb_encoding = True
+
+        hs, brightness = light._decode_color("007803e803e8")
+
+        self.assertEqual(hs, (120.0, 100.0))
+        self.assertEqual(brightness, 255)
+        self.assertTrue(light._color_uses_rgb_encoding)
 
     def test_extended_rgb_hsv_payload_keeps_native_8_bit_value(self):
         light = self._light(color_lower=100, color_upper=1000)
