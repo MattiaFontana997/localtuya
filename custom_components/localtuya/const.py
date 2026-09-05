@@ -7,8 +7,10 @@ DATA_CLOUD = "cloud_data"
 
 # Platforms in this list must support config flows
 PLATFORMS = [
+    "alarm_control_panel",
     "binary_sensor",
     "button",
+    "camera",
     "climate",
     "cover",
     "fan",
@@ -18,12 +20,14 @@ PLATFORMS = [
     "number",
     "select",
     "sensor",
+    "siren",
     "switch",
     "text",
+    "time",
     "vacuum",
     "valve",
+    "water_heater",
 ]
-
 TUYA_DEVICES = "tuya_devices"
 
 ATTR_CURRENT = "current"
@@ -247,6 +251,66 @@ CONF_HUMIDIFIER_MODE_DP = "humidifier_mode_dp"
 CONF_HUMIDIFIER_MODE_VALUES = "humidifier_mode_values"
 CONF_HUMIDIFIER_ACTION_DP = "humidifier_action_dp"
 CONF_HUMIDIFIER_ACTION_VALUES = "humidifier_action_values"
+
+
+# time
+CONF_TIME_HOUR_DP = "time_hour_dp"
+CONF_TIME_MINUTE_DP = "time_minute_dp"
+CONF_TIME_SECOND_DP = "time_second_dp"
+CONF_TIME_HMS_DP = "time_hms_dp"
+
+# water heater
+CONF_WATER_HEATER_CURRENT_TEMP_DP = "water_heater_current_temperature_dp"
+CONF_WATER_HEATER_TARGET_TEMP_DP = "water_heater_target_temperature_dp"
+CONF_WATER_HEATER_CURRENT_TEMP_SCALING = "water_heater_current_temperature_scaling"
+CONF_WATER_HEATER_TARGET_TEMP_SCALING = "water_heater_target_temperature_scaling"
+CONF_WATER_HEATER_TEMP_MIN = "water_heater_temperature_min"
+CONF_WATER_HEATER_TEMP_MAX = "water_heater_temperature_max"
+CONF_WATER_HEATER_TEMP_STEP = "water_heater_temperature_step"
+CONF_WATER_HEATER_TEMP_UNIT = "water_heater_temperature_unit"
+CONF_WATER_HEATER_TEMP_UNIT_DP = "water_heater_temperature_unit_dp"
+CONF_WATER_HEATER_TEMP_UNIT_VALUES = "water_heater_temperature_unit_values"
+CONF_WATER_HEATER_MIN_TEMP_DP = "water_heater_min_temperature_dp"
+CONF_WATER_HEATER_MAX_TEMP_DP = "water_heater_max_temperature_dp"
+CONF_WATER_HEATER_OPERATION_DP = "water_heater_operation_mode_dp"
+CONF_WATER_HEATER_OPERATION_VALUES = "water_heater_operation_mode_values"
+CONF_WATER_HEATER_ON_OPERATION = "water_heater_on_operation"
+CONF_WATER_HEATER_OFF_OPERATION = "water_heater_off_operation"
+CONF_WATER_HEATER_AWAY_DP = "water_heater_away_mode_dp"
+CONF_WATER_HEATER_AWAY_ON = "water_heater_away_mode_on"
+CONF_WATER_HEATER_AWAY_OFF = "water_heater_away_mode_off"
+
+# alarm control panel
+CONF_ALARM_STATE_DP = "alarm_state_dp"
+CONF_ALARM_STATE_VALUES = "alarm_state_values"
+CONF_ALARM_TRIGGER_DP = "alarm_trigger_dp"
+CONF_ALARM_TRIGGER_ON = "alarm_trigger_on"
+
+# siren
+CONF_SIREN_SWITCH_DP = "siren_switch_dp"
+CONF_SIREN_SWITCH_ON = "siren_switch_on"
+CONF_SIREN_SWITCH_OFF = "siren_switch_off"
+CONF_SIREN_TONE_DP = "siren_tone_dp"
+CONF_SIREN_TONE_VALUES = "siren_tone_values"
+CONF_SIREN_DEFAULT_TONE = "siren_default_tone"
+CONF_SIREN_DURATION_DP = "siren_duration_dp"
+CONF_SIREN_DURATION_SCALING = "siren_duration_scaling"
+CONF_SIREN_VOLUME_DP = "siren_volume_dp"
+CONF_SIREN_VOLUME_SCALING = "siren_volume_scaling"
+CONF_SIREN_VOLUME_VALUES = "siren_volume_values"
+
+# camera
+CONF_CAMERA_SWITCH_DP = "camera_switch_dp"
+CONF_CAMERA_SWITCH_ON = "camera_switch_on"
+CONF_CAMERA_SWITCH_OFF = "camera_switch_off"
+CONF_CAMERA_SNAPSHOT_DP = "camera_snapshot_dp"
+CONF_CAMERA_SNAPSHOT_ENCODING = "camera_snapshot_encoding"
+CONF_CAMERA_RECORD_DP = "camera_record_dp"
+CONF_CAMERA_RECORD_ON = "camera_record_on"
+CONF_CAMERA_RECORD_OFF = "camera_record_off"
+CONF_CAMERA_MOTION_DP = "camera_motion_enable_dp"
+CONF_CAMERA_MOTION_ON = "camera_motion_enable_on"
+CONF_CAMERA_MOTION_OFF = "camera_motion_enable_off"
 
 # number
 CONF_MIN_VALUE = "min_value"
