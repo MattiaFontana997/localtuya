@@ -1,0 +1,93 @@
+name: Apply light custom scene patch
+
+on:
+  push:
+    branches:
+      - light-custom-scene-values
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+        with:
+          ref: light-custom-scene-values
+
+      - name: Apply source changes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              text = path.read_text(encoding="utf-8")
+              if new in text:
+                  return
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(
+                      f"Expected exactly one match in {path}, found {count}"
+                  )
+              path.write_text(text.replace(old, new), encoding="utf-8")
+
+          const_path = Path("custom_components/localtuya/const.py")
+          replace_once(
+              const_path,
+              'CONF_MUSIC_MODE = "music_mode"\n',
+              'CONF_MUSIC_MODE = "music_mode"\nCONF_SCENE_VALUES = "scene_values"\n',
+          )
+
+          light_path = Path("custom_components/localtuya/light.py")
+          replace_once(
+              light_path,
+              '    CONF_MUSIC_MODE,\n)\n',
+              '    CONF_MUSIC_MODE,\n    CONF_SCENE_VALUES,\n)\n',
+          )
+
+          replace_once(
+              light_path,
+              '''        self._color_uses_rgb_encoding = False\n        self._scenes = {}\n\n        if self.has_config(CONF_SCENE):\n            try:\n                scene_dp = int(self._config[CONF_SCENE])\n            except (TypeError, ValueError):\n                scene_dp = 20\n\n            if scene_dp < 20:\n                self._scenes = SCENE_LIST_RGBW_255\n            elif not self.has_config(CONF_BRIGHTNESS):\n                self._scenes = SCENE_LIST_RGB_1000\n            else:\n                self._scenes = SCENE_LIST_RGBW_1000\n''',
+              '''        self._color_uses_rgb_encoding = False\n        self._scenes = self._configured_scenes()\n\n        if not self._scenes and self.has_config(CONF_SCENE):\n            try:\n                scene_dp = int(self._config[CONF_SCENE])\n            except (TypeError, ValueError):\n                scene_dp = 20\n\n            if scene_dp < 20:\n                self._scenes = SCENE_LIST_RGBW_255\n            elif not self.has_config(CONF_BRIGHTNESS):\n                self._scenes = SCENE_LIST_RGB_1000\n            else:\n                self._scenes = SCENE_LIST_RGBW_1000\n''',
+          )
+
+          replace_once(
+              light_path,
+              '''        effects = list(self._scenes)\n\n        if self._music_mode_enabled:\n            effects.append(SCENE_MUSIC)\n\n        self._attr_effect_list = effects or None\n''',
+              '''        effects = list(self._scenes)\n\n        if (\n            self._music_mode_enabled\n            and SCENE_MUSIC not in effects\n        ):\n            effects.append(SCENE_MUSIC)\n\n        self._attr_effect_list = effects or None\n''',
+          )
+
+          replace_once(
+              light_path,
+              '''    def _build_supported_color_modes(self) -> set[ColorMode]:\n''',
+              '''    def _configured_scenes(self) -> dict[str, str]:\n        """Return valid catalog-provided Tuya scene values."""\n        configured = self._config.get(CONF_SCENE_VALUES)\n\n        if configured is None:\n            return {}\n\n        if not isinstance(configured, dict):\n            self.warning(\n                "Invalid scene_values config; using legacy scene presets"\n            )\n            return {}\n\n        scenes: dict[str, str] = {}\n\n        for name, value in configured.items():\n            if (\n                not isinstance(name, str)\n                or not name.strip()\n                or not isinstance(value, str)\n                or not value\n            ):\n                self.warning(\n                    "Ignoring invalid custom light scene entry %r: %r",\n                    name,\n                    value,\n                )\n                continue\n\n            if (\n                not value.startswith(self._modes.scene)\n                and not self.has_config(CONF_SCENE)\n            ):\n                self.warning(\n                    "Ignoring payload scene %s because no scene DP is configured",\n                    name,\n                )\n                continue\n\n            scenes[name.strip()] = value\n\n        return scenes\n\n    def _build_supported_color_modes(self) -> set[ColorMode]:\n''',
+          )
+
+          test_path = Path("tests/test_light_scene_values.py")
+          test_path.write_text(
+              '''"""Regression tests for catalog-provided Tuya light scenes."""\n\nfrom __future__ import annotations\n\nimport unittest\n\nfrom homeassistant.const import CONF_SCENE\n\nfrom custom_components.localtuya.const import CONF_SCENE_VALUES\nfrom custom_components.localtuya.light import LocaltuyaLight, Mode\n\n\nclass LightSceneValuesTests(unittest.TestCase):\n    @staticmethod\n    def _light(config):\n        light = object.__new__(LocaltuyaLight)\n        light._config = config\n        light._modes = Mode()\n        light.warning = lambda *args, **kwargs: None\n        return light\n\n    def test_payload_scenes_are_preserved_with_scene_dp(self):\n        light = self._light(\n            {\n                CONF_SCENE: 25,\n                CONF_SCENE_VALUES: {\n                    "Reading": "010e0d0000840000000003e801f4",\n                    "Rainbow": "05464601000003e8",\n                },\n            }\n        )\n\n        self.assertEqual(\n            light._configured_scenes(),\n            {\n                "Reading": "010e0d0000840000000003e801f4",\n                "Rainbow": "05464601000003e8",\n            },\n        )\n\n    def test_mode_only_scenes_do_not_require_scene_dp(self):\n        light = self._light(\n            {\n                CONF_SCENE_VALUES: {\n                    "Scenario 1": "scene_1",\n                    "Scenario 4": "scene_4",\n                }\n            }\n        )\n\n        self.assertEqual(\n            light._configured_scenes(),\n            {\n                "Scenario 1": "scene_1",\n                "Scenario 4": "scene_4",\n            },\n        )\n\n    def test_payload_scene_without_scene_dp_is_ignored(self):\n        light = self._light(\n            {\n                CONF_SCENE_VALUES: {\n                    "Reading": "010e0d0000840000000003e801f4",\n                    "Scenario 1": "scene_1",\n                }\n            }\n        )\n\n        self.assertEqual(\n            light._configured_scenes(),\n            {"Scenario 1": "scene_1"},\n        )\n\n    def test_invalid_scene_values_fall_back_to_empty(self):\n        light = self._light({CONF_SCENE_VALUES: ["scene_1"]})\n\n        self.assertEqual(light._configured_scenes(), {})\n\n\nif __name__ == "__main__":\n    unittest.main()\n''',
+              encoding="utf-8",
+          )
+
+          Path(".github/workflows/apply-light-custom-scenes.yml").unlink()
+          PY
+
+      - name: Check diff whitespace
+        run: git diff --check
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/localtuya/const.py custom_components/localtuya/light.py tests/test_light_scene_values.py .github/workflows/apply-light-custom-scenes.yml
+          git commit -m "Support catalog-provided light scene values"
+          git push origin HEAD:light-custom-scene-values
