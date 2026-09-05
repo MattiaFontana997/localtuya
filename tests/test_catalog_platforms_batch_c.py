@@ -3,6 +3,7 @@
 import base64
 from datetime import datetime, timezone
 import json
+from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock
 
@@ -13,6 +14,7 @@ from homeassistant.components.lawn_mower.const import (
 )
 
 from custom_components.localtuya.camera import LocaltuyaCamera
+from custom_components.localtuya.common import TuyaDevice
 from custom_components.localtuya.const import (
     CONF_CAMERA_MOTION_DP,
     CONF_CAMERA_MOTION_OFF,
@@ -66,14 +68,43 @@ def _entity(cls, config, state):
 
 
 class BatchCPlatformRuntimeTests(unittest.IsolatedAsyncioTestCase):
+    def test_unsolicited_listener_preserves_exact_raw_delta(self):
+        """The dispatcher wrapper must expose only the pushed DPS payload."""
+        device = object.__new__(TuyaDevice)
+        original_listener = Mock()
+        dispatcher = SimpleNamespace(listener=original_listener)
+        interface = SimpleNamespace(
+            dispatcher=dispatcher,
+            _decode_payload=Mock(return_value={"dps": {"1": "click"}}),
+        )
+        device._interface = interface
+        device.debug = Mock()
+        device._dispatch_raw_status = Mock()
+
+        device._install_raw_status_listener()
+        message = SimpleNamespace(payload=b"raw")
+        dispatcher.listener(message)
+
+        original_listener.assert_called_once_with(message)
+        device._dispatch_raw_status.assert_called_once_with({"1": "click"})
+
     def test_event_repeated_raw_values_trigger_repeated_events(self):
-        config = {"id": 1, CONF_EVENT_DP: 1, CONF_EVENT_TYPES: {"single": "click"}}
+        config = {
+            "id": 1,
+            "friendly_name": "Button event",
+            CONF_EVENT_DP: 1,
+            CONF_EVENT_TYPES: {"single": "click"},
+        }
         event = _entity(LocaltuyaEvent, config, {1: "click"})
         event._event_dp = 1
         event._event_values = {"single": "click"}
         event._trigger_event = Mock()
         event.async_write_ha_state = Mock()
-        event.extra_state_attributes = {}
+        event._state = None
+        event._last_state = None
+        event._status = {}
+        event._extra_state_attribute_dps = {}
+        event.debug = lambda *args, **kwargs: None
 
         event._handle_raw_status({"1": "click"})
         event._handle_raw_status({"1": "click"})
