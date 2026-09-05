@@ -12,7 +12,6 @@ from homeassistant.components.light import (
     ATTR_COLOR_TEMP_KELVIN,
     ATTR_EFFECT,
     ATTR_HS_COLOR,
-    ATTR_WHITE,
     DOMAIN,
     ColorMode,
     LightEntity,
@@ -25,7 +24,6 @@ from .const import (
     CONF_BRIGHTNESS_LOWER,
     CONF_BRIGHTNESS_UPPER,
     CONF_COLOR,
-    CONF_COLOR_RGB_ENCODING,
     CONF_COLOR_BRIGHTNESS_LOWER,
     CONF_COLOR_BRIGHTNESS_UPPER,
     CONF_COLOR_MODE,
@@ -33,11 +31,8 @@ from .const import (
     CONF_COLOR_TEMP_MAX_KELVIN,
     CONF_COLOR_TEMP_MIN_KELVIN,
     CONF_COLOR_TEMP_REVERSE,
-    CONF_EFFECT,
-    CONF_EFFECT_VALUES,
     CONF_MUSIC_MODE,
     CONF_SCENE_VALUES,
-    CONF_WHITE_MODE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -348,13 +343,7 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
         self._modes = MAP_MODE_SET.get(mode_set, Mode())
 
-        # Catalog mappings can explicitly require Tuya's legacy 14-hex
-        # RRGGBB+HHHH+SS+VV payload. Without this flag, keep the historical
-        # auto-detection behaviour based on the first color payload received.
-        self._color_rgb_encoding_forced = bool(
-            self._config.get(CONF_COLOR_RGB_ENCODING, False)
-        )
-        self._color_uses_rgb_encoding = self._color_rgb_encoding_forced
+        self._color_uses_rgb_encoding = False
         self._scenes = self._configured_scenes()
 
         if not self._scenes and self.has_config(CONF_SCENE):
@@ -370,16 +359,8 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             else:
                 self._scenes = SCENE_LIST_RGBW_1000
 
-        self._effects = self._configured_effects()
-
         self._music_mode_enabled = bool(
             self._config.get(CONF_MUSIC_MODE, False)
-        )
-
-        # Catalog mappings can mark RGBW lights whose dedicated white mode
-        # uses the normal brightness DP but has no color-temperature DP.
-        self._white_mode_enabled = bool(
-            self._config.get(CONF_WHITE_MODE, False)
         )
 
         self._attr_supported_color_modes = (
@@ -388,65 +369,10 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
         features = LightEntityFeature(0)
 
-        effects = self._build_effect_list()
-        if effects:
+        if self._scenes or self._music_mode_enabled:
             features |= LightEntityFeature.EFFECT
 
         self._attr_supported_features = features
-        self._attr_effect_list = effects or None
-
-        if ColorMode.COLOR_TEMP in self._attr_supported_color_modes:
-            self._attr_min_color_temp_kelvin = self._min_kelvin
-            self._attr_max_color_temp_kelvin = self._max_kelvin
-
-    def _configured_effects(self) -> dict[str, str]:
-        """Return exact catalog-provided dedicated effect values."""
-        configured = self._config.get(CONF_EFFECT_VALUES)
-
-        if configured is None:
-            return {}
-
-        if not self.has_config(CONF_EFFECT):
-            self.warning(
-                "Ignoring effect_values because no effect DP is configured"
-            )
-            return {}
-
-        if not isinstance(configured, dict):
-            self.warning("Invalid effect_values config")
-            return {}
-
-        effects: dict[str, str] = {}
-        raw_values: set[str] = set()
-
-        for name, value in configured.items():
-            if (
-                not isinstance(name, str)
-                or not name.strip()
-                or not isinstance(value, str)
-                or not value
-                or value in raw_values
-            ):
-                self.warning(
-                    "Ignoring invalid custom light effect entry %r: %r",
-                    name,
-                    value,
-                )
-                continue
-
-            friendly = name.strip()
-            if friendly in effects:
-                continue
-
-            effects[friendly] = value
-            raw_values.add(value)
-
-        return effects
-
-    def _build_effect_list(self) -> list[str]:
-        """Build HA effects using Tuya Local's dedicated-DP precedence."""
-        if self._effects:
-            return list(self._effects)
 
         effects = list(self._scenes)
 
@@ -456,14 +382,11 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         ):
             effects.append(SCENE_MUSIC)
 
-        return effects
+        self._attr_effect_list = effects or None
 
-    def _find_effect_by_raw(self, value) -> str | None:
-        """Translate a raw dedicated effect value to its HA name."""
-        for name, raw_value in self._effects.items():
-            if raw_value == value:
-                return name
-        return None
+        if ColorMode.COLOR_TEMP in self._attr_supported_color_modes:
+            self._attr_min_color_temp_kelvin = self._min_kelvin
+            self._attr_max_color_temp_kelvin = self._max_kelvin
 
     def _configured_scenes(self) -> dict[str, str]:
         """Return valid catalog-provided Tuya scene values."""
@@ -517,12 +440,6 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
         if self.has_config(CONF_COLOR):
             color_modes.add(ColorMode.HS)
-
-        if (
-            self._white_mode_enabled
-            and self.has_config(CONF_BRIGHTNESS)
-        ):
-            color_modes.add(ColorMode.WHITE)
 
         if color_modes:
             return color_modes
@@ -592,12 +509,6 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             and ColorMode.COLOR_TEMP in supported
         ):
             return ColorMode.COLOR_TEMP
-
-        if (
-            self._is_white_mode(mode)
-            and ColorMode.WHITE in supported
-        ):
-            return ColorMode.WHITE
 
         if (
             self._attr_color_mode is not None
@@ -765,11 +676,7 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             if len(raw_color) < 12:
                 return None
 
-            # An explicitly configured RGB+HSV device must keep using the
-            # extended layout for writes even if it reports a legacy HSV-only
-            # payload once. Auto-detected devices retain the old behaviour.
-            if not self._color_rgb_encoding_forced:
-                self._color_uses_rgb_encoding = False
+            self._color_uses_rgb_encoding = False
 
             hue, saturation, value = [
                 int(chunk, 16)
@@ -847,70 +754,45 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             and self._attr_supported_features
             & LightEntityFeature.EFFECT
         ):
-            if self._effects:
-                raw_effect = self._effects.get(requested_effect)
-                if raw_effect is not None:
-                    self._set_configured_dp(
-                        states,
-                        CONF_EFFECT,
-                        raw_effect,
-                    )
-            else:
-                scene = self._scenes.get(requested_effect)
+            scene = self._scenes.get(requested_effect)
 
-                if scene is not None:
-                    if (
-                        isinstance(scene, str)
-                        and scene.startswith(MODE_SCENE)
-                    ):
-                        self._set_configured_dp(
-                            states,
-                            CONF_COLOR_MODE,
-                            scene,
-                        )
-                    else:
-                        self._set_configured_dp(
-                            states,
-                            CONF_COLOR_MODE,
-                            self._modes.scene,
-                        )
-                        self._set_configured_dp(
-                            states,
-                            CONF_SCENE,
-                            scene,
-                        )
-
-                elif (
-                    requested_effect == SCENE_MUSIC
-                    and self._music_mode_enabled
+            if scene is not None:
+                if (
+                    isinstance(scene, str)
+                    and scene.startswith(MODE_SCENE)
                 ):
                     self._set_configured_dp(
                         states,
                         CONF_COLOR_MODE,
-                        self._modes.music,
+                        scene,
                     )
+                else:
+                    self._set_configured_dp(
+                        states,
+                        CONF_COLOR_MODE,
+                        self._modes.scene,
+                    )
+                    self._set_configured_dp(
+                        states,
+                        CONF_SCENE,
+                        scene,
+                    )
+
+            elif (
+                requested_effect == SCENE_MUSIC
+                and self._music_mode_enabled
+            ):
+                self._set_configured_dp(
+                    states,
+                    CONF_COLOR_MODE,
+                    self._modes.music,
+                )
 
         requested_brightness = kwargs.get(ATTR_BRIGHTNESS)
         requested_hs = kwargs.get(ATTR_HS_COLOR)
         requested_kelvin = kwargs.get(ATTR_COLOR_TEMP_KELVIN)
-        requested_white = kwargs.get(ATTR_WHITE)
 
         if (
-            requested_white is not None
-            and ColorMode.WHITE in self._attr_supported_color_modes
-        ):
-            self._set_configured_dp(
-                states,
-                CONF_COLOR_MODE,
-                self._modes.white,
-            )
-            self._set_configured_dp(
-                states,
-                CONF_BRIGHTNESS,
-                self._ha_brightness_to_raw(int(requested_white)),
-            )
-
-        elif (
             requested_hs is not None
             and ColorMode.HS in self._attr_supported_color_modes
         ):
@@ -1055,12 +937,8 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             and self.has_config(CONF_COLOR)
             and (
                 self._is_color_mode(mode)
-                or (
-                    ColorMode.COLOR_TEMP
-                    not in self._attr_supported_color_modes
-                    and ColorMode.WHITE
-                    not in self._attr_supported_color_modes
-                )
+                or ColorMode.COLOR_TEMP
+                not in self._attr_supported_color_modes
             )
         ):
             decoded = self._decode_color(
@@ -1086,12 +964,7 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             if kelvin is not None:
                 self._attr_color_temp_kelvin = kelvin
 
-        if self._effects:
-            self._attr_effect = self._find_effect_by_raw(
-                self.dps_conf(CONF_EFFECT)
-            )
-
-        elif (
+        if (
             self._is_scene_mode(mode)
             and self._attr_supported_features
             & LightEntityFeature.EFFECT
