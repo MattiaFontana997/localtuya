@@ -1,11 +1,15 @@
 # Changelog
 
-## 6.4.0
+## Unreleased — 6.4.0
 
-Catalog-driven light compatibility release focused on lossless Tuya Local
-mapping semantics and safer Catalog V2 runtime behavior.
+Comprehensive Tuya Local compatibility milestone. The 6.4.0 release remains
+open until the conservative importer and runtime cover every LocalTuya platform
+already supported by LocalTuya, plus any additional Tuya Local platform that we
+explicitly add to the runtime without losing source semantics.
 
-### Lights
+### Current completed work
+
+#### Lights
 
 - Added independent raw brightness ranges for white brightness and HSV value
   data
@@ -19,7 +23,7 @@ mapping semantics and safer Catalog V2 runtime behavior.
 - Preserved existing manual light configuration behavior; the new mapping
   fields remain catalog/runtime-only
 
-### Catalog V2 runtime
+#### Catalog V2 runtime
 
 - Added DP-reference validation and optional-DP pruning for dedicated light
   effects
@@ -29,26 +33,40 @@ mapping semantics and safer Catalog V2 runtime behavior.
 - Preserved unconsumed Tuya Local DPS as entity attributes instead of
   incorrectly reinterpreting them as functional controls
 
-### Community catalog compatibility
+#### Community catalog compatibility
 
 - Expanded the runtime vocabulary used by conservative Tuya Local profile
   imports while keeping imported mappings experimental until reviewed
 - Kept contribution export privacy guarantees unchanged
 - Kept the contribution call to action as `Submit to Community Catalog`
 
+### Remaining 6.4.0 scope
+
+- Complete conservative Tuya Local importing for `fan`, `climate`, `cover` and
+  `vacuum`, in addition to the already supported switch/sensor/select/number/
+  binary-sensor/light subset
+- Reduce multi-DP entity blockers by representing compatible secondary DP
+  semantics instead of dropping them
+- Add runtime/import support for additional Tuya Local entity platforms where
+  they can be represented safely and losslessly
+- Keep unsupported or ambiguous semantics fail-closed rather than approximated
+- Re-run the complete upstream Tuya Local corpus and validate every generated
+  Catalog V2 mapping before release
+
 ### Compatibility
 
 - Existing configurations remain backward compatible
 - Existing standard HSV, RGB+CCT, scene and music behavior remains available
-- New light semantics are activated only when explicitly supplied by a trusted
-  catalog mapping
+- New mapping semantics are activated only when explicitly supplied by a
+  trusted catalog mapping
 
 ### Tests
 
 - Added regression coverage for custom scenes, dedicated effects, optional DP
   pruning, extra state attributes, extended RGB+HSV encoding and dedicated RGBW
   white mode
-- Release validation targets Python 3.14 and Home Assistant 2026
+- Final 6.4.0 validation will target Python 3.14 and Home Assistant 2026 across
+  the complete supported importer/runtime surface
 
 
 ## 6.3.0
