@@ -14,7 +14,7 @@ from aiohttp import ClientError, ClientTimeout
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 
-from .const import CONF_EXTRA_STATE_ATTRIBUTES_DPS
+from .const import CONF_EXTRA_STATE_ATTRIBUTES_DPS, PLATFORMS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,27 +39,10 @@ BUILTIN_CATALOG_PATH = Path(__file__).with_name("builtin_catalog.json")
 CATALOG_STORAGE_VERSION = 1
 CATALOG_STORAGE_KEY = "localtuya.device_catalog"
 
-SUPPORTED_PLATFORMS = {
-    "alarm_control_panel",
-    "binary_sensor",
-    "button",
-    "climate",
-    "cover",
-    "fan",
-    "humidifier",
-    "light",
-    "lock",
-    "number",
-    "select",
-    "sensor",
-    "siren",
-    "switch",
-    "text",
-    "time",
-    "vacuum",
-    "valve",
-    "water_heater",
-}
+# Keep catalog acceptance aligned with the platforms exposed by LocalTuya's
+# config flow. A new runtime must never be silently rejected by a stale second
+# allowlist here.
+SUPPORTED_PLATFORMS = frozenset(PLATFORMS)
 
 _FORBIDDEN_CONFIG_KEYS = {
     "local_key",
@@ -596,6 +579,20 @@ def _adapt_entity_for_available_dps(
         ),
         "alarm_state_dp": ("alarm_state_values",),
         "alarm_trigger_dp": ("alarm_trigger_on", "alarm_trigger_off"),
+        "event_dp": ("event_types", "event_device_class"),
+        "camera_switch_dp": ("camera_switch_on", "camera_switch_off"),
+        "camera_snapshot_dp": ("camera_snapshot_encoding",),
+        "camera_record_dp": ("camera_record_on", "camera_record_off"),
+        "camera_motion_dp": ("camera_motion_on", "camera_motion_off"),
+        "datetime_timestamp_dp": ("datetime_timestamp_scaling",),
+        "lawn_mower_activity_dp": ("lawn_mower_activity_values",),
+        "lawn_mower_command_dp": ("lawn_mower_command_values",),
+        "remote_send_dp": (
+            "remote_send_command", "remote_rf_send_command",
+            "remote_learn_command", "remote_learn_exit_command",
+            "remote_rf_learn_command", "remote_rf_learn_exit_command",
+        ),
+        "infrared_send_dp": ("infrared_send_command",),
     }
     for reference_key in tuple(removed_keys):
         for dependent_key in dependent_config.get(reference_key, ()):

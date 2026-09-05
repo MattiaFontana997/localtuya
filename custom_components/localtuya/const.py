@@ -10,13 +10,19 @@ PLATFORMS = [
     "alarm_control_panel",
     "binary_sensor",
     "button",
+    "camera",
     "climate",
     "cover",
+    "datetime",
+    "event",
     "fan",
     "humidifier",
+    "infrared",
+    "lawn_mower",
     "light",
     "lock",
     "number",
+    "remote",
     "select",
     "sensor",
     "siren",
@@ -302,6 +308,62 @@ CONF_ALARM_STATE_VALUES = "alarm_state_values"
 CONF_ALARM_TRIGGER_DP = "alarm_trigger_dp"
 CONF_ALARM_TRIGGER_ON = "alarm_trigger_on"
 CONF_ALARM_TRIGGER_OFF = "alarm_trigger_off"
+
+# event
+CONF_EVENT_DP = "event_dp"
+CONF_EVENT_TYPES = "event_types"
+CONF_EVENT_DEVICE_CLASS = "event_device_class"
+
+# camera
+CONF_CAMERA_SWITCH_DP = "camera_switch_dp"
+CONF_CAMERA_SWITCH_ON = "camera_switch_on"
+CONF_CAMERA_SWITCH_OFF = "camera_switch_off"
+CONF_CAMERA_SNAPSHOT_DP = "camera_snapshot_dp"
+CONF_CAMERA_SNAPSHOT_ENCODING = "camera_snapshot_encoding"
+CONF_CAMERA_RECORD_DP = "camera_record_dp"
+CONF_CAMERA_RECORD_ON = "camera_record_on"
+CONF_CAMERA_RECORD_OFF = "camera_record_off"
+CONF_CAMERA_MOTION_DP = "camera_motion_dp"
+CONF_CAMERA_MOTION_ON = "camera_motion_on"
+CONF_CAMERA_MOTION_OFF = "camera_motion_off"
+
+# datetime
+CONF_DATETIME_TIMESTAMP_DP = "datetime_timestamp_dp"
+CONF_DATETIME_TIMESTAMP_SCALING = "datetime_timestamp_scaling"
+CONF_DATETIME_TIMEZONE = "datetime_timezone"
+CONF_DATETIME_YEAR_DP = "datetime_year_dp"
+CONF_DATETIME_MONTH_DP = "datetime_month_dp"
+CONF_DATETIME_DAY_DP = "datetime_day_dp"
+CONF_DATETIME_HOUR_DP = "datetime_hour_dp"
+CONF_DATETIME_MINUTE_DP = "datetime_minute_dp"
+CONF_DATETIME_SECOND_DP = "datetime_second_dp"
+
+# lawn mower
+CONF_LAWN_MOWER_ACTIVITY_DP = "lawn_mower_activity_dp"
+CONF_LAWN_MOWER_ACTIVITY_VALUES = "lawn_mower_activity_values"
+CONF_LAWN_MOWER_COMMAND_DP = "lawn_mower_command_dp"
+CONF_LAWN_MOWER_COMMAND_VALUES = "lawn_mower_command_values"
+
+# remote
+CONF_REMOTE_SEND_DP = "remote_send_dp"
+CONF_REMOTE_RECEIVE_DP = "remote_receive_dp"
+CONF_REMOTE_CONTROL_DP = "remote_control_dp"
+CONF_REMOTE_DELAY_DP = "remote_delay_dp"
+CONF_REMOTE_CODE_TYPE_DP = "remote_code_type_dp"
+CONF_REMOTE_CODE_TYPE_VALUE = "remote_code_type_value"
+CONF_REMOTE_SEND_COMMAND = "remote_send_command"
+CONF_REMOTE_RF_SEND_COMMAND = "remote_rf_send_command"
+CONF_REMOTE_LEARN_COMMAND = "remote_learn_command"
+CONF_REMOTE_LEARN_EXIT_COMMAND = "remote_learn_exit_command"
+CONF_REMOTE_RF_LEARN_COMMAND = "remote_rf_learn_command"
+CONF_REMOTE_RF_LEARN_EXIT_COMMAND = "remote_rf_learn_exit_command"
+
+# infrared
+CONF_INFRARED_SEND_DP = "infrared_send_dp"
+CONF_INFRARED_CONTROL_DP = "infrared_control_dp"
+CONF_INFRARED_CODE_TYPE_DP = "infrared_code_type_dp"
+CONF_INFRARED_CODE_TYPE_VALUE = "infrared_code_type_value"
+CONF_INFRARED_SEND_COMMAND = "infrared_send_command"
 
 # number
 CONF_MIN_VALUE = "min_value"
