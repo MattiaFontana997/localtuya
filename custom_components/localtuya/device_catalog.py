@@ -23,7 +23,12 @@ from .advanced_mapping import (
     validate_advanced_mapping,
     validate_advanced_mapping_by_dp,
 )
-from .const import CONF_EXTRA_STATE_ATTRIBUTES_DPS, PLATFORMS
+from .const import (
+    CONF_EXTRA_STATE_ATTRIBUTES_DPS,
+    CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS,
+    CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS,
+    PLATFORMS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 CATALOG_SCHEMA_VERSION = 2
@@ -132,17 +137,25 @@ def _config_dp_references(config):
                 continue
             if 0 < dp_id <= MAX_DP_ID:
                 result.add(dp_id)
-    extra = config.get(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
-    if isinstance(extra, dict):
-        for value in extra.values():
-            if isinstance(value, bool):
-                continue
-            try:
-                dp_id = int(value)
-            except (TypeError, ValueError):
-                continue
-            if 0 < dp_id <= MAX_DP_ID:
-                result.add(dp_id)
+    for extra_key in (
+        CONF_EXTRA_STATE_ATTRIBUTES_DPS,
+        CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS,
+    ):
+        extra = config.get(extra_key)
+        if isinstance(extra, dict):
+            for value in extra.values():
+                if isinstance(value, bool):
+                    continue
+                try:
+                    dp_id = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if 0 < dp_id <= MAX_DP_ID:
+                    result.add(dp_id)
+    scoped = config.get(CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS)
+    if isinstance(scoped, dict):
+        for rules in scoped.values():
+            result.update(advanced_mapping_dp_references(rules))
     for key, value in config.items():
         if not _is_dp_reference_key(str(key)) or isinstance(value, bool):
             continue
@@ -333,6 +346,52 @@ def _validate_entity(entity):
                 return None
             normalized[name] = dp_id
         config[CONF_EXTRA_STATE_ATTRIBUTES_DPS] = normalized
+    mapped_extra = config.get(CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS)
+    if mapped_extra is not None:
+        if not isinstance(mapped_extra, dict) or not mapped_extra or len(mapped_extra) > 32:
+            return None
+        normalized_mapped = {}
+        for raw_name, raw_dp in mapped_extra.items():
+            if not isinstance(raw_name, str):
+                return None
+            name = raw_name.strip()
+            if not name or name in {"state", "raw_state"} or name in normalized_mapped or isinstance(raw_dp, bool):
+                return None
+            try:
+                dp_id = int(raw_dp)
+            except (TypeError, ValueError):
+                return None
+            if dp_id <= 0 or dp_id > MAX_DP_ID:
+                return None
+            normalized_mapped[name] = dp_id
+        config[CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS] = normalized_mapped
+
+    scoped_mappings = config.get(CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS)
+    if scoped_mappings is not None:
+        if (
+            not isinstance(scoped_mappings, dict)
+            or not scoped_mappings
+            or len(scoped_mappings) > 32
+            or not isinstance(config.get(CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS), dict)
+        ):
+            return None
+        normalized_scoped = {}
+        for raw_name, raw_rules in scoped_mappings.items():
+            if not isinstance(raw_name, str):
+                return None
+            name = raw_name.strip()
+            if (
+                not name
+                or name in normalized_scoped
+                or name not in config[CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS]
+            ):
+                return None
+            rules = validate_advanced_mapping(raw_rules)
+            if rules is None:
+                return None
+            normalized_scoped[name] = rules
+        config[CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS] = normalized_scoped
+
     if config.get("platform") is not None and config.get("platform") != platform:
         return None
     if isinstance(config.get("id"), bool):

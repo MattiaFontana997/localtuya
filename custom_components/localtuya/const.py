@@ -65,6 +65,7 @@ CONF_RESET_DPIDS = "reset_dpids"
 CONF_PASSIVE_ENTITY = "is_passive_entity"
 CONF_EXTRA_STATE_ATTRIBUTES_DPS = "extra_state_attributes_dps"
 CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS = "mapped_extra_state_attributes_dps"
+CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS = "mapped_extra_state_attribute_mappings"
 
 # light
 CONF_BRIGHTNESS_LOWER = "brightness_lower"

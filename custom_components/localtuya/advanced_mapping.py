@@ -10,7 +10,7 @@ CONF_ADVANCED_MAPPING_BY_DP = "advanced_mapping_by_dp"
 _MAX_RULES = 64
 _MAX_MAPPING_DPS = 32
 _MAX_CONDITIONS = 16
-_RULE_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "constraint_dp", "conditions", "value_redirect_dp", "hidden", "invalid", "default"}
+_RULE_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "constraint_dp", "conditions", "value_redirect_dp", "hidden", "invalid", "default", "bitmask"}
 _CONDITION_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "value_redirect_dp", "hidden", "invalid"}
 
 
@@ -60,11 +60,19 @@ def _normalize_rule(raw: Any, *, condition: bool = False) -> dict[str, Any] | No
             if not isinstance(value, Number) or isinstance(value, bool) or float(value) <= 0:
                 return None
             result[key] = float(value)
-    for key in ("invert", "hidden", "invalid", "default"):
+    for key in ("invert", "hidden", "invalid", "default", "bitmask"):
         if key in raw:
             if not isinstance(raw[key], bool):
                 return None
             result[key] = raw[key]
+    if result.get("bitmask"):
+        expected = result.get("dps_val")
+        if (
+            isinstance(expected, bool)
+            or not isinstance(expected, int)
+            or expected < 0
+        ):
+            return None
     for key in ("range", "target_range"):
         if key in raw:
             normalized = _normalize_range(raw[key])
@@ -202,12 +210,25 @@ def _active_condition(rule: dict[str, Any], status: dict[str, Any]) -> dict[str,
     return None
 
 
+def _rule_matches_raw(rule: dict[str, Any], actual: Any) -> bool:
+    """Match one ordered rule, including Tuya Local bitfield semantics."""
+    expected = rule.get("dps_val")
+    if rule.get("bitmask", False):
+        if expected == 0:
+            return str(actual) == str(expected)
+        try:
+            return (int(actual) & int(expected)) != 0
+        except (TypeError, ValueError):
+            return False
+    return _matches(expected, actual)
+
+
 def _find_rule_for_raw(rules: list[dict[str, Any]], raw: Any) -> dict[str, Any] | None:
     default = None
     for rule in rules:
         if "dps_val" not in rule:
             default = rule
-        elif _matches(rule["dps_val"], raw):
+        elif _rule_matches_raw(rule, raw):
             return rule
     return default
 

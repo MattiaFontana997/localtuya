@@ -110,6 +110,28 @@ class AdvancedMappingTests(unittest.TestCase):
     def test_per_dp_mapping_rejects_invalid_dp_keys(self):
         self.assertIsNone(validate_advanced_mapping_by_dp({"not-a-dp": [{"scale": 10}]}))
 
+    def test_ordered_bitmask_mapping_matches_tuya_local_semantics(self):
+        rules = validate_advanced_mapping([
+            {"dps_val": 0, "value": "ok", "bitmask": True},
+            {"dps_val": 1, "value": "fault_a", "bitmask": True},
+            {"dps_val": 2, "value": "fault_b", "bitmask": True},
+            {"dps_val": 4, "value": "fault_c", "bitmask": True},
+        ])
+        self.assertIsNotNone(rules)
+        self.assertEqual(map_value_from_dps(0, rules, {})[0], "ok")
+        self.assertEqual(map_value_from_dps(1, rules, {})[0], "fault_a")
+        self.assertEqual(map_value_from_dps(3, rules, {})[0], "fault_a")
+        self.assertEqual(map_value_from_dps(6, rules, {})[0], "fault_b")
+        self.assertEqual(map_value_from_dps(8, rules, {})[0], 8)
+
+    def test_bitmask_mapping_rejects_non_integer_or_negative_masks(self):
+        self.assertIsNone(validate_advanced_mapping([
+            {"dps_val": "1", "value": "bad", "bitmask": True}
+        ]))
+        self.assertIsNone(validate_advanced_mapping([
+            {"dps_val": -1, "value": "bad", "bitmask": True}
+        ]))
+
 
 if __name__ == "__main__":
     unittest.main()
