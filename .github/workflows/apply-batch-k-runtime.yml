@@ -1,0 +1,38 @@
+name: Apply Batch K Fan Runtime
+
+on:
+  push:
+    branches: [develop]
+    paths: [".github/workflows/apply-batch-k-runtime.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Apply Batch K runtime
+        run: python _apply_batch_k_runtime.py
+      - name: Compile runtime
+        run: python -m py_compile custom_components/localtuya/fan.py custom_components/localtuya/fan_mapping.py custom_components/localtuya/device_catalog.py
+      - name: Run focused mapping tests
+        run: python -m pytest -q tests/test_fan_mapping.py tests/test_sensor_mapping.py tests/test_binary_sensor_mapping.py tests/test_catalog_runtime_flags.py
+      - name: Commit runtime patch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/fan.py custom_components/localtuya/device_catalog.py
+          if git diff --cached --quiet; then
+            echo "Batch K runtime already applied"
+            exit 0
+          fi
+          git commit -m "Add exact declarative fan mapping runtime"
+          git push origin HEAD:develop
