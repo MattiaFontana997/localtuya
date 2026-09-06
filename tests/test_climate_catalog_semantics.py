@@ -10,6 +10,7 @@ from custom_components.localtuya.const import (
     CONF_HVAC_MODE_DP, CONF_HVAC_MODE_VALUES, CONF_PRESET_DP, CONF_PRESET_VALUES,
     CONF_TARGET_TEMPERATURE_LOW_DP, CONF_TARGET_TEMPERATURE_HIGH_DP,
     CONF_TARGET_TEMPERATURE_LOW_PRECISION, CONF_TARGET_TEMPERATURE_HIGH_PRECISION,
+    CONF_MIN_TEMP_DP, CONF_MAX_TEMP_DP, CONF_MIN_TEMP_PRECISION, CONF_MAX_TEMP_PRECISION,
 )
 
 
@@ -62,6 +63,20 @@ class ClimateCatalogSemanticsTests(unittest.IsolatedAsyncioTestCase):
         entity._target_high_precision = 0.01
         await entity.async_set_temperature(target_temp_low=18.5, target_temp_high=23.25)
         entity._device.set_dps.assert_awaited_once_with({10: 185, 11: 2325})
+
+    def test_dynamic_limit_dps_apply_independent_precision(self):
+        entity = self.bare({
+            "id": 1,
+            CONF_MIN_TEMP_DP: 26,
+            CONF_MAX_TEMP_DP: 19,
+            CONF_MIN_TEMP_PRECISION: 0.1,
+            CONF_MAX_TEMP_PRECISION: 0.1,
+        })
+        entity._min_temperature_precision = 0.1
+        entity._max_temperature_precision = 0.1
+        entity.dps_conf = lambda key: {CONF_MIN_TEMP_DP: 50, CONF_MAX_TEMP_DP: 350}[key]
+        self.assertEqual(entity.min_temp, 5.0)
+        self.assertEqual(entity.max_temp, 35.0)
 
 
 if __name__ == "__main__":

@@ -58,6 +58,8 @@ from .const import (
     CONF_HVAC_MODE_VALUES,
     CONF_MAX_TEMP_DP,
     CONF_MIN_TEMP_DP,
+    CONF_MAX_TEMP_PRECISION,
+    CONF_MIN_TEMP_PRECISION,
     CONF_PRECISION,
     CONF_PRESET_DP,
     CONF_PRESET_SET,
@@ -335,6 +337,12 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
         )
         self._current_humidity_precision = _positive_number(
             self._config.get(CONF_CURRENT_HUMIDITY_PRECISION), 1.0
+        )
+        self._min_temperature_precision = _positive_number(
+            self._config.get(CONF_MIN_TEMP_PRECISION), 1.0
+        )
+        self._max_temperature_precision = _positive_number(
+            self._config.get(CONF_MAX_TEMP_PRECISION), 1.0
         )
         self._conf_hvac_mode_dp = self._config.get(CONF_HVAC_MODE_DP)
         self._conf_hvac_mode_set = _catalog_value_map(
@@ -802,7 +810,7 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
         if self.has_config(CONF_MIN_TEMP_DP):
             value = self.dps_conf(CONF_MIN_TEMP_DP)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
-                return value
+                return value * self._min_temperature_precision
         target_dp = self._active_target_temperature_dp()
         metadata = self.mapped_numeric_metadata(target_dp) if target_dp is not None else {}
         value_range = metadata.get("range")
@@ -816,7 +824,7 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
         if self.has_config(CONF_MAX_TEMP_DP):
             value = self.dps_conf(CONF_MAX_TEMP_DP)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
-                return value
+                return value * self._max_temperature_precision
         target_dp = self._active_target_temperature_dp()
         metadata = self.mapped_numeric_metadata(target_dp) if target_dp is not None else {}
         value_range = metadata.get("range")
