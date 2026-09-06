@@ -27,6 +27,7 @@ from .const import (
     CONF_EXTRA_STATE_ATTRIBUTES_DPS,
     CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS,
     CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS,
+    CONF_SENSOR_UNIX_TIMESTAMP,
     PLATFORMS,
 )
 
@@ -291,6 +292,25 @@ def _validate_entity(entity):
         ):
             return None
         config["sensor_value_mapping"] = mapping
+    unix_timestamp = config.get(CONF_SENSOR_UNIX_TIMESTAMP)
+    if unix_timestamp is not None:
+        if (
+            unix_timestamp is not True
+            or platform != "sensor"
+            or config.get("device_class") != "timestamp"
+            or any(
+                key in config
+                for key in (
+                    "scaling",
+                    "sensor_value_mapping",
+                    "unit_of_measurement",
+                    "state_class",
+                    CONF_ADVANCED_MAPPING,
+                    CONF_ADVANCED_MAPPING_BY_DP,
+                )
+            )
+        ):
+            return None
     enabled_default = config.get("entity_registry_enabled_default")
     if enabled_default is not None and not isinstance(enabled_default, bool):
         return None

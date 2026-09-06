@@ -1,6 +1,7 @@
 """Platform to present any Tuya DP as a sensor."""
 
 import logging
+from datetime import UTC, datetime
 from functools import partial
 
 import voluptuous as vol
@@ -17,7 +18,7 @@ from homeassistant.const import (
 )
 
 from .common import LocalTuyaEntity, async_setup_entry
-from .const import CONF_SCALING
+from .const import CONF_SCALING, CONF_SENSOR_UNIX_TIMESTAMP
 from .sensor_mapping import evaluate_sensor_value_mapping, validate_sensor_value_mapping
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ def flow_schema(dps):
             vol.Coerce(float),
             vol.Range(min=-1000000.0, max=1000000.0),
         ),
+        vol.Optional(CONF_SENSOR_UNIX_TIMESTAMP, default=False): bool,
     }
 
 
@@ -98,6 +100,16 @@ class LocaltuyaSensor(LocalTuyaEntity, SensorEntity):
         state = self.dps(self._dp_id)
         if self._value_mapping is not None:
             self._state, self._mapping_icon = evaluate_sensor_value_mapping(state, self._value_mapping)
+            return
+
+        if self._config.get(CONF_SENSOR_UNIX_TIMESTAMP):
+            if isinstance(state, bool) or not isinstance(state, (int, float)):
+                self._state = None
+                return
+            try:
+                self._state = datetime.fromtimestamp(state, UTC)
+            except (OverflowError, OSError, ValueError):
+                self._state = None
             return
 
         scale_factor = self._config.get(CONF_SCALING)
