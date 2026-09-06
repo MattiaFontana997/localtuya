@@ -22,7 +22,9 @@ jobs:
       - name: Patch synthetic-object compatibility
         run: |
           python - <<'PY'
+          import re
           from pathlib import Path
+
           path = Path('custom_components/localtuya/light.py')
           text = path.read_text()
 
@@ -48,10 +50,18 @@ jobs:
               raise SystemExit(f'expected one brightness helper anchor, found {text.count(anchor)}')
           text = text.replace(anchor, helper)
 
-          old_condition = 'CONF_COLOR_BRIGHTNESS_LOWER in self._config\n                    or CONF_COLOR_BRIGHTNESS_UPPER in self._config'
-          if text.count(old_condition) != 2:
-              raise SystemExit(f'expected two direct color range checks, found {text.count(old_condition)}')
-          text = text.replace(old_condition, 'self._color_brightness_range_configured()')
+          pattern = re.compile(
+              r'(?P<indent>\s*)if \(\n'
+              r'(?P=indent)    CONF_COLOR_BRIGHTNESS_LOWER in self\._config\n'
+              r'(?P=indent)    or CONF_COLOR_BRIGHTNESS_UPPER in self\._config\n'
+              r'(?P=indent)\):'
+          )
+          text, replaced = pattern.subn(
+              lambda m: f'{m.group("indent")}if self._color_brightness_range_configured():',
+              text,
+          )
+          if replaced != 2:
+              raise SystemExit(f'expected two direct color range checks, found {replaced}')
 
           path.write_text(text)
           PY
