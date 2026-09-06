@@ -33,24 +33,22 @@ jobs:
           text = text.replace(old, new)
 
           anchor = '        return 255 if extended else 1000\n\n    def _raw_brightness_to_ha(self, value) -> int | None:\n'
-          helper = '''        return 255 if extended else 1000
-
-    def _color_brightness_range_configured(self) -> bool:
-        """Return whether an explicit HSV brightness range is configured."""
-        config = getattr(self, "_config", {})
-        return isinstance(config, dict) and (
-            CONF_COLOR_BRIGHTNESS_LOWER in config
-            or CONF_COLOR_BRIGHTNESS_UPPER in config
-        )
-
-    def _raw_brightness_to_ha(self, value) -> int | None:
-'''
+          helper = (
+              '        return 255 if extended else 1000\n\n'
+              '    def _color_brightness_range_configured(self) -> bool:\n'
+              '        """Return whether an explicit HSV brightness range is configured."""\n'
+              '        config = getattr(self, "_config", {})\n'
+              '        return isinstance(config, dict) and (\n'
+              '            CONF_COLOR_BRIGHTNESS_LOWER in config\n'
+              '            or CONF_COLOR_BRIGHTNESS_UPPER in config\n'
+              '        )\n\n'
+              '    def _raw_brightness_to_ha(self, value) -> int | None:\n'
+          )
           if text.count(anchor) != 1:
               raise SystemExit(f'expected one brightness helper anchor, found {text.count(anchor)}')
           text = text.replace(anchor, helper)
 
-          old_condition = '''CONF_COLOR_BRIGHTNESS_LOWER in self._config
-                    or CONF_COLOR_BRIGHTNESS_UPPER in self._config'''
+          old_condition = 'CONF_COLOR_BRIGHTNESS_LOWER in self._config\n                    or CONF_COLOR_BRIGHTNESS_UPPER in self._config'
           if text.count(old_condition) != 2:
               raise SystemExit(f'expected two direct color range checks, found {text.count(old_condition)}')
           text = text.replace(old_condition, 'self._color_brightness_range_configured()')
