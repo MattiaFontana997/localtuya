@@ -1,0 +1,45 @@
+name: Fix synthetic light config regression
+
+on:
+  push:
+    paths:
+      - .github/workflows/fix-light-synthetic-config.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Patch synthetic-object compatibility
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('custom_components/localtuya/light.py')
+          text = path.read_text()
+          old = '        configured = self._config.get(CONF_COLOR_SATURATION_UPPER)\n'
+          new = '        config = getattr(self, "_config", {})\n        configured = config.get(CONF_COLOR_SATURATION_UPPER) if isinstance(config, dict) else None\n'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one saturation config access, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
+          PY
+      - name: Install tox
+        run: python -m pip install "tox>=4.20,<5"
+      - name: Run full test suite
+        run: python -m tox -e py314
+      - name: Commit fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/light.py
+          git diff --cached --check
+          git commit -m "Keep synthetic light color helpers backward compatible"
+          git push origin HEAD:develop
