@@ -35,4 +35,15 @@ if method.strip() not in test:
     test = test[:idx] + method + test[idx:]
 
 test_path.write_text(test, encoding="utf-8")
+
+common_path = Path("custom_components/localtuya/common.py")
+common = common_path.read_text(encoding="utf-8")
+old = '        for name, dp_id in self._mapped_extra_state_attribute_dps.items():\n'
+new = '        for name, dp_id in getattr(self, "_mapped_extra_state_attribute_dps", {}).items():\n'
+if old in common:
+    common = common.replace(old, new, 1)
+elif new not in common:
+    raise SystemExit("mapped-extra attribute loop anchor not found")
+common_path.write_text(common, encoding="utf-8")
+
 print("Batch N climate range runtime cleanup applied")
