@@ -48,6 +48,15 @@ def test_string_mapping_supports_multiple_true_states():
     assert evaluate_binary_sensor_mapping("none", mapping) is False
 
 
+def test_explicit_null_rule_is_evaluated_before_default():
+    mapping = [
+        {"dps_val": None, "value": False},
+        {"value": True},
+    ]
+    assert evaluate_binary_sensor_mapping(None, mapping, bitfield=True) is False
+    assert evaluate_binary_sensor_mapping(4, mapping, bitfield=True) is True
+
+
 def test_invalid_mapping_fails_closed():
     mapping = [{"dps_val": 1, "value": "yes"}]
     assert validate_binary_sensor_mapping(mapping) is None
