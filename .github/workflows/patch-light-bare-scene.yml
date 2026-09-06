@@ -1,0 +1,58 @@
+name: Patch light bare scene
+
+on:
+  push:
+    paths:
+      - .github/workflows/patch-light-bare-scene.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Patch runtime and tests
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('custom_components/localtuya/light.py')
+          text = path.read_text()
+          old = '''    def _find_scene_by_scene_data(self, data) -> str:\n        """Find the friendly scene name for a Tuya scene payload."""\n        for name, scene_data in self._scenes.items():\n            if scene_data == data:\n                return name\n\n        return SCENE_CUSTOM\n'''
+          new = '''    def _find_scene_by_scene_data(self, data) -> str:\n        """Find the friendly scene name for a Tuya scene payload."""\n        # Tuya Local also models a bare ``scene`` work-mode value as an\n        # effect carried entirely by the color-mode DP.  When no dedicated\n        # scene-data DP exists, use that exact work-mode value for lookup\n        # instead of treating the effect as an unknown/custom payload.\n        if data is None and not self.has_config(CONF_SCENE):\n            data = self._modes.scene\n\n        for name, scene_data in self._scenes.items():\n            if scene_data == data:\n                return name\n\n        return SCENE_CUSTOM\n'''
+          if old not in text:
+              raise SystemExit('runtime anchor not found')
+          path.write_text(text.replace(old, new, 1))
+
+          test_path = Path('tests/test_light_scene_values.py')
+          tests = test_path.read_text()
+          anchor = '''    def test_payload_scene_without_scene_dp_is_ignored(self):\n'''
+          addition = '''    def test_bare_scene_mode_reads_back_without_scene_dp(self):\n        light = self._light(\n            {\n                CONF_SCENE_VALUES: {\n                    "Scene": "scene",\n                }\n            }\n        )\n        light._scenes = light._configured_scenes()\n\n        self.assertEqual(light._scenes, {"Scene": "scene"})\n        self.assertEqual(light._find_scene_by_scene_data(None), "Scene")\n\n'''
+          if anchor not in tests:
+              raise SystemExit('test anchor not found')
+          test_path.write_text(tests.replace(anchor, addition + anchor, 1))
+          PY
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_test.txt
+      - name: Run targeted tests
+        run: python -m unittest tests.test_light_scene_values -v
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/light.py tests/test_light_scene_values.py
+          git diff --cached --check
+          git commit -m "Support bare light scene work mode"
+          git push origin HEAD:develop
