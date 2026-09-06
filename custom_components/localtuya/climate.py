@@ -11,6 +11,11 @@ from homeassistant.components.climate import (
     ClimateEntity,
 )
 from homeassistant.components.climate.const import (
+    ATTR_HUMIDITY,
+    ATTR_TARGET_TEMP_HIGH,
+    ATTR_TARGET_TEMP_LOW,
+    DEFAULT_MAX_HUMIDITY,
+    DEFAULT_MIN_HUMIDITY,
     HVACAction,
     HVACMode,
     PRESET_AWAY,
@@ -47,20 +52,39 @@ from .const import (
     CONF_HEURISTIC_ACTION,
     CONF_HVAC_ACTION_DP,
     CONF_HVAC_ACTION_SET,
+    CONF_HVAC_ACTION_VALUES,
     CONF_HVAC_MODE_DP,
     CONF_HVAC_MODE_SET,
+    CONF_HVAC_MODE_VALUES,
     CONF_MAX_TEMP_DP,
     CONF_MIN_TEMP_DP,
     CONF_PRECISION,
     CONF_PRESET_DP,
     CONF_PRESET_SET,
+    CONF_PRESET_VALUES,
     CONF_TARGET_PRECISION,
     CONF_TARGET_TEMPERATURE_DP,
+    CONF_TARGET_TEMPERATURE_LOW_DP,
+    CONF_TARGET_TEMPERATURE_HIGH_DP,
+    CONF_TARGET_TEMPERATURE_LOW_PRECISION,
+    CONF_TARGET_TEMPERATURE_HIGH_PRECISION,
+    CONF_TARGET_HUMIDITY_DP,
+    CONF_CURRENT_HUMIDITY_DP,
+    CONF_TARGET_HUMIDITY_PRECISION,
+    CONF_CURRENT_HUMIDITY_PRECISION,
+    CONF_HUMIDITY_MIN,
+    CONF_HUMIDITY_MAX,
+    CONF_TEMPERATURE_UNIT_DP,
+    CONF_TEMPERATURE_UNIT_VALUES,
     CONF_TEMPERATURE_STEP,
     CONF_HVAC_FAN_MODE_DP,
     CONF_HVAC_FAN_MODE_SET,
+    CONF_HVAC_FAN_MODE_VALUES,
     CONF_HVAC_SWING_MODE_DP,
     CONF_HVAC_SWING_MODE_SET,
+    CONF_HVAC_SWING_MODE_VALUES,
+    CONF_HVAC_SWING_HORIZONTAL_MODE_DP,
+    CONF_HVAC_SWING_HORIZONTAL_MODE_VALUES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -180,6 +204,47 @@ PRESET_SETS = {
 
 TEMPERATURE_CELSIUS = "celsius"
 TEMPERATURE_FAHRENHEIT = "fahrenheit"
+
+
+def _catalog_value_map(config, dynamic_key, static_key=None, static_sets=None, enum_type=None):
+    """Return a validated catalog-provided friendly -> raw value map."""
+    configured = config.get(dynamic_key)
+    if configured is None:
+        if static_key is None or static_sets is None:
+            return {}
+        return dict(static_sets.get(config.get(static_key), {}))
+    if not isinstance(configured, dict):
+        return {}
+
+    result = {}
+    raw_seen = []
+    for friendly, raw in configured.items():
+        if not isinstance(friendly, str) or not friendly.strip():
+            return {}
+        if not isinstance(raw, (str, int, float, bool)) or raw is None:
+            return {}
+        key = friendly.strip()
+        if enum_type is not None:
+            try:
+                key = enum_type(key)
+            except ValueError:
+                return {}
+        if key in result or any(raw == previous for previous in raw_seen):
+            return {}
+        result[key] = raw
+        raw_seen.append(raw)
+    return result
+
+
+def _positive_number(value, default):
+    """Return a positive numeric config value or a safe default."""
+    if isinstance(value, bool):
+        return default
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
 DEFAULT_TEMPERATURE_UNIT = TEMPERATURE_CELSIUS
 DEFAULT_PRECISION = PRECISION_TENTHS
 DEFAULT_TEMPERATURE_STEP = PRECISION_HALVES
@@ -241,33 +306,64 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
         super().__init__(device, config_entry, switchid, _LOGGER, **kwargs)
         self._state = None
         self._target_temperature = None
+        self._target_temperature_low = None
+        self._target_temperature_high = None
         self._current_temperature = None
+        self._target_humidity = None
+        self._current_humidity = None
         self._hvac_mode = None
+        self._last_non_off_hvac_mode = None
         self._fan_mode = None
         self._swing_mode = None
+        self._swing_horizontal_mode = None
         self._preset_mode = None
         self._hvac_action = None
         self._precision = self._config.get(CONF_PRECISION, DEFAULT_PRECISION)
-        self._target_precision = self._config.get(
-            CONF_TARGET_PRECISION, self._precision
+        self._target_precision = _positive_number(
+            self._config.get(CONF_TARGET_PRECISION), self._precision
+        )
+        self._target_low_precision = _positive_number(
+            self._config.get(CONF_TARGET_TEMPERATURE_LOW_PRECISION),
+            self._target_precision,
+        )
+        self._target_high_precision = _positive_number(
+            self._config.get(CONF_TARGET_TEMPERATURE_HIGH_PRECISION),
+            self._target_precision,
+        )
+        self._target_humidity_precision = _positive_number(
+            self._config.get(CONF_TARGET_HUMIDITY_PRECISION), 1.0
+        )
+        self._current_humidity_precision = _positive_number(
+            self._config.get(CONF_CURRENT_HUMIDITY_PRECISION), 1.0
         )
         self._conf_hvac_mode_dp = self._config.get(CONF_HVAC_MODE_DP)
-        self._conf_hvac_mode_set = HVAC_MODE_SETS.get(
-            self._config.get(CONF_HVAC_MODE_SET), {}
+        self._conf_hvac_mode_set = _catalog_value_map(
+            self._config, CONF_HVAC_MODE_VALUES, CONF_HVAC_MODE_SET, HVAC_MODE_SETS, HVACMode
         )
         self._conf_hvac_fan_mode_dp = self._config.get(CONF_HVAC_FAN_MODE_DP)
-        self._conf_hvac_fan_mode_set = HVAC_FAN_MODE_SETS.get(
-            self._config.get(CONF_HVAC_FAN_MODE_SET), {}
+        self._conf_hvac_fan_mode_set = _catalog_value_map(
+            self._config, CONF_HVAC_FAN_MODE_VALUES, CONF_HVAC_FAN_MODE_SET, HVAC_FAN_MODE_SETS
         )
         self._conf_hvac_swing_mode_dp = self._config.get(CONF_HVAC_SWING_MODE_DP)
-        self._conf_hvac_swing_mode_set = HVAC_SWING_MODE_SETS.get(
-            self._config.get(CONF_HVAC_SWING_MODE_SET), {}
+        self._conf_hvac_swing_mode_set = _catalog_value_map(
+            self._config, CONF_HVAC_SWING_MODE_VALUES, CONF_HVAC_SWING_MODE_SET, HVAC_SWING_MODE_SETS
+        )
+        self._conf_hvac_swing_horizontal_mode_dp = self._config.get(
+            CONF_HVAC_SWING_HORIZONTAL_MODE_DP
+        )
+        self._conf_hvac_swing_horizontal_mode_set = _catalog_value_map(
+            self._config, CONF_HVAC_SWING_HORIZONTAL_MODE_VALUES
         )
         self._conf_preset_dp = self._config.get(CONF_PRESET_DP)
-        self._conf_preset_set = PRESET_SETS.get(self._config.get(CONF_PRESET_SET), {})
+        self._conf_preset_set = _catalog_value_map(
+            self._config, CONF_PRESET_VALUES, CONF_PRESET_SET, PRESET_SETS
+        )
         self._conf_hvac_action_dp = self._config.get(CONF_HVAC_ACTION_DP)
-        self._conf_hvac_action_set = HVAC_ACTION_SETS.get(
-            self._config.get(CONF_HVAC_ACTION_SET), {}
+        self._conf_hvac_action_set = _catalog_value_map(
+            self._config, CONF_HVAC_ACTION_VALUES, CONF_HVAC_ACTION_SET, HVAC_ACTION_SETS, HVACAction
+        )
+        self._temperature_unit_values = _catalog_value_map(
+            self._config, CONF_TEMPERATURE_UNIT_VALUES
         )
         self._conf_eco_dp = self._config.get(CONF_ECO_DP)
         self._conf_eco_value = self._config.get(CONF_ECO_VALUE, "ECO")
@@ -284,23 +380,31 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             | ClimateEntityFeature.TURN_OFF
         )
 
-        if self.has_config(CONF_TARGET_TEMPERATURE_DP):
+        if (
+            self.has_config(CONF_TARGET_TEMPERATURE_LOW_DP)
+            and self.has_config(CONF_TARGET_TEMPERATURE_HIGH_DP)
+        ):
+            features |= ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+        elif self.has_config(CONF_TARGET_TEMPERATURE_DP):
             features |= ClimateEntityFeature.TARGET_TEMPERATURE
 
-        if self.has_config(CONF_PRESET_DP) or self.has_config(CONF_ECO_DP):
+        if self.has_config(CONF_TARGET_HUMIDITY_DP):
+            features |= ClimateEntityFeature.TARGET_HUMIDITY
+
+        if (self.has_config(CONF_PRESET_DP) and self._conf_preset_set) or self.has_config(CONF_ECO_DP):
             features |= ClimateEntityFeature.PRESET_MODE
 
-        if (
-            self.has_config(CONF_HVAC_FAN_MODE_DP)
-            and self.has_config(CONF_HVAC_FAN_MODE_SET)
-        ):
+        if self.has_config(CONF_HVAC_FAN_MODE_DP) and self._conf_hvac_fan_mode_set:
             features |= ClimateEntityFeature.FAN_MODE
 
-        if (
-            self.has_config(CONF_HVAC_SWING_MODE_DP)
-            and self.has_config(CONF_HVAC_SWING_MODE_SET)
-        ):
+        if self.has_config(CONF_HVAC_SWING_MODE_DP) and self._conf_hvac_swing_mode_set:
             features |= ClimateEntityFeature.SWING_MODE
+
+        if (
+            self.has_config(CONF_HVAC_SWING_HORIZONTAL_MODE_DP)
+            and self._conf_hvac_swing_horizontal_mode_set
+        ):
+            features |= ClimateEntityFeature.SWING_HORIZONTAL_MODE
 
         return features
 
@@ -317,6 +421,15 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
     @property
     def temperature_unit(self):
         """Return the unit of measurement used by the platform."""
+        unit_dp = self._config.get(CONF_TEMPERATURE_UNIT_DP)
+        if unit_dp is not None and self._temperature_unit_values:
+            raw = self.dps(unit_dp)
+            for unit, value in self._temperature_unit_values.items():
+                if raw == value:
+                    if unit == TEMPERATURE_FAHRENHEIT:
+                        return UnitOfTemperature.FAHRENHEIT
+                    if unit == TEMPERATURE_CELSIUS:
+                        return UnitOfTemperature.CELSIUS
         if (
             self._config.get(CONF_TEMPERATURE_UNIT, DEFAULT_TEMPERATURE_UNIT)
             == TEMPERATURE_FAHRENHEIT
@@ -334,7 +447,10 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
         """Return the list of available operation modes."""
         if not self.has_config(CONF_HVAC_MODE_DP):
             return None
-        return list(self._conf_hvac_mode_set) + [HVACMode.OFF]
+        modes = list(self._conf_hvac_mode_set)
+        if HVACMode.OFF not in modes:
+            modes.append(HVACMode.OFF)
+        return modes
 
     @property
     def hvac_action(self):
@@ -396,6 +512,34 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
         return self._target_temperature
 
     @property
+    def target_temperature_low(self):
+        """Return the low target temperature."""
+        return self._target_temperature_low
+
+    @property
+    def target_temperature_high(self):
+        """Return the high target temperature."""
+        return self._target_temperature_high
+
+    @property
+    def target_humidity(self):
+        """Return the target humidity."""
+        return self._target_humidity
+
+    @property
+    def current_humidity(self):
+        """Return the current humidity."""
+        return self._current_humidity
+
+    @property
+    def min_humidity(self):
+        return self._config.get(CONF_HUMIDITY_MIN, DEFAULT_MIN_HUMIDITY)
+
+    @property
+    def max_humidity(self):
+        return self._config.get(CONF_HUMIDITY_MAX, DEFAULT_MAX_HUMIDITY)
+
+    @property
     def target_temperature_step(self):
         """Return the supported step of target temperature."""
         return self._config.get(CONF_TEMPERATURE_STEP, DEFAULT_TEMPERATURE_STEP)
@@ -424,6 +568,16 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             return None
         return list(self._conf_hvac_swing_mode_set)
 
+    @property
+    def swing_horizontal_mode(self):
+        return self._swing_horizontal_mode
+
+    @property
+    def swing_horizontal_modes(self):
+        if not self.has_config(CONF_HVAC_SWING_HORIZONTAL_MODE_DP):
+            return None
+        return list(self._conf_hvac_swing_horizontal_mode_set)
+
     def _active_target_temperature_dp(self):
         """Return the target-temperature DP for the active preset."""
         target_dp = self._config.get(
@@ -451,30 +605,33 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
         return target_dp
 
     async def async_set_temperature(self, **kwargs):
-        """Set a new target temperature."""
-        if ATTR_TEMPERATURE not in kwargs:
+        """Set a new target temperature or target range."""
+        states = {}
+        requested = kwargs.get(ATTR_TEMPERATURE)
+        if requested is not None:
+            target_dp = self._active_target_temperature_dp()
+            if target_dp is not None:
+                states[target_dp] = round(float(requested) / self._target_precision)
+
+        low = kwargs.get(ATTR_TARGET_TEMP_LOW)
+        low_dp = self._config.get(CONF_TARGET_TEMPERATURE_LOW_DP)
+        if low is not None and low_dp is not None:
+            states[low_dp] = round(float(low) / self._target_low_precision)
+
+        high = kwargs.get(ATTR_TARGET_TEMP_HIGH)
+        high_dp = self._config.get(CONF_TARGET_TEMPERATURE_HIGH_DP)
+        if high is not None and high_dp is not None:
+            states[high_dp] = round(float(high) / self._target_high_precision)
+
+        if states:
+            await self._device.set_dps(states)
+
+    async def async_set_humidity(self, humidity: int) -> None:
+        dp = self._config.get(CONF_TARGET_HUMIDITY_DP)
+        if dp is None:
             return
-
-        requested = kwargs[ATTR_TEMPERATURE]
-
-        if requested is None:
-            return
-
-        target_dp = (
-            self._active_target_temperature_dp()
-        )
-
-        if target_dp is None:
-            return
-
-        temperature = round(
-            float(requested) / self._target_precision
-        )
-
-        await self._device.set_dp(
-            temperature,
-            target_dp,
-        )
+        raw = round(float(humidity) / self._target_humidity_precision)
+        await self._device.set_dp(raw, dp)
 
     async def async_set_fan_mode(self, fan_mode):
         """Set a new fan mode."""
@@ -494,7 +651,12 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
     async def async_set_hvac_mode(self, hvac_mode):
         """Set a new HVAC mode."""
         if hvac_mode == HVACMode.OFF:
-            await self._device.set_dp(False, self._dp_id)
+            if self._conf_hvac_mode_dp is not None and HVACMode.OFF in self._conf_hvac_mode_set:
+                await self._device.set_dp(
+                    self._conf_hvac_mode_set[HVACMode.OFF], self._conf_hvac_mode_dp
+                )
+            else:
+                await self._device.set_dp(False, self._dp_id)
             return
 
         if self._conf_hvac_mode_dp is None:
@@ -534,21 +696,37 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             self._conf_hvac_swing_mode_dp,
         )
 
+    async def async_set_swing_horizontal_mode(self, swing_mode):
+        if self._conf_hvac_swing_horizontal_mode_dp is None:
+            return
+        if swing_mode not in self._conf_hvac_swing_horizontal_mode_set:
+            self.warning("Unsupported horizontal swing mode %r", swing_mode)
+            return
+        await self._device.set_dp(
+            self._conf_hvac_swing_horizontal_mode_set[swing_mode],
+            self._conf_hvac_swing_horizontal_mode_dp,
+        )
+
     async def async_turn_on(self) -> None:
-        """Turn the entity on."""
-        await self._device.set_dp(True, self._dp_id)
+        """Turn the entity on without losing an enum HVAC mode."""
+        mode = self._last_non_off_hvac_mode
+        if mode is None:
+            mode = next(
+                (candidate for candidate in self._conf_hvac_mode_set if candidate != HVACMode.OFF),
+                None,
+            )
+        if mode is not None:
+            await self.async_set_hvac_mode(mode)
+        else:
+            await self._device.set_dp(True, self._dp_id)
 
     async def async_turn_off(self) -> None:
-        """Turn the entity off."""
-        await self._device.set_dp(False, self._dp_id)
+        """Turn the entity off using the configured raw OFF mode when present."""
+        await self.async_set_hvac_mode(HVACMode.OFF)
 
     async def async_set_preset_mode(self, preset_mode):
         """Set a new preset mode."""
-        if preset_mode == PRESET_ECO:
-            if self._conf_eco_dp is None:
-                self.warning("ECO preset requested without an ECO DP")
-                return
-
+        if preset_mode == PRESET_ECO and self._conf_eco_dp is not None:
             await self._device.set_dp(
                 self._conf_eco_value,
                 self._conf_eco_dp,
@@ -621,11 +799,39 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             value = self.dps_conf(CONF_CURRENT_TEMPERATURE_DP)
 
             if isinstance(value, (int, float)) and not isinstance(value, bool):
-                self._current_temperature = (
-                    value * self._precision
-                )
+                self._current_temperature = value * self._precision
             else:
                 self._current_temperature = None
+
+        low_dp = self._config.get(CONF_TARGET_TEMPERATURE_LOW_DP)
+        low_value = self.dps(low_dp) if low_dp is not None else None
+        self._target_temperature_low = (
+            low_value * self._target_low_precision
+            if isinstance(low_value, (int, float)) and not isinstance(low_value, bool)
+            else None
+        )
+        high_dp = self._config.get(CONF_TARGET_TEMPERATURE_HIGH_DP)
+        high_value = self.dps(high_dp) if high_dp is not None else None
+        self._target_temperature_high = (
+            high_value * self._target_high_precision
+            if isinstance(high_value, (int, float)) and not isinstance(high_value, bool)
+            else None
+        )
+
+        target_humidity_dp = self._config.get(CONF_TARGET_HUMIDITY_DP)
+        target_humidity = self.dps(target_humidity_dp) if target_humidity_dp is not None else None
+        self._target_humidity = (
+            target_humidity * self._target_humidity_precision
+            if isinstance(target_humidity, (int, float)) and not isinstance(target_humidity, bool)
+            else None
+        )
+        current_humidity_dp = self._config.get(CONF_CURRENT_HUMIDITY_DP)
+        current_humidity = self.dps(current_humidity_dp) if current_humidity_dp is not None else None
+        self._current_humidity = (
+            current_humidity * self._current_humidity_precision
+            if isinstance(current_humidity, (int, float)) and not isinstance(current_humidity, bool)
+            else None
+        )
 
         # Presets.
         if self._has_presets:
@@ -648,21 +854,22 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
                         self._preset_mode = preset
                         break
 
-        # HVAC mode.
+        # HVAC mode. Support both legacy boolean power and enum/string OFF values.
         if self._conf_hvac_mode_dp is not None:
-            if not self._state:
+            raw_mode = self.dps(self._conf_hvac_mode_dp)
+            matched_mode = None
+            for mode, value in self._conf_hvac_mode_set.items():
+                if raw_mode == value:
+                    matched_mode = mode
+                    break
+            if matched_mode is not None:
+                self._hvac_mode = matched_mode
+            elif self._conf_hvac_mode_dp != self._dp_id and self._state is False:
                 self._hvac_mode = HVACMode.OFF
             else:
-                raw_mode = self.dps(self._conf_hvac_mode_dp)
-
-                for mode, value in self._conf_hvac_mode_set.items():
-                    if raw_mode == value:
-                        self._hvac_mode = mode
-                        break
-                else:
-                    # Preserve compatibility with devices where HVAC mode
-                    # and preset share the same datapoint.
-                    self._hvac_mode = HVACMode.AUTO
+                self._hvac_mode = HVACMode.AUTO
+            if self._hvac_mode != HVACMode.OFF:
+                self._last_non_off_hvac_mode = self._hvac_mode
 
         # Fan mode.
         if self._conf_hvac_fan_mode_dp is not None:
@@ -688,8 +895,15 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
                 self.debug("Unknown swing mode %r", raw_swing)
                 self._swing_mode = SWING_OFF
 
+        if self._conf_hvac_swing_horizontal_mode_dp is not None:
+            raw_horizontal = self.dps(self._conf_hvac_swing_horizontal_mode_dp)
+            self._swing_horizontal_mode = next(
+                (mode for mode, value in self._conf_hvac_swing_horizontal_mode_set.items() if raw_horizontal == value),
+                None,
+            )
+
         # Direct HVAC action datapoint.
-        if not self._state:
+        if self._hvac_mode == HVACMode.OFF or self._state is False:
             self._hvac_action = HVACAction.OFF
 
         elif (

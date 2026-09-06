@@ -1,1 +1,7 @@
 homeassistant==2026.9.0
+# Component-specific requirements imported by Batch C runtimes. Keep these
+# aligned with Home Assistant 2026.9.0 manifests.
+PyTurboJPEG==1.8.3
+av==17.0.1
+numpy==2.3.2
+infrared-protocols==9.0.0

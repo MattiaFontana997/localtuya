@@ -29,6 +29,10 @@ from .const import (
     CONF_FAN_DPS_TYPE,
     CONF_FAN_ORDERED_LIST,
     CONF_FAN_OSCILLATING_CONTROL,
+    CONF_FAN_OSCILLATING_OFF,
+    CONF_FAN_OSCILLATING_ON,
+    CONF_FAN_PRESET_DP,
+    CONF_FAN_PRESET_VALUES,
     CONF_FAN_SPEED_CONTROL,
     CONF_FAN_SPEED_MAX,
     CONF_FAN_SPEED_MIN,
@@ -98,6 +102,21 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
         self._attr_percentage = None
         self._attr_oscillating = None
         self._attr_current_direction = None
+        self._attr_preset_mode = None
+
+        self._preset_values = self._configured_preset_values()
+        self._preset_raw_to_name = {
+            raw: name for name, raw in self._preset_values.items()
+        }
+        self._attr_preset_modes = (
+            list(self._preset_values) if self._preset_values else None
+        )
+        self._oscillating_on = self._config.get(
+            CONF_FAN_OSCILLATING_ON, True
+        )
+        self._oscillating_off = self._config.get(
+            CONF_FAN_OSCILLATING_OFF, False
+        )
 
         speed_min = int(
             self._config.get(
@@ -161,6 +180,9 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
         if self.has_config(CONF_FAN_DIRECTION):
             features |= FanEntityFeature.DIRECTION
 
+        if self.has_config(CONF_FAN_PRESET_DP) and self._preset_values:
+            features |= FanEntityFeature.PRESET_MODE
+
         self._attr_supported_features = features
 
         if self.has_config(CONF_FAN_SPEED_CONTROL):
@@ -170,6 +192,34 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
                 self._attr_speed_count = int_states_in_range(
                     self._speed_range
                 )
+
+    def _configured_preset_values(self) -> dict[str, str]:
+        """Return valid catalog-provided friendly -> raw fan presets."""
+        configured = self._config.get(CONF_FAN_PRESET_VALUES)
+        if configured is None:
+            return {}
+        if not isinstance(configured, dict):
+            self.warning("Invalid fan_preset_values config; ignoring presets")
+            return {}
+
+        result: dict[str, str] = {}
+        raw_values: set[str] = set()
+        for name, raw in configured.items():
+            if (
+                not isinstance(name, str)
+                or not name.strip()
+                or not isinstance(raw, str)
+                or not raw
+            ):
+                self.warning("Ignoring invalid fan preset %r: %r", name, raw)
+                continue
+            name = name.strip()
+            if name in result or raw in raw_values:
+                self.warning("Ignoring duplicate fan preset %r: %r", name, raw)
+                continue
+            result[name] = raw
+            raw_values.add(raw)
+        return result
 
     @property
     def is_on(self) -> bool | None:
@@ -248,6 +298,13 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
                 self._percentage_to_raw(percentage)
             )
 
+        if preset_mode is not None and self.has_config(CONF_FAN_PRESET_DP):
+            raw_preset = self._preset_values.get(preset_mode)
+            if raw_preset is None:
+                self.warning("Unsupported fan preset %r", preset_mode)
+            else:
+                states[self._config[CONF_FAN_PRESET_DP]] = raw_preset
+
         await self._device.set_dps(states)
 
     async def async_turn_off(self, **kwargs) -> None:
@@ -294,9 +351,19 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
             return
 
         await self._device.set_dp(
-            bool(oscillating),
+            self._oscillating_on if oscillating else self._oscillating_off,
             self._config[CONF_FAN_OSCILLATING_CONTROL],
         )
+
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        """Set a catalog-provided Tuya fan preset."""
+        if not self.has_config(CONF_FAN_PRESET_DP):
+            return
+        raw = self._preset_values.get(preset_mode)
+        if raw is None:
+            self.warning("Unsupported fan preset %r", preset_mode)
+            return
+        await self._device.set_dp(raw, self._config[CONF_FAN_PRESET_DP])
 
     async def async_set_direction(
         self,
@@ -349,16 +416,19 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
             self._attr_percentage = None
 
         if self.has_config(CONF_FAN_OSCILLATING_CONTROL):
-            value = self.dps_conf(
-                CONF_FAN_OSCILLATING_CONTROL
-            )
-
-            if isinstance(value, bool):
-                self._attr_oscillating = value
-            elif value in (0, 1):
-                self._attr_oscillating = bool(value)
+            value = self.dps_conf(CONF_FAN_OSCILLATING_CONTROL)
+            if value == self._oscillating_on:
+                self._attr_oscillating = True
+            elif value == self._oscillating_off:
+                self._attr_oscillating = False
             else:
                 self._attr_oscillating = None
+
+        if self.has_config(CONF_FAN_PRESET_DP):
+            raw_preset = self.dps_conf(CONF_FAN_PRESET_DP)
+            self._attr_preset_mode = self._preset_raw_to_name.get(raw_preset)
+        else:
+            self._attr_preset_mode = None
 
         if self.has_config(CONF_FAN_DIRECTION):
             value = self.dps_conf(CONF_FAN_DIRECTION)
