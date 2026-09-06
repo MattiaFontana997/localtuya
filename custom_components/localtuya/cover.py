@@ -8,6 +8,7 @@ from functools import partial
 import voluptuous as vol
 from homeassistant.components.cover import (
     ATTR_POSITION,
+    ATTR_TILT_POSITION,
     DOMAIN,
     CoverEntity,
     CoverEntityFeature,
@@ -21,6 +22,23 @@ from .const import (
     CONF_POSITIONING_MODE,
     CONF_SET_POSITION_DP,
     CONF_SPAN_TIME,
+    CONF_COVER_COMMAND_VALUES,
+    CONF_COVER_ACTION_DP,
+    CONF_COVER_ACTION_VALUES,
+    CONF_COVER_OPEN_DP,
+    CONF_COVER_OPEN_VALUES,
+    CONF_SET_POSITION_MIN,
+    CONF_SET_POSITION_MAX,
+    CONF_SET_POSITION_STEP,
+    CONF_SET_POSITION_INVERTED,
+    CONF_CURRENT_POSITION_MIN,
+    CONF_CURRENT_POSITION_MAX,
+    CONF_CURRENT_POSITION_INVERTED,
+    CONF_TILT_POSITION_DP,
+    CONF_TILT_POSITION_MIN,
+    CONF_TILT_POSITION_MAX,
+    CONF_TILT_POSITION_STEP,
+    CONF_TILT_POSITION_INVERTED,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,6 +57,62 @@ COVER_TIMEOUT_TOLERANCE = 3.0
 DEFAULT_COMMANDS_SET = COVER_ONOFF_CMDS
 DEFAULT_POSITIONING_MODE = COVER_MODE_NONE
 DEFAULT_SPAN_TIME = 25.0
+
+
+def _valid_scalar_map(value, allowed_keys):
+    """Validate a catalog-provided semantic -> raw scalar map."""
+    if not isinstance(value, dict):
+        return {}
+    result = {}
+    raw_values = []
+    for key, raw in value.items():
+        if key not in allowed_keys or not isinstance(raw, (str, int, float, bool)):
+            return {}
+        if key in result or any(raw == previous for previous in raw_values):
+            return {}
+        result[key] = raw
+        raw_values.append(raw)
+    return result
+
+
+def _number(value, default):
+    if isinstance(value, bool):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _range_to_percent(value, minimum, maximum, inverted=False):
+    """Convert one native cover position to an HA percentage."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    minimum = _number(minimum, 0.0)
+    maximum = _number(maximum, 100.0)
+    if maximum <= minimum:
+        return None
+    percentage = (float(value) - minimum) * 100.0 / (maximum - minimum)
+    percentage = min(max(percentage, 0.0), 100.0)
+    if inverted:
+        percentage = 100.0 - percentage
+    return round(percentage)
+
+
+def _percent_to_range(percentage, minimum, maximum, step=1.0, inverted=False):
+    """Convert an HA percentage to an exact native cover range value."""
+    minimum = _number(minimum, 0.0)
+    maximum = _number(maximum, 100.0)
+    step = _number(step, 1.0)
+    if maximum <= minimum or step <= 0:
+        return None
+    percentage = min(max(float(percentage), 0.0), 100.0)
+    if inverted:
+        percentage = 100.0 - percentage
+    raw = minimum + (maximum - minimum) * percentage / 100.0
+    raw = minimum + round((raw - minimum) / step) * step
+    raw = min(max(raw, minimum), maximum)
+    return int(raw) if float(raw).is_integer() else raw
 
 
 def flow_schema(dps):
@@ -107,6 +181,36 @@ class LocaltuyaCover(LocalTuyaEntity, CoverEntity):
             )
 
         self._open_cmd, self._close_cmd, self._stop_cmd = commands
+        catalog_commands_configured = CONF_COVER_COMMAND_VALUES in self._config
+        catalog_commands = _valid_scalar_map(
+            self._config.get(CONF_COVER_COMMAND_VALUES),
+            {"open", "close", "stop"},
+        )
+        if catalog_commands_configured:
+            # An explicitly empty catalog map means this cover has no command
+            # DP and must use its set-position DP for open/close instead of
+            # falling back to the legacy on/off/stop command set.
+            self._command_values = catalog_commands
+            self._open_cmd = catalog_commands.get("open")
+            self._close_cmd = catalog_commands.get("close")
+            self._stop_cmd = catalog_commands.get("stop")
+        else:
+            self._command_values = {
+                "open": self._open_cmd,
+                "close": self._close_cmd,
+                "stop": self._stop_cmd,
+            }
+
+        self._action_values = _valid_scalar_map(
+            self._config.get(CONF_COVER_ACTION_VALUES),
+            {"opening", "closing", "opened", "closed"},
+        )
+        self._open_values = _valid_scalar_map(
+            self._config.get(CONF_COVER_OPEN_VALUES),
+            {"open", "closed"},
+        )
+        self._semantic_state = None
+        self._attr_current_cover_tilt_position = None
 
         self._positioning_mode = self._config.get(
             CONF_POSITIONING_MODE,
@@ -137,14 +241,17 @@ class LocaltuyaCover(LocalTuyaEntity, CoverEntity):
 
         self._stop_task: asyncio.Task | None = None
 
-        features = (
-            CoverEntityFeature.OPEN
-            | CoverEntityFeature.CLOSE
-            | CoverEntityFeature.STOP
-        )
-
-        if self._positioning_mode != COVER_MODE_NONE:
+        features = CoverEntityFeature(0)
+        if self._command_values.get("open") is not None or self.has_config(CONF_SET_POSITION_DP):
+            features |= CoverEntityFeature.OPEN
+        if self._command_values.get("close") is not None or self.has_config(CONF_SET_POSITION_DP):
+            features |= CoverEntityFeature.CLOSE
+        if self._command_values.get("stop") is not None:
+            features |= CoverEntityFeature.STOP
+        if self._positioning_mode != COVER_MODE_NONE and self.has_config(CONF_SET_POSITION_DP):
             features |= CoverEntityFeature.SET_POSITION
+        if self.has_config(CONF_TILT_POSITION_DP):
+            features |= CoverEntityFeature.SET_TILT_POSITION
 
         self._attr_supported_features = features
 
@@ -154,25 +261,33 @@ class LocaltuyaCover(LocalTuyaEntity, CoverEntity):
         return self._current_cover_position
 
     @property
-    def is_opening(self) -> bool:
-        """Return whether the cover is opening."""
-        return self._state == self._open_cmd
+    def current_cover_tilt_position(self) -> int | None:
+        return self._attr_current_cover_tilt_position
 
     @property
-    def is_closing(self) -> bool:
+    def is_opening(self) -> bool | None:
+        """Return whether the cover is opening."""
+        if self._semantic_state is not None:
+            return self._semantic_state == "opening"
+        return self._state == self._open_cmd if self._open_cmd is not None else None
+
+    @property
+    def is_closing(self) -> bool | None:
         """Return whether the cover is closing."""
-        return self._state == self._close_cmd
+        if self._semantic_state is not None:
+            return self._semantic_state == "closing"
+        return self._state == self._close_cmd if self._close_cmd is not None else None
 
     @property
     def is_closed(self) -> bool | None:
         """Return whether the cover is fully closed."""
-        if self._positioning_mode == COVER_MODE_NONE:
-            return None
-
-        if self._current_cover_position is None:
-            return None
-
-        return self._current_cover_position <= 0
+        if self._semantic_state == "closed":
+            return True
+        if self._semantic_state in {"opened", "opening", "closing"}:
+            return False
+        if self._current_cover_position is not None:
+            return self._current_cover_position <= 0
+        return None
 
     def _cancel_stop_task(self) -> None:
         """Cancel any previously scheduled automatic stop."""
@@ -212,6 +327,8 @@ class LocaltuyaCover(LocalTuyaEntity, CoverEntity):
             self._stop_cmd,
         )
 
+        if self._stop_cmd is None:
+            return
         await self._device.set_dp(
             self._stop_cmd,
             self._dp_id,
@@ -226,6 +343,8 @@ class LocaltuyaCover(LocalTuyaEntity, CoverEntity):
             command,
         )
 
+        if command is None:
+            return
         await self._device.set_dp(
             command,
             self._dp_id,
@@ -269,12 +388,17 @@ class LocaltuyaCover(LocalTuyaEntity, CoverEntity):
         if self._positioning_mode == COVER_MODE_POSITION:
             self._cancel_stop_task()
 
-            converted = requested
+            converted = _percent_to_range(
+                requested,
+                self._config.get(CONF_SET_POSITION_MIN, 0),
+                self._config.get(CONF_SET_POSITION_MAX, 100),
+                self._config.get(CONF_SET_POSITION_STEP, 1),
+                bool(self._config.get(
+                    CONF_SET_POSITION_INVERTED, self._position_inverted
+                )),
+            )
 
-            if self._position_inverted:
-                converted = 100 - converted
-
-            if not self.has_config(CONF_SET_POSITION_DP):
+            if not self.has_config(CONF_SET_POSITION_DP) or converted is None:
                 self.warning(
                     "Positioning mode selected without a set-position DP"
                 )
@@ -287,7 +411,12 @@ class LocaltuyaCover(LocalTuyaEntity, CoverEntity):
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
-        await self._async_start_movement(self._open_cmd)
+        if self._open_cmd is not None:
+            await self._async_start_movement(self._open_cmd)
+        elif self.has_config(CONF_SET_POSITION_DP):
+            await self.async_set_cover_position(**{ATTR_POSITION: 100})
+        else:
+            return
 
         if self._positioning_mode == COVER_MODE_TIMED:
             self._schedule_stop(
@@ -296,12 +425,32 @@ class LocaltuyaCover(LocalTuyaEntity, CoverEntity):
 
     async def async_close_cover(self, **kwargs):
         """Close the cover."""
-        await self._async_start_movement(self._close_cmd)
+        if self._close_cmd is not None:
+            await self._async_start_movement(self._close_cmd)
+        elif self.has_config(CONF_SET_POSITION_DP):
+            await self.async_set_cover_position(**{ATTR_POSITION: 0})
+        else:
+            return
 
         if self._positioning_mode == COVER_MODE_TIMED:
             self._schedule_stop(
                 self._span_time + COVER_TIMEOUT_TOLERANCE
             )
+
+    async def async_set_cover_tilt_position(self, **kwargs):
+        """Move the cover tilt to a specific percentage."""
+        dp = self._config.get(CONF_TILT_POSITION_DP)
+        if dp is None or ATTR_TILT_POSITION not in kwargs:
+            return
+        raw = _percent_to_range(
+            kwargs[ATTR_TILT_POSITION],
+            self._config.get(CONF_TILT_POSITION_MIN, 0),
+            self._config.get(CONF_TILT_POSITION_MAX, 100),
+            self._config.get(CONF_TILT_POSITION_STEP, 1),
+            bool(self._config.get(CONF_TILT_POSITION_INVERTED, False)),
+        )
+        if raw is not None:
+            await self._device.set_dp(raw, dp)
 
     async def async_stop_cover(self, **kwargs):
         """Stop the cover."""
@@ -356,23 +505,60 @@ class LocaltuyaCover(LocalTuyaEntity, CoverEntity):
             self._stop_cmd = self._stop_cmd.upper()
 
         if self.has_config(CONF_CURRENT_POSITION_DP):
-            raw_position = self.dps_conf(
-                CONF_CURRENT_POSITION_DP
+            raw_position = self.dps_conf(CONF_CURRENT_POSITION_DP)
+            position = _range_to_percent(
+                raw_position,
+                self._config.get(CONF_CURRENT_POSITION_MIN, 0),
+                self._config.get(CONF_CURRENT_POSITION_MAX, 100),
+                bool(self._config.get(
+                    CONF_CURRENT_POSITION_INVERTED, self._position_inverted
+                )),
             )
+            if position is not None:
+                self._current_cover_position = position
+        elif self.has_config(CONF_SET_POSITION_DP):
+            raw_position = self.dps_conf(CONF_SET_POSITION_DP)
+            position = _range_to_percent(
+                raw_position,
+                self._config.get(CONF_SET_POSITION_MIN, 0),
+                self._config.get(CONF_SET_POSITION_MAX, 100),
+                bool(self._config.get(
+                    CONF_SET_POSITION_INVERTED, self._position_inverted
+                )),
+            )
+            if position is not None:
+                self._current_cover_position = position
 
-            if (
-                isinstance(raw_position, (int, float))
-                and not isinstance(raw_position, bool)
-            ):
-                position = round(raw_position)
+        self._semantic_state = None
+        action_dp = self._config.get(CONF_COVER_ACTION_DP)
+        if action_dp is not None and self._action_values:
+            raw_action = self.dps(action_dp)
+            self._semantic_state = next(
+                (name for name, raw in self._action_values.items() if raw_action == raw),
+                None,
+            )
+        open_dp = self._config.get(CONF_COVER_OPEN_DP)
+        if self._semantic_state is None and open_dp is not None and self._open_values:
+            raw_open = self.dps(open_dp)
+            semantic = next(
+                (name for name, raw in self._open_values.items() if raw_open == raw),
+                None,
+            )
+            if semantic == "open":
+                self._semantic_state = "opened"
+                self._current_cover_position = 100
+            elif semantic == "closed":
+                self._semantic_state = "closed"
+                self._current_cover_position = 0
 
-                if self._position_inverted:
-                    position = 100 - position
-
-                self._current_cover_position = min(
-                    max(position, 0),
-                    100,
-                )
+        tilt_dp = self._config.get(CONF_TILT_POSITION_DP)
+        if tilt_dp is not None:
+            self._attr_current_cover_tilt_position = _range_to_percent(
+                self.dps(tilt_dp),
+                self._config.get(CONF_TILT_POSITION_MIN, 0),
+                self._config.get(CONF_TILT_POSITION_MAX, 100),
+                bool(self._config.get(CONF_TILT_POSITION_INVERTED, False)),
+            )
 
         if (
             self._positioning_mode == COVER_MODE_TIMED
