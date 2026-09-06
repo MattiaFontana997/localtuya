@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
+      - name: Install focused test dependency
+        run: python -m pip install "pytest>=8,<9"
       - name: Apply Batch K runtime
         run: python _apply_batch_k_runtime.py
       - name: Compile runtime
