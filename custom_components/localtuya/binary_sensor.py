@@ -143,10 +143,6 @@ class LocaltuyaBinarySensor(LocalTuyaEntity, BinarySensorEntity):
         """Update binary sensor state."""
         raw_state = self.dps(self._dp_id)
 
-        if raw_state is None:
-            self._attr_is_on = None
-            return
-
         if self._binary_mapping_supplied:
             if self._binary_mapping is None:
                 self._attr_is_on = None
@@ -165,6 +161,10 @@ class LocaltuyaBinarySensor(LocalTuyaEntity, BinarySensorEntity):
                     "State for entity %s did not match catalog binary mapping",
                     self.entity_id,
                 )
+            return
+
+        if raw_state is None:
+            self._attr_is_on = None
             return
 
         state = str(raw_state).lower()
