@@ -1,0 +1,177 @@
+name: Patch residual light runtime
+
+on:
+  push:
+    paths:
+      - .github/workflows/patch-light-residual-runtime.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Patch runtime and tests
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          cp = Path('custom_components/localtuya/const.py')
+          c = cp.read_text()
+          old = '''CONF_BRIGHTNESS_STEP = "brightness_step"\nCONF_BRIGHTNESS_NULL_VALUE = "brightness_null_value"\nCONF_LIGHT_ON_VALUE = "light_on_value"\n'''
+          new = '''CONF_BRIGHTNESS_STEP = "brightness_step"\nCONF_BRIGHTNESS_NULL_VALUE = "brightness_null_value"\nCONF_BRIGHTNESS_VALUES = "brightness_values"\nCONF_BRIGHTNESS_AS_POWER = "brightness_as_power"\nCONF_LIGHT_ON_VALUE = "light_on_value"\n'''
+          if old not in c:
+              raise SystemExit('brightness const anchor missing')
+          c = c.replace(old, new, 1)
+          old = '''CONF_LIGHT_NULL_VALUE = "light_null_value"\nCONF_COLOR_BRIGHTNESS_LOWER = "color_brightness_lower"\n'''
+          new = '''CONF_LIGHT_NULL_VALUE = "light_null_value"\nCONF_LIGHT_POWER_MASK = "light_power_mask"\nCONF_COLOR_BRIGHTNESS_LOWER = "color_brightness_lower"\n'''
+          if old not in c:
+              raise SystemExit('light mask const anchor missing')
+          c = c.replace(old, new, 1)
+          old = '''CONF_COLOR_RGB_ENCODING = "color_rgb_encoding"\nCONF_WHITE_MODE = "white_mode"\n'''
+          new = '''CONF_COLOR_RGB_ENCODING = "color_rgb_encoding"\nCONF_COLOR_SATURATION_UPPER = "color_saturation_upper"\nCONF_WHITE_MODE = "white_mode"\n'''
+          if old not in c:
+              raise SystemExit('saturation const anchor missing')
+          c = c.replace(old, new, 1)
+          old = '''CONF_COLOR_TEMP_REVERSE = "color_temp_reverse"\nCONF_MUSIC_MODE = "music_mode"\n'''
+          new = '''CONF_COLOR_TEMP_REVERSE = "color_temp_reverse"\nCONF_COLOR_TEMP_STEP = "color_temp_step"\nCONF_COLOR_TEMP_VALUES = "color_temp_values"\nCONF_MUSIC_MODE = "music_mode"\n'''
+          if old not in c:
+              raise SystemExit('color temp const anchor missing')
+          c = c.replace(old, new, 1)
+          cp.write_text(c)
+
+          p = Path('custom_components/localtuya/light.py')
+          s = p.read_text()
+
+          old = '''    CONF_BRIGHTNESS_NULL_VALUE,\n    CONF_BRIGHTNESS_STEP,\n    CONF_BRIGHTNESS_UPPER,\n'''
+          new = '''    CONF_BRIGHTNESS_NULL_VALUE,\n    CONF_BRIGHTNESS_STEP,\n    CONF_BRIGHTNESS_UPPER,\n    CONF_BRIGHTNESS_VALUES,\n    CONF_BRIGHTNESS_AS_POWER,\n'''
+          if old not in s:
+              raise SystemExit('brightness import anchor missing')
+          s = s.replace(old, new, 1)
+          old = '''    CONF_COLOR_RGB_ENCODING,\n    CONF_COLOR_BRIGHTNESS_LOWER,\n'''
+          new = '''    CONF_COLOR_RGB_ENCODING,\n    CONF_COLOR_SATURATION_UPPER,\n    CONF_COLOR_BRIGHTNESS_LOWER,\n'''
+          if old not in s:
+              raise SystemExit('color import anchor missing')
+          s = s.replace(old, new, 1)
+          old = '''    CONF_COLOR_TEMP_REVERSE,\n    CONF_EFFECT,\n'''
+          new = '''    CONF_COLOR_TEMP_REVERSE,\n    CONF_COLOR_TEMP_STEP,\n    CONF_COLOR_TEMP_VALUES,\n    CONF_EFFECT,\n'''
+          if old not in s:
+              raise SystemExit('temp import anchor missing')
+          s = s.replace(old, new, 1)
+          old = '''    CONF_LIGHT_NULL_VALUE,\n    CONF_MUSIC_MODE,\n'''
+          new = '''    CONF_LIGHT_NULL_VALUE,\n    CONF_LIGHT_POWER_MASK,\n    CONF_MUSIC_MODE,\n'''
+          if old not in s:
+              raise SystemExit('mask import anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''        vol.Optional(CONF_LIGHT_NULL_VALUE): bool,\n        vol.Optional(\n            CONF_BRIGHTNESS_LOWER,\n'''
+          new = '''        vol.Optional(CONF_LIGHT_NULL_VALUE): bool,\n        vol.Optional(CONF_LIGHT_POWER_MASK): str,\n        vol.Optional(CONF_BRIGHTNESS_VALUES): dict,\n        vol.Optional(CONF_BRIGHTNESS_AS_POWER, default=False): bool,\n        vol.Optional(\n            CONF_BRIGHTNESS_LOWER,\n'''
+          if old not in s:
+              raise SystemExit('schema brightness anchor missing')
+          s = s.replace(old, new, 1)
+          old = '''        vol.Optional(\n            CONF_COLOR_TEMP_REVERSE,\n            default=DEFAULT_COLOR_TEMP_REVERSE,\n            description={"suggested_value": DEFAULT_COLOR_TEMP_REVERSE},\n        ): bool,\n        vol.Optional(CONF_SCENE): vol.In(dps),\n'''
+          new = '''        vol.Optional(\n            CONF_COLOR_TEMP_REVERSE,\n            default=DEFAULT_COLOR_TEMP_REVERSE,\n            description={"suggested_value": DEFAULT_COLOR_TEMP_REVERSE},\n        ): bool,\n        vol.Optional(CONF_COLOR_TEMP_STEP, default=1): vol.All(\n            vol.Coerce(int),\n            vol.Range(min=1, max=10000),\n        ),\n        vol.Optional(CONF_COLOR_TEMP_VALUES): dict,\n        vol.Optional(CONF_COLOR_SATURATION_UPPER): vol.All(\n            vol.Coerce(int),\n            vol.Range(min=1, max=65535),\n        ),\n        vol.Optional(CONF_SCENE): vol.In(dps),\n'''
+          if old not in s:
+              raise SystemExit('schema temp anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''        self._power_on_value = self._config.get(CONF_LIGHT_ON_VALUE, True)\n        self._power_off_value = self._config.get(CONF_LIGHT_OFF_VALUE, False)\n\n        self._lower_brightness = int(\n'''
+          new = '''        self._power_on_value = self._config.get(CONF_LIGHT_ON_VALUE, True)\n        self._power_off_value = self._config.get(CONF_LIGHT_OFF_VALUE, False)\n        self._brightness_as_power = bool(\n            self._config.get(CONF_BRIGHTNESS_AS_POWER, False)\n        )\n        self._brightness_values = self._configured_brightness_values()\n        self._light_power_mask = self._configured_light_power_mask()\n\n        self._lower_brightness = int(\n'''
+          if old not in s:
+              raise SystemExit('init power anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''        self._color_temp_reverse = bool(\n            self._config.get(\n                CONF_COLOR_TEMP_REVERSE,\n                DEFAULT_COLOR_TEMP_REVERSE,\n            )\n        )\n\n        mode_set = self._config.get(CONF_COLOR_MODE_SET, 0)\n'''
+          new = '''        self._color_temp_reverse = bool(\n            self._config.get(\n                CONF_COLOR_TEMP_REVERSE,\n                DEFAULT_COLOR_TEMP_REVERSE,\n            )\n        )\n        try:\n            self._color_temp_step = int(\n                self._config.get(CONF_COLOR_TEMP_STEP, 1)\n            )\n        except (TypeError, ValueError):\n            self._color_temp_step = 1\n        if self._color_temp_step <= 0:\n            self._color_temp_step = 1\n        self._color_temp_values = self._configured_color_temp_values()\n\n        mode_set = self._config.get(CONF_COLOR_MODE_SET, 0)\n'''
+          if old not in s:
+              raise SystemExit('init temp anchor missing')
+          s = s.replace(old, new, 1)
+
+          anchor = '''    def _raw_brightness_to_ha(self, value) -> int | None:\n'''
+          helpers = '''    def _configured_brightness_values(self) -> list[tuple[int, object]]:\n        """Return ordered HA-brightness -> exact raw value mappings."""\n        configured = self._config.get(CONF_BRIGHTNESS_VALUES)\n        if not isinstance(configured, dict):\n            return []\n\n        result: list[tuple[int, object]] = []\n        raw_values: list[object] = []\n        for raw_brightness, raw_value in configured.items():\n            if isinstance(raw_brightness, bool):\n                continue\n            try:\n                brightness = int(raw_brightness)\n            except (TypeError, ValueError):\n                continue\n            if brightness < 0 or brightness > 255:\n                continue\n            if not isinstance(raw_value, (bool, int, str)):\n                continue\n            if any(_same_raw_value(raw_value, seen) for seen in raw_values):\n                continue\n            result.append((brightness, raw_value))\n            raw_values.append(raw_value)\n        return result\n\n    def _configured_color_temp_values(self) -> list[tuple[int, int]]:\n        """Return ordered Kelvin -> raw discrete color-temperature mappings."""\n        configured = self._config.get(CONF_COLOR_TEMP_VALUES)\n        if not isinstance(configured, dict):\n            return []\n\n        result: list[tuple[int, int]] = []\n        raw_values: set[int] = set()\n        for raw_kelvin, raw_value in configured.items():\n            if isinstance(raw_kelvin, bool) or isinstance(raw_value, bool):\n                continue\n            try:\n                kelvin = int(raw_kelvin)\n                value = int(raw_value)\n            except (TypeError, ValueError):\n                continue\n            if not 1500 <= kelvin <= 8000 or value in raw_values:\n                continue\n            result.append((kelvin, value))\n            raw_values.add(value)\n        return result\n\n    def _configured_light_power_mask(self) -> tuple[int, int] | None:\n        """Validate an exact big-endian hex bit mask for a packed light switch."""\n        raw_mask = self._config.get(CONF_LIGHT_POWER_MASK)\n        if not isinstance(raw_mask, str):\n            return None\n        mask = raw_mask.strip()\n        if not mask or len(mask) % 2 or any(ch not in "0123456789abcdefABCDEF" for ch in mask):\n            return None\n        value = int(mask, 16)\n        if value <= 0:\n            return None\n        return value, len(mask)\n\n    def _masked_power_state(self, raw_power) -> bool | None:\n        """Read one boolean bit from a packed big-endian hex DP."""\n        configured = getattr(self, "_light_power_mask", None)\n        if configured is None or not isinstance(raw_power, str):\n            return None\n        value = raw_power.strip()\n        if not value or len(value) % 2 or any(ch not in "0123456789abcdefABCDEF" for ch in value):\n            return None\n        mask, _ = configured\n        return bool(int(value, 16) & mask)\n\n    def _masked_power_write_value(self, turn_on: bool) -> str | None:\n        """Return a read-modify-write packed hex value, or None if current is unknown."""\n        configured = getattr(self, "_light_power_mask", None)\n        current = getattr(self, "_state", None)\n        if configured is None or not isinstance(current, str):\n            return None\n        current = current.strip()\n        if not current or len(current) % 2 or any(ch not in "0123456789abcdefABCDEF" for ch in current):\n            return None\n        mask, mask_width = configured\n        value = int(current, 16)\n        value = value | mask if turn_on else value & ~mask\n        width = max(mask_width, len(current))\n        return f"{value:0{width}x}"\n\n    def _color_saturation_upper(self, *, extended: bool) -> int:\n        """Return the raw saturation maximum for the active color payload."""\n        configured = self._config.get(CONF_COLOR_SATURATION_UPPER)\n        if isinstance(configured, bool):\n            configured = None\n        if configured is not None:\n            try:\n                value = int(configured)\n            except (TypeError, ValueError):\n                value = 0\n            if value > 0:\n                return value\n        return 255 if extended else 1000\n\n'''
+          if anchor not in s:
+              raise SystemExit('brightness method anchor missing')
+          s = s.replace(anchor, helpers + anchor, 1)
+
+          old = '''    def _raw_brightness_to_ha(self, value) -> int | None:\n        """Convert a Tuya brightness value to HA's 0..255 range."""\n        if value is None:\n            config = getattr(self, "_config", {})\n            if isinstance(config, dict):\n                value = config.get(CONF_BRIGHTNESS_NULL_VALUE)\n            if value is None:\n                return None\n\n        if isinstance(value, bool):\n            return None\n\n        try:\n            value = float(value)\n        except (TypeError, ValueError):\n            return None\n\n        return map_range(\n            value,\n            self._lower_brightness,\n            self._upper_brightness,\n            0,\n            255,\n        )\n\n    def _ha_brightness_to_raw(self, value) -> int:\n        """Convert HA brightness to the Tuya brightness range."""\n        raw_value = map_range(\n            int(value),\n            0,\n            255,\n            self._lower_brightness,\n            self._upper_brightness,\n        )\n        brightness_step = getattr(self, "_brightness_step", 1)\n        if brightness_step != 1:\n            raw_value = brightness_step * round(\n                float(raw_value) / brightness_step\n            )\n        return raw_value\n'''
+          new = '''    def _raw_brightness_to_ha(self, value) -> int | None:\n        """Convert a Tuya brightness value to HA's 0..255 range."""\n        if value is None:\n            config = getattr(self, "_config", {})\n            if isinstance(config, dict):\n                value = config.get(CONF_BRIGHTNESS_NULL_VALUE)\n            if value is None:\n                return None\n\n        mapped = getattr(self, "_brightness_values", [])\n        if mapped:\n            for brightness, raw_value in mapped:\n                if _same_raw_value(value, raw_value):\n                    return brightness\n            return None\n\n        if isinstance(value, bool):\n            return None\n\n        try:\n            value = float(value)\n        except (TypeError, ValueError):\n            return None\n\n        return map_range(\n            value,\n            self._lower_brightness,\n            self._upper_brightness,\n            0,\n            255,\n        )\n\n    def _ha_brightness_to_raw(self, value):\n        """Convert HA brightness to the exact Tuya brightness representation."""\n        mapped = getattr(self, "_brightness_values", [])\n        if mapped:\n            target = min(max(int(value), 0), 255)\n            best_raw = mapped[0][1]\n            best_distance = abs(mapped[0][0] - target)\n            for brightness, raw_value in mapped[1:]:\n                distance = abs(brightness - target)\n                if distance < best_distance:\n                    best_raw = raw_value\n                    best_distance = distance\n            return best_raw\n\n        raw_value = map_range(\n            int(value),\n            0,\n            255,\n            self._lower_brightness,\n            self._upper_brightness,\n        )\n        brightness_step = getattr(self, "_brightness_step", 1)\n        if brightness_step != 1:\n            raw_value = brightness_step * round(\n                float(raw_value) / brightness_step\n            )\n        return raw_value\n'''
+          if old not in s:
+              raise SystemExit('brightness body anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''    def _raw_color_temp_to_kelvin(self, value) -> int | None:\n        """Convert a Tuya color-temperature DP to Kelvin."""\n        if value is None or isinstance(value, bool):\n            return None\n\n        try:\n            raw_value = float(value)\n        except (TypeError, ValueError):\n            return None\n\n        raw_value = min(\n            max(raw_value, 0),\n            self._raw_color_temp_max,\n        )\n\n        if self._color_temp_reverse:\n            raw_value = self._raw_color_temp_max - raw_value\n\n        ratio = raw_value / self._raw_color_temp_max\n\n        mired = (\n            self._max_mired\n            - ((self._max_mired - self._min_mired) * ratio)\n        )\n\n        kelvin = color_util.color_temperature_mired_to_kelvin(mired)\n\n        return min(\n            max(kelvin, self._min_kelvin),\n            self._max_kelvin,\n        )\n\n    def _kelvin_to_raw_color_temp(self, kelvin) -> int:\n        """Convert a Kelvin color temperature to Tuya DP format."""\n        kelvin = min(\n            max(int(kelvin), self._min_kelvin),\n            self._max_kelvin,\n        )\n\n        mired = color_util.color_temperature_kelvin_to_mired(kelvin)\n\n        ratio = (\n            (self._max_mired - mired)\n            / (self._max_mired - self._min_mired)\n        )\n\n        raw_value = round(\n            ratio * self._raw_color_temp_max\n        )\n\n        raw_value = min(\n            max(raw_value, 0),\n            self._raw_color_temp_max,\n        )\n\n        if self._color_temp_reverse:\n            raw_value = self._raw_color_temp_max - raw_value\n\n        return raw_value\n'''
+          new = '''    def _raw_color_temp_to_kelvin(self, value) -> int | None:\n        """Convert a Tuya color-temperature DP to Kelvin."""\n        if value is None or isinstance(value, bool):\n            return None\n\n        discrete = getattr(self, "_color_temp_values", [])\n        if discrete:\n            try:\n                raw_value = int(value)\n            except (TypeError, ValueError):\n                return None\n            for kelvin, configured_raw in discrete:\n                if raw_value == configured_raw:\n                    return kelvin\n            return None\n\n        try:\n            raw_value = float(value)\n        except (TypeError, ValueError):\n            return None\n\n        raw_value = min(\n            max(raw_value, 0),\n            self._raw_color_temp_max,\n        )\n\n        if self._color_temp_reverse:\n            raw_value = self._raw_color_temp_max - raw_value\n\n        ratio = raw_value / self._raw_color_temp_max\n\n        mired = (\n            self._max_mired\n            - ((self._max_mired - self._min_mired) * ratio)\n        )\n\n        kelvin = color_util.color_temperature_mired_to_kelvin(mired)\n\n        return min(\n            max(kelvin, self._min_kelvin),\n            self._max_kelvin,\n        )\n\n    def _kelvin_to_raw_color_temp(self, kelvin) -> int:\n        """Convert a Kelvin color temperature to Tuya DP format."""\n        kelvin = min(\n            max(int(kelvin), self._min_kelvin),\n            self._max_kelvin,\n        )\n\n        discrete = getattr(self, "_color_temp_values", [])\n        if discrete:\n            best_raw = discrete[0][1]\n            best_distance = abs(discrete[0][0] - kelvin)\n            for configured_kelvin, raw_value in discrete[1:]:\n                distance = abs(configured_kelvin - kelvin)\n                if distance < best_distance:\n                    best_raw = raw_value\n                    best_distance = distance\n            return best_raw\n\n        mired = color_util.color_temperature_kelvin_to_mired(kelvin)\n\n        ratio = (\n            (self._max_mired - mired)\n            / (self._max_mired - self._min_mired)\n        )\n\n        raw_value = round(\n            ratio * self._raw_color_temp_max\n        )\n\n        raw_value = min(\n            max(raw_value, 0),\n            self._raw_color_temp_max,\n        )\n\n        if self._color_temp_reverse:\n            raw_value = self._raw_color_temp_max - raw_value\n\n        step = getattr(self, "_color_temp_step", 1)\n        if step != 1:\n            raw_value = step * round(float(raw_value) / step)\n            raw_value = min(max(raw_value, 0), self._raw_color_temp_max)\n\n        return raw_value\n'''
+          if old not in s:
+              raise SystemExit('color temp methods anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''                hs = (\n                    min(max(float(hue), 0.0), 360.0),\n                    min(\n                        max(saturation * 100.0 / 255.0, 0.0),\n                        100.0,\n                    ),\n                )\n\n                brightness = min(max(value, 0), 255)\n'''
+          new = '''                saturation_upper = self._color_saturation_upper(extended=True)\n                hs = (\n                    min(max(float(hue), 0.0), 360.0),\n                    min(\n                        max(saturation * 100.0 / saturation_upper, 0.0),\n                        100.0,\n                    ),\n                )\n\n                if (\n                    CONF_COLOR_BRIGHTNESS_LOWER in self._config\n                    or CONF_COLOR_BRIGHTNESS_UPPER in self._config\n                ):\n                    brightness = self._raw_color_brightness_to_ha(value)\n                else:\n                    brightness = min(max(value, 0), 255)\n'''
+          if old not in s:
+              raise SystemExit('extended decode anchor missing')
+          s = s.replace(old, new, 1)
+          old = '''            hs = (\n                min(max(float(hue), 0.0), 360.0),\n                min(max(saturation / 10.0, 0.0), 100.0),\n            )\n'''
+          new = '''            saturation_upper = self._color_saturation_upper(extended=False)\n            hs = (\n                min(max(float(hue), 0.0), 360.0),\n                min(max(saturation * 100.0 / saturation_upper, 0.0), 100.0),\n            )\n'''
+          if old not in s:
+              raise SystemExit('legacy decode anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''            return (\n                f"{round(rgb[0]):02x}"\n                f"{round(rgb[1]):02x}"\n                f"{round(rgb[2]):02x}"\n                f"{round(hue):04x}"\n                f"{round(saturation * 255.0 / 100.0):02x}"\n                f"{brightness:02x}"\n            )\n\n        raw_brightness = self._ha_brightness_to_raw_color(\n            brightness\n        )\n\n        return (\n            f"{round(hue):04x}"\n            f"{round(saturation * 10.0):04x}"\n            f"{raw_brightness:04x}"\n        )\n'''
+          new = '''            saturation_upper = self._color_saturation_upper(extended=True)\n            raw_saturation = round(saturation * saturation_upper / 100.0)\n            if (\n                CONF_COLOR_BRIGHTNESS_LOWER in self._config\n                or CONF_COLOR_BRIGHTNESS_UPPER in self._config\n            ):\n                raw_brightness = self._ha_brightness_to_raw_color(brightness)\n            else:\n                raw_brightness = brightness\n\n            return (\n                f"{round(rgb[0]):02x}"\n                f"{round(rgb[1]):02x}"\n                f"{round(rgb[2]):02x}"\n                f"{round(hue):04x}"\n                f"{raw_saturation:02x}"\n                f"{raw_brightness:02x}"\n            )\n\n        raw_brightness = self._ha_brightness_to_raw_color(\n            brightness\n        )\n        saturation_upper = self._color_saturation_upper(extended=False)\n        raw_saturation = round(saturation * saturation_upper / 100.0)\n\n        return (\n            f"{round(hue):04x}"\n            f"{raw_saturation:04x}"\n            f"{raw_brightness:04x}"\n        )\n'''
+          if old not in s:
+              raise SystemExit('color encode anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''        config = getattr(self, "_config", {})\n        if raw_power is None and isinstance(config, dict) and CONF_LIGHT_NULL_VALUE in config:\n'''
+          new = '''        config = getattr(self, "_config", {})\n        if getattr(self, "_light_power_mask", None) is not None:\n            return self._masked_power_state(raw_power)\n        if raw_power is None and isinstance(config, dict) and CONF_LIGHT_NULL_VALUE in config:\n'''
+          if old not in s:
+              raise SystemExit('power state anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''        if self.is_on is not True:\n            states[self._dp_id] = getattr(self, "_power_on_value", True)\n\n        requested_effect = kwargs.get(ATTR_EFFECT)\n'''
+          new = '''        if self.is_on is not True:\n            if getattr(self, "_brightness_as_power", False):\n                if ATTR_BRIGHTNESS not in kwargs:\n                    states[self._dp_id] = self._ha_brightness_to_raw(255)\n            elif getattr(self, "_light_power_mask", None) is not None:\n                masked = self._masked_power_write_value(True)\n                if masked is not None:\n                    states[self._dp_id] = masked\n            else:\n                states[self._dp_id] = getattr(self, "_power_on_value", True)\n\n        requested_effect = kwargs.get(ATTR_EFFECT)\n'''
+          if old not in s:
+              raise SystemExit('turn-on power anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''    async def async_turn_off(self, **kwargs):\n        """Turn the Tuya light off."""\n        await self._device.set_dp(getattr(self, "_power_off_value", False), self._dp_id)\n'''
+          new = '''    async def async_turn_off(self, **kwargs):\n        """Turn the Tuya light off."""\n        if getattr(self, "_brightness_as_power", False):\n            await self._device.set_dp(self._ha_brightness_to_raw(0), self._dp_id)\n            return\n        if getattr(self, "_light_power_mask", None) is not None:\n            masked = self._masked_power_write_value(False)\n            if masked is not None:\n                await self._device.set_dp(masked, self._dp_id)\n            return\n        await self._device.set_dp(getattr(self, "_power_off_value", False), self._dp_id)\n'''
+          if old not in s:
+              raise SystemExit('turn-off anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''        raw_power = self._state\n        self._attr_is_on = self._power_state_from_raw(raw_power)\n\n        mode = self._raw_mode()\n'''
+          new = '''        raw_power = self._state\n        if getattr(self, "_brightness_as_power", False):\n            power_brightness = self._raw_brightness_to_ha(raw_power)\n            self._attr_is_on = (\n                power_brightness is not None and power_brightness > 0\n            )\n        else:\n            self._attr_is_on = self._power_state_from_raw(raw_power)\n\n        mode = self._raw_mode()\n'''
+          if old not in s:
+              raise SystemExit('status power anchor missing')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          tp = Path('tests/test_light_residual_runtime.py')
+          tp.write_text('''"""Regression tests for residual Tuya Local light encodings."""\n\nfrom __future__ import annotations\n\nimport unittest\n\nfrom custom_components.localtuya.light import LocaltuyaLight\n\n\nclass ResidualLightRuntimeTests(unittest.TestCase):\n    @staticmethod\n    def _light(config=None):\n        light = object.__new__(LocaltuyaLight)\n        light._config = config or {}\n        light._lower_brightness = 0\n        light._upper_brightness = 255\n        light._lower_color_brightness = int(light._config.get("color_brightness_lower", 0))\n        light._upper_color_brightness = int(light._config.get("color_brightness_upper", 255))\n        light._brightness_step = 1\n        light._brightness_values = light._configured_brightness_values()\n        light._color_temp_values = light._configured_color_temp_values()\n        light._color_temp_step = int(light._config.get("color_temp_step", 1))\n        light._light_power_mask = light._configured_light_power_mask()\n        light._color_uses_rgb_encoding = bool(light._config.get("color_rgb_encoding", False))\n        light._color_rgb_encoding_forced = light._color_uses_rgb_encoding\n        return light\n\n    def test_discrete_brightness_mapping_is_exact_on_read_and_nearest_on_write(self):\n        light = self._light({"brightness_values": {"0": "level0", "85": "level1", "170": "level2", "255": "level3"}})\n        self.assertEqual(light._raw_brightness_to_ha("level2"), 170)\n        self.assertIsNone(light._raw_brightness_to_ha("LEVEL2"))\n        self.assertEqual(light._ha_brightness_to_raw(200), "level2")\n        self.assertEqual(light._ha_brightness_to_raw(250), "level3")\n\n    def test_discrete_color_temperature_mapping(self):\n        light = self._light({"color_temp_values": {"3000": 1, "4000": 2, "6000": 3}})\n        light._min_kelvin = 3000\n        light._max_kelvin = 6000\n        self.assertEqual(light._raw_color_temp_to_kelvin(2), 4000)\n        self.assertIsNone(light._raw_color_temp_to_kelvin(4))\n        self.assertEqual(light._kelvin_to_raw_color_temp(4500), 2)\n        self.assertEqual(light._kelvin_to_raw_color_temp(5500), 3)\n\n    def test_extended_rgbhsv_scales_saturation_and_value(self):\n        light = self._light({"color_rgb_encoding": True, "color_saturation_upper": 100, "color_brightness_lower": 0, "color_brightness_upper": 100})\n        decoded = light._decode_color("ff000000646464")\n        self.assertIsNotNone(decoded)\n        hs, brightness = decoded\n        self.assertEqual(hs, (100.0, 100.0))\n        self.assertEqual(brightness, 255)\n        encoded = light._encode_color((100, 100), 255)\n        self.assertTrue(encoded.endswith("006464"))\n\n    def test_legacy_rgbhsv_can_use_saturation_100(self):\n        light = self._light({"color_saturation_upper": 100, "color_brightness_lower": 0, "color_brightness_upper": 1000})\n        decoded = light._decode_color("0064006403e8")\n        self.assertEqual(decoded, ((100.0, 100.0), 255))\n        self.assertEqual(light._encode_color((100, 100), 255), "0064006403e8")\n\n    def test_masked_power_read_modify_write_preserves_other_bits(self):\n        light = self._light({"light_power_mask": "0008"})\n        light._state = "0011"\n        self.assertFalse(light._power_state_from_raw("0011"))\n        self.assertEqual(light._masked_power_write_value(True), "0019")\n        light._state = "0019"\n        self.assertTrue(light._power_state_from_raw("0019"))\n        self.assertEqual(light._masked_power_write_value(False), "0011")\n\n\nif __name__ == "__main__":\n    unittest.main()\n''')
+          PY
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_test.txt
+      - name: Run targeted tests
+        run: |
+          python -m unittest tests.test_light_residual_runtime tests.test_light_switch_values tests.test_light_brightness_step tests.test_light_brightness_null_fallback tests.test_light_scene_values -v
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/const.py custom_components/localtuya/light.py tests/test_light_residual_runtime.py
+          git diff --cached --check
+          git commit -m "Support residual light encodings"
+          git push origin HEAD:develop
