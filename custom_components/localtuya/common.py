@@ -31,8 +31,8 @@ from .advanced_mapping import (
 )
 from .const import (
     ATTR_STATE, ATTR_UPDATED_AT, CONF_DEFAULT_VALUE, CONF_ENABLE_DEBUG,
-    CONF_EXTRA_STATE_ATTRIBUTES_DPS, CONF_LOCAL_KEY, CONF_MODEL,
-    CONF_PASSIVE_ENTITY, CONF_PROTOCOL_VERSION, CONF_RESET_DPIDS,
+    CONF_EXTRA_STATE_ATTRIBUTES_DPS, CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS,
+    CONF_LOCAL_KEY, CONF_MODEL, CONF_PASSIVE_ENTITY, CONF_PROTOCOL_VERSION, CONF_RESET_DPIDS,
     CONF_RESTORE_ON_RECONNECT, DATA_CLOUD, DOMAIN, TUYA_DEVICES,
 )
 
@@ -75,9 +75,9 @@ def prune_missing_non_persistent_dps(cached_status, incoming_status, dp_ids):
             cached_status.pop(dp_id, None)
 
 
-def get_extra_state_attribute_dps(config):
-    """Return validated catalog-provided raw DPS state attributes."""
-    configured = config.get(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
+def _get_state_attribute_dps(config, key):
+    """Return validated catalog-provided DPS state attributes for one key."""
+    configured = config.get(key)
     if not isinstance(configured, dict):
         return {}
     result = {}
@@ -99,6 +99,16 @@ def get_extra_state_attribute_dps(config):
     return result
 
 
+def get_extra_state_attribute_dps(config):
+    """Return validated catalog-provided raw DPS state attributes."""
+    return _get_state_attribute_dps(config, CONF_EXTRA_STATE_ATTRIBUTES_DPS)
+
+
+def get_mapped_extra_state_attribute_dps(config):
+    """Return validated catalog DPS attributes that must use declarative mapping."""
+    return _get_state_attribute_dps(config, CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS)
+
+
 async def async_setup_entry(domain, entity_class, flow_schema, hass, config_entry, async_add_entities):
     """Set up a Tuya platform based on a config entry."""
     entities = []
@@ -115,6 +125,8 @@ async def async_setup_entry(domain, entity_class, flow_schema, hass, config_entr
                 if dp_id is not None:
                     device.dps_to_request[dp_id] = None
             for dp_id in get_extra_state_attribute_dps(entity_config).values():
+                device.dps_to_request[dp_id] = None
+            for dp_id in get_mapped_extra_state_attribute_dps(entity_config).values():
                 device.dps_to_request[dp_id] = None
             for dp_id in advanced_mapping_dp_references(entity_config.get(CONF_ADVANCED_MAPPING)):
                 device.dps_to_request[dp_id] = None
@@ -437,6 +449,7 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         self._state = None
         self._last_state = None
         self._extra_state_attribute_dps = get_extra_state_attribute_dps(self._config)
+        self._mapped_extra_state_attribute_dps = get_mapped_extra_state_attribute_dps(self._config)
         self._advanced_mapping = validate_advanced_mapping(self._config.get(CONF_ADVANCED_MAPPING)) or []
         self._advanced_mapping_by_dp = (
             validate_advanced_mapping_by_dp(self._config.get(CONF_ADVANCED_MAPPING_BY_DP)) or {}
@@ -478,6 +491,10 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
             dp_key = str(dp_id)
             if dp_key in self._status:
                 attributes[name] = self._status[dp_key]
+        for name, dp_id in self._mapped_extra_state_attribute_dps.items():
+            dp_key = str(dp_id)
+            if dp_key in self._status:
+                attributes[name] = self.dps(dp_id)
         self.debug("Entity %s - Additional attributes: %s", self.name, attributes)
         return attributes
 
