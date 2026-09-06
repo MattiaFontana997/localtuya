@@ -1,0 +1,35 @@
+name: Patch Unix timestamp sensor v3
+
+on:
+  push:
+    paths:
+      - .github/workflows/patch-sensor-unix-v3.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Apply patch
+        run: python .github/scripts/patch_sensor_unix.py
+      - name: Install tox
+        run: python -m pip install "tox>=4.20,<5"
+      - name: Run full test suite
+        run: python -m tox -e py314
+      - name: Commit runtime support
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/const.py custom_components/localtuya/sensor.py custom_components/localtuya/device_catalog.py tests/test_sensor_unix_timestamp.py
+          git diff --cached --check
+          git commit -m "Support explicit Unix timestamp sensors"
+          git push origin HEAD:develop
