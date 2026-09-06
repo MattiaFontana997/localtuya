@@ -25,11 +25,37 @@ jobs:
           from pathlib import Path
           path = Path('custom_components/localtuya/light.py')
           text = path.read_text()
+
           old = '        configured = self._config.get(CONF_COLOR_SATURATION_UPPER)\n'
           new = '        config = getattr(self, "_config", {})\n        configured = config.get(CONF_COLOR_SATURATION_UPPER) if isinstance(config, dict) else None\n'
           if text.count(old) != 1:
               raise SystemExit(f'expected one saturation config access, found {text.count(old)}')
-          path.write_text(text.replace(old, new))
+          text = text.replace(old, new)
+
+          anchor = '        return 255 if extended else 1000\n\n    def _raw_brightness_to_ha(self, value) -> int | None:\n'
+          helper = '''        return 255 if extended else 1000
+
+    def _color_brightness_range_configured(self) -> bool:
+        """Return whether an explicit HSV brightness range is configured."""
+        config = getattr(self, "_config", {})
+        return isinstance(config, dict) and (
+            CONF_COLOR_BRIGHTNESS_LOWER in config
+            or CONF_COLOR_BRIGHTNESS_UPPER in config
+        )
+
+    def _raw_brightness_to_ha(self, value) -> int | None:
+'''
+          if text.count(anchor) != 1:
+              raise SystemExit(f'expected one brightness helper anchor, found {text.count(anchor)}')
+          text = text.replace(anchor, helper)
+
+          old_condition = '''CONF_COLOR_BRIGHTNESS_LOWER in self._config
+                    or CONF_COLOR_BRIGHTNESS_UPPER in self._config'''
+          if text.count(old_condition) != 2:
+              raise SystemExit(f'expected two direct color range checks, found {text.count(old_condition)}')
+          text = text.replace(old_condition, 'self._color_brightness_range_configured()')
+
+          path.write_text(text)
           PY
       - name: Install tox
         run: python -m pip install "tox>=4.20,<5"
