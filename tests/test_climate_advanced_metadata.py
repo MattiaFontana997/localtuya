@@ -1,5 +1,6 @@
 """Regression tests for conditional climate mapping metadata."""
 
+import inspect
 import unittest
 
 from custom_components.localtuya.const import (
@@ -29,6 +30,11 @@ class ClimateAdvancedMetadataTests(unittest.TestCase):
         self.assertEqual(climate.min_temp, 41.0)
         self.assertEqual(climate.max_temp, 104.0)
         self.assertEqual(climate.target_temperature_step, 1.0)
+
+    def test_temperature_limit_properties_are_defined_once(self):
+        source = inspect.getsource(LocaltuyaClimate)
+        self.assertEqual(source.count("def min_temp(self):"), 1)
+        self.assertEqual(source.count("def max_temp(self):"), 1)
 
     def test_static_fallback_remains_unchanged(self):
         climate = self._bare({})

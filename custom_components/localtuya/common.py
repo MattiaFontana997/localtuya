@@ -491,7 +491,7 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
             dp_key = str(dp_id)
             if dp_key in self._status:
                 attributes[name] = self._status[dp_key]
-        for name, dp_id in self._mapped_extra_state_attribute_dps.items():
+        for name, dp_id in getattr(self, "_mapped_extra_state_attribute_dps", {}).items():
             dp_key = str(dp_id)
             if dp_key in self._status:
                 attributes[name] = self.dps(dp_id)
