@@ -23,6 +23,7 @@ from homeassistant.const import CONF_BRIGHTNESS, CONF_COLOR_TEMP, CONF_SCENE
 from .common import LocalTuyaEntity, async_setup_entry
 from .const import (
     CONF_BRIGHTNESS_LOWER,
+    CONF_BRIGHTNESS_NULL_VALUE,
     CONF_BRIGHTNESS_STEP,
     CONF_BRIGHTNESS_UPPER,
     CONF_COLOR,
@@ -191,6 +192,10 @@ def flow_schema(dps):
         ): vol.All(
             vol.Coerce(int),
             vol.Range(min=1, max=10000),
+        ),
+        vol.Optional(CONF_BRIGHTNESS_NULL_VALUE): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=0, max=10000),
         ),
         vol.Optional(CONF_COLOR_MODE): vol.In(dps),
         vol.Optional(CONF_COLOR): vol.In(dps),
@@ -639,7 +644,14 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
     def _raw_brightness_to_ha(self, value) -> int | None:
         """Convert a Tuya brightness value to HA's 0..255 range."""
-        if value is None or isinstance(value, bool):
+        if value is None:
+            config = getattr(self, "_config", {})
+            if isinstance(config, dict):
+                value = config.get(CONF_BRIGHTNESS_NULL_VALUE)
+            if value is None:
+                return None
+
+        if isinstance(value, bool):
             return None
 
         try:

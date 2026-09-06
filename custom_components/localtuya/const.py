@@ -71,6 +71,7 @@ CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS = "mapped_extra_state_attribute_mappi
 CONF_BRIGHTNESS_LOWER = "brightness_lower"
 CONF_BRIGHTNESS_UPPER = "brightness_upper"
 CONF_BRIGHTNESS_STEP = "brightness_step"
+CONF_BRIGHTNESS_NULL_VALUE = "brightness_null_value"
 CONF_COLOR_BRIGHTNESS_LOWER = "color_brightness_lower"
 CONF_COLOR_BRIGHTNESS_UPPER = "color_brightness_upper"
 CONF_COLOR = "color"
