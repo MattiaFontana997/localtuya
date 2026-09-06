@@ -23,6 +23,7 @@ from homeassistant.const import CONF_BRIGHTNESS, CONF_COLOR_TEMP, CONF_SCENE
 from .common import LocalTuyaEntity, async_setup_entry
 from .const import (
     CONF_BRIGHTNESS_LOWER,
+    CONF_BRIGHTNESS_STEP,
     CONF_BRIGHTNESS_UPPER,
     CONF_COLOR,
     CONF_COLOR_RGB_ENCODING,
@@ -184,6 +185,13 @@ def flow_schema(dps):
             vol.Coerce(int),
             vol.Range(min=0, max=10000),
         ),
+        vol.Optional(
+            CONF_BRIGHTNESS_STEP,
+            default=1,
+        ): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=1, max=10000),
+        ),
         vol.Optional(CONF_COLOR_MODE): vol.In(dps),
         vol.Optional(CONF_COLOR): vol.In(dps),
         vol.Optional(
@@ -262,6 +270,19 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             )
             self._lower_brightness = DEFAULT_LOWER_BRIGHTNESS
             self._upper_brightness = DEFAULT_UPPER_BRIGHTNESS
+
+        try:
+            self._brightness_step = int(
+                self._config.get(CONF_BRIGHTNESS_STEP, 1)
+            )
+        except (TypeError, ValueError):
+            self._brightness_step = 1
+        if self._brightness_step <= 0:
+            self.warning(
+                "Invalid brightness step %s; using 1",
+                self._brightness_step,
+            )
+            self._brightness_step = 1
 
         self._lower_color_brightness = int(
             self._config.get(
@@ -636,13 +657,19 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
     def _ha_brightness_to_raw(self, value) -> int:
         """Convert HA brightness to the Tuya brightness range."""
-        return map_range(
+        raw_value = map_range(
             int(value),
             0,
             255,
             self._lower_brightness,
             self._upper_brightness,
         )
+        brightness_step = getattr(self, "_brightness_step", 1)
+        if brightness_step != 1:
+            raw_value = brightness_step * round(
+                float(raw_value) / brightness_step
+            )
+        return raw_value
 
     def _raw_color_brightness_to_ha(self, value) -> int | None:
         """Convert a Tuya HSV value to HA's 0..255 brightness range."""
