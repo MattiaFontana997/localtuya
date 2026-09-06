@@ -221,6 +221,15 @@ def _validate_entity(entity):
     if not isinstance(config, dict) or not _json_structure_safe(config) or _contains_forbidden_keys(config):
         return None
     config = copy.deepcopy(config)
+    if "sensor_value_mapping" in config:
+        from .sensor_mapping import validate_sensor_value_mapping
+
+        mapping = validate_sensor_value_mapping(config["sensor_value_mapping"])
+        if platform != "sensor" or mapping is None or any(
+            key in config for key in ("scaling", CONF_ADVANCED_MAPPING, CONF_ADVANCED_MAPPING_BY_DP)
+        ):
+            return None
+        config["sensor_value_mapping"] = mapping
     enabled_default = config.get("entity_registry_enabled_default")
     if enabled_default is not None and not isinstance(enabled_default, bool):
         return None

@@ -101,3 +101,12 @@ def test_catalog_rejects_undeclared_non_persistent_dp_reference():
         }],
     }
     assert validate_catalog(payload)["mappings"] == []
+
+
+def load_tests(loader, tests, pattern):
+    """Include function regressions in the project's unittest CI runner."""
+    import unittest
+
+    tests.addTests(unittest.FunctionTestCase(test) for name, test in globals().items()
+                   if name.startswith("test_") and callable(test))
+    return tests

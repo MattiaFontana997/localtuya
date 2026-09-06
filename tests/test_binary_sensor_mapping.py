@@ -71,3 +71,12 @@ def test_bitfield_rejects_non_integer_masks():
 def test_mapping_without_match_or_default_is_unknown():
     mapping = [{"dps_val": "alarm", "value": True}]
     assert evaluate_binary_sensor_mapping("normal", mapping) is None
+
+
+def load_tests(loader, tests, pattern):
+    """Include function regressions in the project's unittest CI runner."""
+    import unittest
+
+    tests.addTests(unittest.FunctionTestCase(test) for name, test in globals().items()
+                   if name.startswith("test_") and callable(test))
+    return tests

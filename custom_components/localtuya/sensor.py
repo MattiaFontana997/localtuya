@@ -18,6 +18,7 @@ from homeassistant.const import (
 
 from .common import LocalTuyaEntity, async_setup_entry
 from .const import CONF_SCALING
+from .sensor_mapping import evaluate_sensor_value_mapping, validate_sensor_value_mapping
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +56,8 @@ class LocaltuyaSensor(LocalTuyaEntity, SensorEntity):
         super().__init__(device, config_entry, sensorid, _LOGGER, **kwargs)
 
         self._state = None
+        self._value_mapping = validate_sensor_value_mapping(self._config.get("sensor_value_mapping"))
+        self._mapping_icon = None
 
         device_class = self._config.get(CONF_DEVICE_CLASS)
         self._attr_device_class = (
@@ -79,9 +82,23 @@ class LocaltuyaSensor(LocalTuyaEntity, SensorEntity):
         """Return the native sensor value."""
         return self._state
 
+    @property
+    def options(self):
+        if self._value_mapping is None:
+            return None
+        values = [rule["value"] for rule in self._value_mapping["rules"] if "value" in rule]
+        return list(dict.fromkeys(values)) if any(isinstance(v, str) for v in values) else None
+
+    @property
+    def icon(self):
+        return self._mapping_icon or super().icon
+
     def status_updated(self):
         """Update the native sensor value."""
         state = self.dps(self._dp_id)
+        if self._value_mapping is not None:
+            self._state, self._mapping_icon = evaluate_sensor_value_mapping(state, self._value_mapping)
+            return
 
         scale_factor = self._config.get(CONF_SCALING)
         if (
