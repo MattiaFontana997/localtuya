@@ -37,6 +37,9 @@ from .const import (
     CONF_COLOR_TEMP_REVERSE,
     CONF_EFFECT,
     CONF_EFFECT_VALUES,
+    CONF_LIGHT_OFF_VALUE,
+    CONF_LIGHT_ON_VALUE,
+    CONF_LIGHT_NULL_VALUE,
     CONF_MUSIC_MODE,
     CONF_SCENE_VALUES,
     CONF_WHITE_MODE,
@@ -167,11 +170,28 @@ def map_range(value, from_lower, from_upper, to_lower, to_upper):
     return round(min(max(mapped, low), high))
 
 
+def _light_power_scalar(value):
+    """Validate an exact scalar light power value without coercion."""
+    if isinstance(value, (bool, str)):
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    raise vol.Invalid("light power value must be bool, int or str")
+
+
+def _same_raw_value(value, expected) -> bool:
+    """Compare Tuya raw values without Python bool/int equality leakage."""
+    return type(value) is type(expected) and value == expected
+
+
 def flow_schema(dps):
     """Return schema used in config flow."""
     return {
         vol.Optional(CONF_BRIGHTNESS): vol.In(dps),
         vol.Optional(CONF_COLOR_TEMP): vol.In(dps),
+        vol.Optional(CONF_LIGHT_ON_VALUE): _light_power_scalar,
+        vol.Optional(CONF_LIGHT_OFF_VALUE): _light_power_scalar,
+        vol.Optional(CONF_LIGHT_NULL_VALUE): bool,
         vol.Optional(
             CONF_BRIGHTNESS_LOWER,
             default=DEFAULT_LOWER_BRIGHTNESS,
@@ -253,6 +273,9 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         self._attr_color_temp_kelvin = None
         self._attr_color_mode = None
         self._attr_effect = None
+
+        self._power_on_value = self._config.get(CONF_LIGHT_ON_VALUE, True)
+        self._power_off_value = self._config.get(CONF_LIGHT_OFF_VALUE, False)
 
         self._lower_brightness = int(
             self._config.get(
@@ -879,12 +902,40 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         if self.has_config(config_key):
             states[self._config[config_key]] = value
 
+    def _power_state_from_raw(self, raw_power):
+        """Translate an exact raw Tuya power value to HA state."""
+        config = getattr(self, "_config", {})
+        if raw_power is None and isinstance(config, dict) and CONF_LIGHT_NULL_VALUE in config:
+            return bool(config[CONF_LIGHT_NULL_VALUE])
+
+        custom_values = (
+            isinstance(config, dict)
+            and (CONF_LIGHT_ON_VALUE in config or CONF_LIGHT_OFF_VALUE in config)
+        )
+        on_value = getattr(self, "_power_on_value", True)
+        off_value = getattr(self, "_power_off_value", False)
+
+        if _same_raw_value(raw_power, on_value):
+            return True
+        if _same_raw_value(raw_power, off_value):
+            return False
+
+        # Preserve historical LocalTuya bool/0/1 reads when no exact mapping
+        # was configured. Custom raw values stay strictly type-aware.
+        if not custom_values:
+            if isinstance(raw_power, bool):
+                return raw_power
+            if isinstance(raw_power, int) and not isinstance(raw_power, bool) and raw_power in (0, 1):
+                return bool(raw_power)
+
+        return None
+
     async def async_turn_on(self, **kwargs):
         """Turn on or control the light."""
         states = {}
 
         if self.is_on is not True:
-            states[self._dp_id] = True
+            states[self._dp_id] = getattr(self, "_power_on_value", True)
 
         requested_effect = kwargs.get(ATTR_EFFECT)
 
@@ -1068,20 +1119,14 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
     async def async_turn_off(self, **kwargs):
         """Turn the Tuya light off."""
-        await self._device.set_dp(False, self._dp_id)
+        await self._device.set_dp(getattr(self, "_power_off_value", False), self._dp_id)
 
     def status_updated(self):
         """Update the light from the latest Tuya status."""
         super().status_updated()
 
         raw_power = self._state
-
-        if isinstance(raw_power, bool):
-            self._attr_is_on = raw_power
-        elif raw_power in (0, 1):
-            self._attr_is_on = bool(raw_power)
-        else:
-            self._attr_is_on = None
+        self._attr_is_on = self._power_state_from_raw(raw_power)
 
         mode = self._raw_mode()
         self._attr_color_mode = self._determine_color_mode(mode)
