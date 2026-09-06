@@ -861,6 +861,13 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
     def _find_scene_by_scene_data(self, data) -> str:
         """Find the friendly scene name for a Tuya scene payload."""
+        # Tuya Local also models a bare ``scene`` work-mode value as an
+        # effect carried entirely by the color-mode DP.  When no dedicated
+        # scene-data DP exists, use that exact work-mode value for lookup
+        # instead of treating the effect as an unknown/custom payload.
+        if data is None and not self.has_config(CONF_SCENE):
+            data = self._modes.scene
+
         for name, scene_data in self._scenes.items():
             if scene_data == data:
                 return name

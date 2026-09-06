@@ -56,6 +56,19 @@ class LightSceneValuesTests(unittest.TestCase):
             },
         )
 
+    def test_bare_scene_mode_reads_back_without_scene_dp(self):
+        light = self._light(
+            {
+                CONF_SCENE_VALUES: {
+                    "Scene": "scene",
+                }
+            }
+        )
+        light._scenes = light._configured_scenes()
+
+        self.assertEqual(light._scenes, {"Scene": "scene"})
+        self.assertEqual(light._find_scene_by_scene_data(None), "Scene")
+
     def test_payload_scene_without_scene_dp_is_ignored(self):
         light = self._light(
             {
