@@ -121,6 +121,17 @@ def _is_dp_reference_key(key):
 
 def _config_dp_references(config):
     result = set()
+    non_persistent = config.get("non_persistent_dps")
+    if isinstance(non_persistent, list):
+        for value in non_persistent:
+            if isinstance(value, bool):
+                continue
+            try:
+                dp_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if 0 < dp_id <= MAX_DP_ID:
+                result.add(dp_id)
     extra = config.get(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
     if isinstance(extra, dict):
         for value in extra.values():
@@ -210,6 +221,19 @@ def _validate_entity(entity):
     if not isinstance(config, dict) or not _json_structure_safe(config) or _contains_forbidden_keys(config):
         return None
     config = copy.deepcopy(config)
+    enabled_default = config.get("entity_registry_enabled_default")
+    if enabled_default is not None and not isinstance(enabled_default, bool):
+        return None
+    non_persistent = config.get("non_persistent_dps")
+    if non_persistent is not None:
+        normalized_non_persistent = _normalize_dps(non_persistent)
+        if (
+            normalized_non_persistent is None
+            or not normalized_non_persistent
+            or len(normalized_non_persistent) > 32
+        ):
+            return None
+        config["non_persistent_dps"] = normalized_non_persistent
     if CONF_ADVANCED_MAPPING in config:
         advanced = validate_advanced_mapping(config[CONF_ADVANCED_MAPPING])
         if advanced is None:

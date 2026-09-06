@@ -37,6 +37,41 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 MAX_EXTRA_STATE_ATTRIBUTES = 32
+MAX_NON_PERSISTENT_DPS = 32
+CONF_ENTITY_REGISTRY_ENABLED_DEFAULT = "entity_registry_enabled_default"
+CONF_NON_PERSISTENT_DPS = "non_persistent_dps"
+
+
+def get_non_persistent_dps(config):
+    """Return validated catalog-provided DPS that must not remain cached."""
+    configured = config.get(CONF_NON_PERSISTENT_DPS)
+    if not isinstance(configured, list) or not configured:
+        return set()
+    result = set()
+    for raw_dp in configured:
+        if isinstance(raw_dp, bool):
+            continue
+        try:
+            dp_id = int(raw_dp)
+        except (TypeError, ValueError):
+            continue
+        if 0 < dp_id <= 65535:
+            result.add(dp_id)
+        if len(result) >= MAX_NON_PERSISTENT_DPS:
+            break
+    return result
+
+
+def prune_missing_non_persistent_dps(cached_status, incoming_status, dp_ids):
+    """Drop transient DPS that were not present in the latest device update."""
+    if not isinstance(cached_status, dict) or not isinstance(incoming_status, dict):
+        return
+    incoming_keys = {str(key) for key in incoming_status}
+    for dp_id in dp_ids:
+        key = str(dp_id)
+        if key not in incoming_keys:
+            cached_status.pop(key, None)
+            cached_status.pop(dp_id, None)
 
 
 def get_extra_state_attribute_dps(config):
@@ -133,6 +168,7 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self._disconnect_task = None
         self._unsub_interval = None
         self._entities = []
+        self._non_persistent_dps = set()
         self._local_key = self._dev_config_entry[CONF_LOCAL_KEY]
         self._default_reset_dpids = None
         if CONF_RESET_DPIDS in self._dev_config_entry:
@@ -140,6 +176,7 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self.set_logger(_LOGGER, self._dev_config_entry[CONF_DEVICE_ID])
         for entity in self._dev_config_entry[CONF_ENTITIES]:
             self.dps_to_request[entity[CONF_ID]] = None
+            self._non_persistent_dps.update(get_non_persistent_dps(entity))
             for dp_id in advanced_mapping_dp_references(entity.get(CONF_ADVANCED_MAPPING)):
                 self.dps_to_request[dp_id] = None
             for dp_id in advanced_mapping_by_dp_references(entity.get(CONF_ADVANCED_MAPPING_BY_DP)):
@@ -346,6 +383,9 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
 
     @callback
     def status_updated(self, status):
+        prune_missing_non_persistent_dps(
+            self._status, status, self._non_persistent_dps
+        )
         self._status.update(status)
         self._dispatch_status()
 
@@ -388,6 +428,9 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         self._device = device
         self._dev_config_entry = config_entry
         self._config = get_entity_config(config_entry, dp_id)
+        enabled_default = self._config.get(CONF_ENTITY_REGISTRY_ENABLED_DEFAULT)
+        if isinstance(enabled_default, bool):
+            self._attr_entity_registry_enabled_default = enabled_default
         self._dp_id = dp_id
         self._status = {}
         self._state = None
