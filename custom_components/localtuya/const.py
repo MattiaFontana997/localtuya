@@ -97,6 +97,12 @@ CONF_MUSIC_MODE = "music_mode"
 CONF_SCENE_VALUES = "scene_values"
 
 # switch
+CONF_SWITCH_ON_VALUE = "switch_on_value"
+CONF_SWITCH_OFF_VALUE = "switch_off_value"
+CONF_SWITCH_ICON_ON = "switch_icon_on"
+CONF_SWITCH_ICON_OFF = "switch_icon_off"
+CONF_SWITCH_MASK = "switch_mask"
+CONF_SWITCH_MASK_ENDIANNESS = "switch_mask_endianness"
 CONF_CURRENT = "current"
 CONF_CURRENT_CONSUMPTION = "current_consumption"
 CONF_VOLTAGE = "voltage"

@@ -28,6 +28,12 @@ from .const import (
     CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS,
     CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS,
     CONF_SENSOR_UNIX_TIMESTAMP,
+    CONF_SWITCH_ICON_OFF,
+    CONF_SWITCH_ICON_ON,
+    CONF_SWITCH_MASK,
+    CONF_SWITCH_MASK_ENDIANNESS,
+    CONF_SWITCH_OFF_VALUE,
+    CONF_SWITCH_ON_VALUE,
     PLATFORMS,
 )
 
@@ -311,6 +317,41 @@ def _validate_entity(entity):
             )
         ):
             return None
+    switch_mask = config.get(CONF_SWITCH_MASK)
+    switch_special_keys = {
+        CONF_SWITCH_ON_VALUE, CONF_SWITCH_OFF_VALUE, CONF_SWITCH_ICON_ON,
+        CONF_SWITCH_ICON_OFF, CONF_SWITCH_MASK, CONF_SWITCH_MASK_ENDIANNESS,
+    }
+    if any(key in config for key in switch_special_keys):
+        if platform != "switch":
+            return None
+        has_values = CONF_SWITCH_ON_VALUE in config or CONF_SWITCH_OFF_VALUE in config
+        if has_values:
+            if CONF_SWITCH_ON_VALUE not in config or CONF_SWITCH_OFF_VALUE not in config or switch_mask is not None:
+                return None
+            on_value, off_value = config[CONF_SWITCH_ON_VALUE], config[CONF_SWITCH_OFF_VALUE]
+            if not isinstance(on_value, (str, int, bool)) or not isinstance(off_value, (str, int, bool)):
+                return None
+            if on_value == off_value and type(on_value) is type(off_value):
+                return None
+        if switch_mask is not None:
+            if not isinstance(switch_mask, str) or not switch_mask or len(switch_mask) % 2 or len(switch_mask) > 32:
+                return None
+            try:
+                mask_value = int(switch_mask, 16)
+            except ValueError:
+                return None
+            if mask_value <= 0 or mask_value & (mask_value - 1):
+                return None
+            if config.get(CONF_SWITCH_MASK_ENDIANNESS, "big") not in {"big", "little"}:
+                return None
+        elif CONF_SWITCH_MASK_ENDIANNESS in config:
+            return None
+        for key in (CONF_SWITCH_ICON_ON, CONF_SWITCH_ICON_OFF):
+            value = config.get(key)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                return None
+
     enabled_default = config.get("entity_registry_enabled_default")
     if enabled_default is not None and not isinstance(enabled_default, bool):
         return None
