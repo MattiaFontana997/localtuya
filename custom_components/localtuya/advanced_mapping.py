@@ -6,7 +6,9 @@ from numbers import Number
 from typing import Any
 
 CONF_ADVANCED_MAPPING = "advanced_mapping"
+CONF_ADVANCED_MAPPING_BY_DP = "advanced_mapping_by_dp"
 _MAX_RULES = 64
+_MAX_MAPPING_DPS = 32
 _MAX_CONDITIONS = 16
 _RULE_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "constraint_dp", "conditions", "value_redirect_dp", "hidden", "invalid", "default"}
 _CONDITION_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "value_redirect_dp", "hidden", "invalid"}
@@ -100,6 +102,50 @@ def validate_advanced_mapping(value: Any) -> list[dict[str, Any]] | None:
             return None
         result.append(rule)
     return result
+
+
+def validate_advanced_mapping_by_dp(value: Any) -> dict[str, list[dict[str, Any]]] | None:
+    """Validate a bounded DP -> declarative mapping table."""
+    if not isinstance(value, dict) or not value or len(value) > _MAX_MAPPING_DPS:
+        return None
+    result: dict[str, list[dict[str, Any]]] = {}
+    for raw_dp, raw_rules in value.items():
+        dp_id = _normalize_dp(raw_dp)
+        rules = validate_advanced_mapping(raw_rules)
+        key = str(dp_id) if dp_id is not None else None
+        if key is None or rules is None or key in result:
+            return None
+        result[key] = rules
+    return result
+
+
+def advanced_mapping_by_dp_references(value: Any) -> set[int]:
+    """Return both mapped DPS and cross-DP references from a mapping table."""
+    mappings = validate_advanced_mapping_by_dp(value)
+    if mappings is None:
+        return set()
+    result = {int(dp_id) for dp_id in mappings}
+    for rules in mappings.values():
+        result.update(advanced_mapping_dp_references(rules))
+    return result
+
+
+def prune_advanced_mapping_by_dp(
+    value: Any, optional_dps: set[int], available_dps: set[int]
+) -> dict[str, list[dict[str, Any]]] | None:
+    """Prune mappings whose mapped or referenced optional DPS are absent."""
+    mappings = validate_advanced_mapping_by_dp(value)
+    if mappings is None:
+        return None
+    result: dict[str, list[dict[str, Any]]] = {}
+    for raw_dp, rules in mappings.items():
+        dp_id = int(raw_dp)
+        if dp_id in optional_dps and dp_id not in available_dps:
+            continue
+        pruned = prune_advanced_mapping(rules, optional_dps, available_dps)
+        if pruned is not None:
+            result[raw_dp] = pruned
+    return result or None
 
 
 def advanced_mapping_dp_references(value: Any) -> set[int]:

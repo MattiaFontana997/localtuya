@@ -624,14 +624,20 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             states[high_dp] = round(float(high) / self._target_high_precision)
 
         if states:
-            await self._device.set_dps(states)
+            if any(self.has_advanced_mapping(dp) for dp in states):
+                await self.set_mapped_dps(states)
+            else:
+                await self._device.set_dps(states)
 
     async def async_set_humidity(self, humidity: int) -> None:
         dp = self._config.get(CONF_TARGET_HUMIDITY_DP)
         if dp is None:
             return
-        raw = round(float(humidity) / self._target_humidity_precision)
-        await self._device.set_dp(raw, dp)
+        if self.has_advanced_mapping(dp):
+            await self.set_mapped_dp(humidity, dp)
+        else:
+            raw = round(float(humidity) / self._target_humidity_precision)
+            await self._device.set_dp(raw, dp)
 
     async def async_set_fan_mode(self, fan_mode):
         """Set a new fan mode."""
@@ -643,18 +649,21 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             self.warning("Unsupported fan mode %r", fan_mode)
             return
 
-        await self._device.set_dp(
-            self._conf_hvac_fan_mode_set[fan_mode],
-            self._conf_hvac_fan_mode_dp,
-        )
+        raw = self._conf_hvac_fan_mode_set[fan_mode]
+        if self.has_advanced_mapping(self._conf_hvac_fan_mode_dp):
+            await self.set_mapped_dp(raw, self._conf_hvac_fan_mode_dp)
+        else:
+            await self._device.set_dp(raw, self._conf_hvac_fan_mode_dp)
 
     async def async_set_hvac_mode(self, hvac_mode):
         """Set a new HVAC mode."""
         if hvac_mode == HVACMode.OFF:
             if self._conf_hvac_mode_dp is not None and HVACMode.OFF in self._conf_hvac_mode_set:
-                await self._device.set_dp(
-                    self._conf_hvac_mode_set[HVACMode.OFF], self._conf_hvac_mode_dp
-                )
+                raw = self._conf_hvac_mode_set[HVACMode.OFF]
+                if self.has_advanced_mapping(self._conf_hvac_mode_dp):
+                    await self.set_mapped_dp(raw, self._conf_hvac_mode_dp)
+                else:
+                    await self._device.set_dp(raw, self._conf_hvac_mode_dp)
             else:
                 await self._device.set_dp(False, self._dp_id)
             return
@@ -676,10 +685,11 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             # Some thermostats need a small pause after power-on.
             await asyncio.sleep(MODE_WAIT)
 
-        await self._device.set_dp(
-            self._conf_hvac_mode_set[hvac_mode],
-            self._conf_hvac_mode_dp,
-        )
+        raw = self._conf_hvac_mode_set[hvac_mode]
+        if self.has_advanced_mapping(self._conf_hvac_mode_dp):
+            await self.set_mapped_dp(raw, self._conf_hvac_mode_dp)
+        else:
+            await self._device.set_dp(raw, self._conf_hvac_mode_dp)
 
     async def async_set_swing_mode(self, swing_mode):
         """Set a new swing mode."""
@@ -691,10 +701,11 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             self.warning("Unsupported swing mode %r", swing_mode)
             return
 
-        await self._device.set_dp(
-            self._conf_hvac_swing_mode_set[swing_mode],
-            self._conf_hvac_swing_mode_dp,
-        )
+        raw = self._conf_hvac_swing_mode_set[swing_mode]
+        if self.has_advanced_mapping(self._conf_hvac_swing_mode_dp):
+            await self.set_mapped_dp(raw, self._conf_hvac_swing_mode_dp)
+        else:
+            await self._device.set_dp(raw, self._conf_hvac_swing_mode_dp)
 
     async def async_set_swing_horizontal_mode(self, swing_mode):
         if self._conf_hvac_swing_horizontal_mode_dp is None:
@@ -702,10 +713,11 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
         if swing_mode not in self._conf_hvac_swing_horizontal_mode_set:
             self.warning("Unsupported horizontal swing mode %r", swing_mode)
             return
-        await self._device.set_dp(
-            self._conf_hvac_swing_horizontal_mode_set[swing_mode],
-            self._conf_hvac_swing_horizontal_mode_dp,
-        )
+        raw = self._conf_hvac_swing_horizontal_mode_set[swing_mode]
+        if self.has_advanced_mapping(self._conf_hvac_swing_horizontal_mode_dp):
+            await self.set_mapped_dp(raw, self._conf_hvac_swing_horizontal_mode_dp)
+        else:
+            await self._device.set_dp(raw, self._conf_hvac_swing_horizontal_mode_dp)
 
     async def async_turn_on(self) -> None:
         """Turn the entity on without losing an enum HVAC mode."""
@@ -727,10 +739,10 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
     async def async_set_preset_mode(self, preset_mode):
         """Set a new preset mode."""
         if preset_mode == PRESET_ECO and self._conf_eco_dp is not None:
-            await self._device.set_dp(
-                self._conf_eco_value,
-                self._conf_eco_dp,
-            )
+            if self.has_advanced_mapping(self._conf_eco_dp):
+                await self.set_mapped_dp(self._conf_eco_value, self._conf_eco_dp)
+            else:
+                await self._device.set_dp(self._conf_eco_value, self._conf_eco_dp)
             return
 
         if (
@@ -740,10 +752,11 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             self.warning("Unsupported preset mode %r", preset_mode)
             return
 
-        await self._device.set_dp(
-            self._conf_preset_set[preset_mode],
-            self._conf_preset_dp,
-        )
+        raw = self._conf_preset_set[preset_mode]
+        if self.has_advanced_mapping(self._conf_preset_dp):
+            await self.set_mapped_dp(raw, self._conf_preset_dp)
+        else:
+            await self._device.set_dp(raw, self._conf_preset_dp)
 
     @property
     def min_temp(self):

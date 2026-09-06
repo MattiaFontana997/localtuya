@@ -3,11 +3,14 @@
 import unittest
 
 from custom_components.localtuya.advanced_mapping import (
+    advanced_mapping_by_dp_references,
     advanced_mapping_dp_references,
     map_value_from_dps,
     map_value_to_dps,
     prune_advanced_mapping,
+    prune_advanced_mapping_by_dp,
     validate_advanced_mapping,
+    validate_advanced_mapping_by_dp,
 )
 
 
@@ -83,6 +86,29 @@ class AdvancedMappingTests(unittest.TestCase):
     def test_executable_or_unknown_keys_are_rejected(self):
         self.assertIsNone(validate_advanced_mapping([{"template": "{{ evil }}"}]))
         self.assertIsNone(validate_advanced_mapping([{"value_redirect_dp": "not-a-dp"}]))
+
+    def test_per_dp_mapping_tracks_mapped_and_cross_dp_references(self):
+        mappings = validate_advanced_mapping_by_dp({
+            "1": [{
+                "dps_val": True,
+                "constraint_dp": 4,
+                "conditions": [
+                    {"dps_val": "manual", "value": "heat"},
+                    {"dps_val": "auto", "value": "auto"},
+                ],
+            }],
+            "16": [{"constraint_dp": 23, "conditions": [{"dps_val": "f", "value_redirect_dp": 17}]}],
+        })
+        self.assertIsNotNone(mappings)
+        self.assertEqual(advanced_mapping_by_dp_references(mappings), {1, 4, 16, 17, 23})
+
+    def test_per_dp_mapping_prunes_missing_optional_redirect(self):
+        mappings = {"16": [{"constraint_dp": 23, "conditions": [{"dps_val": "f", "value_redirect_dp": 17}]}]}
+        self.assertIsNotNone(prune_advanced_mapping_by_dp(mappings, {17}, {16, 23}))
+        self.assertIsNotNone(prune_advanced_mapping_by_dp(mappings, {17}, {16, 17, 23}))
+
+    def test_per_dp_mapping_rejects_invalid_dp_keys(self):
+        self.assertIsNone(validate_advanced_mapping_by_dp({"not-a-dp": [{"scale": 10}]}))
 
 
 if __name__ == "__main__":

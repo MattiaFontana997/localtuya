@@ -262,6 +262,34 @@ class TestDeviceCatalog(unittest.TestCase):
         )
 
 
+    def test_per_dp_advanced_mapping_requires_all_declared_dps(self):
+        payload = {
+            "schema_version": 3,
+            "mappings": [{
+                "id": "advanced-by-dp",
+                "match": {
+                    "product_ids": [],
+                    "required_dps": [1, 4],
+                    "optional_dps": [],
+                    "fingerprint": {"mode": "exact_dps"},
+                },
+                "confidence": "experimental",
+                "entities": [{
+                    "platform": "climate",
+                    "config": {
+                        "id": 1,
+                        "platform": "climate",
+                        "advanced_mapping_by_dp": {
+                            "1": [{"dps_val": True, "constraint_dp": 4, "conditions": [{"dps_val": "manual", "value": "heat"}]}]
+                        },
+                    },
+                }],
+            }],
+        }
+        self.assertEqual(len(validate_catalog(payload)["mappings"]), 1)
+        payload["mappings"][0]["match"]["required_dps"] = [1]
+        self.assertEqual(validate_catalog(payload)["mappings"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

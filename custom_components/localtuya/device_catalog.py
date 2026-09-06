@@ -15,9 +15,13 @@ from homeassistant.helpers.storage import Store
 
 from .advanced_mapping import (
     CONF_ADVANCED_MAPPING,
+    CONF_ADVANCED_MAPPING_BY_DP,
+    advanced_mapping_by_dp_references,
     advanced_mapping_dp_references,
     prune_advanced_mapping,
+    prune_advanced_mapping_by_dp,
     validate_advanced_mapping,
+    validate_advanced_mapping_by_dp,
 )
 from .const import CONF_EXTRA_STATE_ATTRIBUTES_DPS, PLATFORMS
 
@@ -138,6 +142,7 @@ def _config_dp_references(config):
         if 0 < dp_id <= MAX_DP_ID:
             result.add(dp_id)
     result.update(advanced_mapping_dp_references(config.get(CONF_ADVANCED_MAPPING)))
+    result.update(advanced_mapping_by_dp_references(config.get(CONF_ADVANCED_MAPPING_BY_DP)))
     return result
 
 
@@ -210,6 +215,11 @@ def _validate_entity(entity):
         if advanced is None:
             return None
         config[CONF_ADVANCED_MAPPING] = advanced
+    if CONF_ADVANCED_MAPPING_BY_DP in config:
+        advanced_by_dp = validate_advanced_mapping_by_dp(config[CONF_ADVANCED_MAPPING_BY_DP])
+        if advanced_by_dp is None:
+            return None
+        config[CONF_ADVANCED_MAPPING_BY_DP] = advanced_by_dp
     raw_overrides = entity.get("override_keys", [])
     if not isinstance(raw_overrides, list):
         return None
@@ -377,6 +387,15 @@ def _adapt_entity_for_available_dps(entity, optional_dps, available_dps):
             removed.add(CONF_ADVANCED_MAPPING)
         else:
             config[CONF_ADVANCED_MAPPING] = advanced
+    if CONF_ADVANCED_MAPPING_BY_DP in config:
+        advanced_by_dp = prune_advanced_mapping_by_dp(
+            config[CONF_ADVANCED_MAPPING_BY_DP], optional_dps, available_dps
+        )
+        if advanced_by_dp is None:
+            config.pop(CONF_ADVANCED_MAPPING_BY_DP, None)
+            removed.add(CONF_ADVANCED_MAPPING_BY_DP)
+        else:
+            config[CONF_ADVANCED_MAPPING_BY_DP] = advanced_by_dp
     for key, value in list(config.items()):
         if key in {"id", "platform"} or not _is_dp_reference_key(str(key)) or isinstance(value, bool):
             continue
