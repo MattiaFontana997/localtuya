@@ -629,7 +629,10 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         if not rules:
             await self._device.set_dp(state, dp_index)
             return
-        states = map_value_to_dps(state, rules, self._status, int(dp_index))
+        states = map_value_to_dps(
+            state, rules, self._status, int(dp_index),
+            getattr(self, "_advanced_mapping_by_dp", {}),
+        )
         if len(states) == 1:
             target_dp, raw_value = next(iter(states.items()))
             await self._device.set_dp(raw_value, target_dp)
@@ -642,7 +645,13 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         for raw_dp, state in states.items():
             dp_id = int(raw_dp)
             rules = self._mapping_for_dp(dp_id)
-            mapped = map_value_to_dps(state, rules, self._status, dp_id) if rules else {dp_id: state}
+            mapped = (
+                map_value_to_dps(
+                    state, rules, self._status, dp_id,
+                    getattr(self, "_advanced_mapping_by_dp", {}),
+                )
+                if rules else {dp_id: state}
+            )
             for target_dp, raw_value in mapped.items():
                 target_dp = int(target_dp)
                 if target_dp in writes and writes[target_dp] != raw_value:

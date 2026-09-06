@@ -251,6 +251,23 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
             raw_values.append(raw)
         return result
 
+    def _refresh_speed_count(self) -> None:
+        """Refresh speed count from active declarative step metadata."""
+        if not self.has_config(CONF_FAN_SPEED_CONTROL):
+            return
+        if self._speed_mapping:
+            self._attr_speed_count = len(self._speed_mapping["rules"])
+            return
+        if self._use_ordered_list:
+            self._attr_speed_count = len(self._ordered_list)
+            return
+        metadata = self.mapped_numeric_metadata(self._config[CONF_FAN_SPEED_CONTROL])
+        step = metadata.get("step")
+        if isinstance(step, (int, float)) and not isinstance(step, bool) and step > 0:
+            self._attr_speed_count = max(1, int(round(float(self._speed_range[1]) / float(step))))
+            return
+        self._attr_speed_count = int_states_in_range(self._speed_range)
+
     @property
     def is_on(self) -> bool | None:
         """Return whether the Tuya fan is on."""
@@ -341,7 +358,10 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
             else:
                 states[self._config[CONF_FAN_PRESET_DP]] = raw_preset
 
-        await self._device.set_dps(states)
+        if any(self.has_advanced_mapping(dp) for dp in states):
+            await self.set_mapped_dps(states)
+        else:
+            await self._device.set_dps(states)
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn off the fan."""
@@ -376,7 +396,10 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
         if self.is_on is not True:
             states[self._dp_id] = True
 
-        await self._device.set_dps(states)
+        if any(self.has_advanced_mapping(dp) for dp in states):
+            await self.set_mapped_dps(states)
+        else:
+            await self._device.set_dps(states)
 
     async def async_oscillate(
         self,
@@ -454,6 +477,7 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
             self._attr_percentage = self._raw_to_percentage(
                 self.dps_conf(CONF_FAN_SPEED_CONTROL)
             )
+            self._refresh_speed_count()
         else:
             self._attr_percentage = None
 

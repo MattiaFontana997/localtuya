@@ -262,22 +262,24 @@ def _transform_numeric(value: Any, rule: dict[str, Any], *, reverse: bool) -> An
     source_range = rule.get("range")
     target_range = rule.get("target_range")
     if reverse:
-        if target_range and source_range:
-            result = source_range["min"] + ((result - target_range["min"]) * (source_range["max"] - source_range["min"]) / (target_range["max"] - target_range["min"]))
+        # Tuya Local write order is scale -> target_range -> invert -> step.
         if "scale" in rule:
             result *= float(rule["scale"])
+        if target_range and source_range:
+            result = source_range["min"] + ((result - target_range["min"]) * (source_range["max"] - source_range["min"]) / (target_range["max"] - target_range["min"]))
         if rule.get("invert") and source_range:
             result = source_range["min"] + source_range["max"] - result
         if "step" in rule:
             step = float(rule["step"])
             result = step * round(result / step)
     else:
+        # Tuya Local read order is invert -> target_range -> scale.
         if rule.get("invert") and source_range:
             result = source_range["min"] + source_range["max"] - result
-        if "scale" in rule:
-            result /= float(rule["scale"])
         if target_range and source_range:
             result = target_range["min"] + ((result - source_range["min"]) * (target_range["max"] - target_range["min"]) / (source_range["max"] - source_range["min"]))
+        if "scale" in rule:
+            result /= float(rule["scale"])
     return int(result) if result.is_integer() else result
 
 
@@ -321,7 +323,14 @@ def map_value_from_dps(raw: Any, rules: list[dict[str, Any]], status: dict[str, 
     return value, effective.get("value_redirect_dp")
 
 
-def map_value_to_dps(value: Any, rules: list[dict[str, Any]], status: dict[str, Any], primary_dp: int) -> dict[int, Any]:
+def map_value_to_dps(
+    value: Any,
+    rules: list[dict[str, Any]],
+    status: dict[str, Any],
+    primary_dp: int,
+    mapping_by_dp: dict[str, list[dict[str, Any]]] | None = None,
+    _seen: set[int] | None = None,
+) -> dict[int, Any]:
     rule = _find_rule_for_value(rules, value)
     if rule is None:
         return {primary_dp: value}
@@ -331,6 +340,29 @@ def map_value_to_dps(value: Any, rules: list[dict[str, Any]], status: dict[str, 
         effective.update({key: item for key, item in active.items() if key != "dps_val"})
     if effective.get("invalid", False):
         raise ValueError("Value is invalid for the active advanced mapping")
+
+    redirect_dp = effective.get("value_redirect_dp")
+    if redirect_dp is not None:
+        target_dp = int(redirect_dp)
+        seen = set() if _seen is None else set(_seen)
+        if target_dp == int(primary_dp) or target_dp in seen:
+            raise ValueError("Advanced mapping redirect cycle")
+        target_rules = (
+            mapping_by_dp.get(str(target_dp))
+            if isinstance(mapping_by_dp, dict)
+            else None
+        )
+        if target_rules:
+            return map_value_to_dps(
+                value,
+                target_rules,
+                status,
+                target_dp,
+                mapping_by_dp,
+                seen | {int(primary_dp)},
+            )
+        return {target_dp: value}
+
     result = _transform_numeric(effective.get("dps_val", value), effective, reverse=True)
     active_range = effective.get("range")
     if active_range is not None and isinstance(result, (int, float)) and not isinstance(result, bool):
@@ -338,8 +370,7 @@ def map_value_to_dps(value: Any, rules: list[dict[str, Any]], status: dict[str, 
         maximum = float(active_range["max"])
         if float(result) < minimum or float(result) > maximum:
             raise ValueError("Value is outside the active advanced mapping range")
-    target_dp = int(effective.get("value_redirect_dp", primary_dp))
-    writes = {target_dp: result}
+    writes = {int(primary_dp): result}
     constraint_dp = rule.get("constraint_dp")
     if constraint_dp is not None:
         for condition in rule.get("conditions", []):

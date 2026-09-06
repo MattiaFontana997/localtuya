@@ -63,6 +63,31 @@ class AdvancedMappingV2Tests(unittest.TestCase):
         self.assertEqual(map_value_from_dps(235, rules, {"111": "0"}), (23.5, None))
         self.assertEqual(map_value_from_dps(235, rules, {"111": "1"}), (235, 106))
 
+    def test_transform_order_matches_tuya_local(self):
+        rules = [{
+            "range": {"min": 10, "max": 110},
+            "target_range": {"min": 100, "max": 200},
+            "invert": True,
+            "scale": 2,
+        }]
+        self.assertEqual(map_value_from_dps(30, rules, {})[0], 90)
+        self.assertEqual(map_value_to_dps(90, rules, {}, 7), {7: 30})
+
+    def test_recursive_redirect_write_maps_target(self):
+        mappings = {
+            "2": [{"value_redirect_dp": 3}],
+            "3": [{"scale": 10, "step": 5}],
+        }
+        self.assertEqual(map_value_to_dps(21.2, mappings["2"], {}, 2, mappings), {3: 210})
+
+    def test_recursive_redirect_cycle_fails_closed(self):
+        mappings = {
+            "2": [{"value_redirect_dp": 3}],
+            "3": [{"value_redirect_dp": 2}],
+        }
+        with self.assertRaises(ValueError):
+            map_value_to_dps(20, mappings["2"], {}, 2, mappings)
+
 
 if __name__ == "__main__":
     unittest.main()
