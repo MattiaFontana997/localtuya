@@ -1,0 +1,97 @@
+name: Patch light switch values
+
+on:
+  push:
+    paths:
+      - .github/workflows/patch-light-switch-values.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Patch runtime and tests
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          cp = Path('custom_components/localtuya/const.py')
+          c = cp.read_text()
+          anchor = 'CONF_BRIGHTNESS_NULL_VALUE = "brightness_null_value"\n'
+          addition = 'CONF_LIGHT_ON_VALUE = "light_on_value"\nCONF_LIGHT_OFF_VALUE = "light_off_value"\nCONF_LIGHT_NULL_VALUE = "light_null_value"\n'
+          if anchor not in c:
+              raise SystemExit('const anchor missing')
+          c = c.replace(anchor, anchor + addition, 1)
+          cp.write_text(c)
+
+          p = Path('custom_components/localtuya/light.py')
+          s = p.read_text()
+          old = '''    CONF_EFFECT_VALUES,\n    CONF_MUSIC_MODE,\n'''
+          new = '''    CONF_EFFECT_VALUES,\n    CONF_LIGHT_OFF_VALUE,\n    CONF_LIGHT_ON_VALUE,\n    CONF_LIGHT_NULL_VALUE,\n    CONF_MUSIC_MODE,\n'''
+          if old not in s:
+              raise SystemExit('import anchor missing')
+          s = s.replace(old, new, 1)
+
+          anchor = '''def flow_schema(dps):\n'''
+          helper = '''def _light_power_scalar(value):\n    """Validate an exact scalar light power value without coercion."""\n    if isinstance(value, (bool, str)):\n        return value\n    if isinstance(value, int) and not isinstance(value, bool):\n        return value\n    raise vol.Invalid("light power value must be bool, int or str")\n\n\ndef _same_raw_value(value, expected) -> bool:\n    """Compare Tuya raw values without Python bool/int equality leakage."""\n    return type(value) is type(expected) and value == expected\n\n\n'''
+          if anchor not in s:
+              raise SystemExit('flow anchor missing')
+          s = s.replace(anchor, helper + anchor, 1)
+
+          old = '''        vol.Optional(CONF_COLOR_TEMP): vol.In(dps),\n'''
+          new = '''        vol.Optional(CONF_COLOR_TEMP): vol.In(dps),\n        vol.Optional(CONF_LIGHT_ON_VALUE): _light_power_scalar,\n        vol.Optional(CONF_LIGHT_OFF_VALUE): _light_power_scalar,\n        vol.Optional(CONF_LIGHT_NULL_VALUE): bool,\n'''
+          if old not in s:
+              raise SystemExit('schema anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''        self._attr_effect = None\n\n        self._lower_brightness = int(\n'''
+          new = '''        self._attr_effect = None\n\n        self._power_on_value = self._config.get(CONF_LIGHT_ON_VALUE, True)\n        self._power_off_value = self._config.get(CONF_LIGHT_OFF_VALUE, False)\n\n        self._lower_brightness = int(\n'''
+          if old not in s:
+              raise SystemExit('init anchor missing')
+          s = s.replace(old, new, 1)
+
+          anchor = '''    async def async_turn_on(self, **kwargs):\n'''
+          helper = '''    def _power_state_from_raw(self, raw_power):\n        """Translate an exact raw Tuya power value to HA state."""\n        config = getattr(self, "_config", {})\n        if raw_power is None and isinstance(config, dict) and CONF_LIGHT_NULL_VALUE in config:\n            return bool(config[CONF_LIGHT_NULL_VALUE])\n\n        custom_values = (\n            isinstance(config, dict)\n            and (CONF_LIGHT_ON_VALUE in config or CONF_LIGHT_OFF_VALUE in config)\n        )\n        on_value = getattr(self, "_power_on_value", True)\n        off_value = getattr(self, "_power_off_value", False)\n\n        if _same_raw_value(raw_power, on_value):\n            return True\n        if _same_raw_value(raw_power, off_value):\n            return False\n\n        # Preserve historical LocalTuya bool/0/1 reads when no exact mapping\n        # was configured. Custom raw values stay strictly type-aware.\n        if not custom_values:\n            if isinstance(raw_power, bool):\n                return raw_power\n            if isinstance(raw_power, int) and not isinstance(raw_power, bool) and raw_power in (0, 1):\n                return bool(raw_power)\n\n        return None\n\n'''
+          if anchor not in s:
+              raise SystemExit('turn on anchor missing')
+          s = s.replace(anchor, helper + anchor, 1)
+
+          s = s.replace('            states[self._dp_id] = True\n', '            states[self._dp_id] = getattr(self, "_power_on_value", True)\n', 1)
+          s = s.replace('        await self._device.set_dp(False, self._dp_id)\n', '        await self._device.set_dp(getattr(self, "_power_off_value", False), self._dp_id)\n', 1)
+
+          old = '''        raw_power = self._state\n\n        if isinstance(raw_power, bool):\n            self._attr_is_on = raw_power\n        elif raw_power in (0, 1):\n            self._attr_is_on = bool(raw_power)\n        else:\n            self._attr_is_on = None\n'''
+          new = '''        raw_power = self._state\n        self._attr_is_on = self._power_state_from_raw(raw_power)\n'''
+          if old not in s:
+              raise SystemExit('status anchor missing')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          tp = Path('tests/test_light_switch_values.py')
+          tp.write_text('''"""Regression tests for exact Tuya light power mappings."""\n\nfrom __future__ import annotations\n\nimport unittest\n\nfrom custom_components.localtuya.light import LocaltuyaLight\n\n\nclass LightSwitchValueTests(unittest.TestCase):\n    @staticmethod\n    def _light(config=None):\n        light = object.__new__(LocaltuyaLight)\n        light._config = config or {}\n        light._power_on_value = light._config.get("light_on_value", True)\n        light._power_off_value = light._config.get("light_off_value", False)\n        return light\n\n    def test_default_bool_and_integer_reads_remain_compatible(self):\n        light = self._light()\n        self.assertIs(light._power_state_from_raw(True), True)\n        self.assertIs(light._power_state_from_raw(False), False)\n        self.assertIs(light._power_state_from_raw(1), True)\n        self.assertIs(light._power_state_from_raw(0), False)\n\n    def test_inverted_boolean_values_are_exact(self):\n        light = self._light({"light_on_value": False, "light_off_value": True})\n        self.assertIs(light._power_state_from_raw(False), True)\n        self.assertIs(light._power_state_from_raw(True), False)\n\n    def test_string_values_are_exact_and_case_sensitive(self):\n        light = self._light({"light_on_value": "normal", "light_off_value": "slient"})\n        self.assertIs(light._power_state_from_raw("normal"), True)\n        self.assertIs(light._power_state_from_raw("slient"), False)\n        self.assertIsNone(light._power_state_from_raw("Normal"))\n        self.assertIsNone(light._power_state_from_raw(True))\n\n    def test_null_read_fallback_does_not_change_write_values(self):\n        light = self._light({"light_null_value": False})\n        self.assertIs(light._power_state_from_raw(None), False)\n        self.assertIs(light._power_on_value, True)\n        self.assertIs(light._power_off_value, False)\n\n    def test_custom_integer_mapping_is_type_strict(self):\n        light = self._light({"light_on_value": 1, "light_off_value": 0})\n        self.assertIs(light._power_state_from_raw(1), True)\n        self.assertIs(light._power_state_from_raw(0), False)\n        self.assertIsNone(light._power_state_from_raw(True))\n        self.assertIsNone(light._power_state_from_raw(False))\n\n\nif __name__ == "__main__":\n    unittest.main()\n''')
+          PY
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_test.txt
+      - name: Run targeted tests
+        run: |
+          python -m unittest tests.test_light_switch_values tests.test_light_scene_values tests.test_light_brightness_null_fallback -v
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/const.py custom_components/localtuya/light.py tests/test_light_switch_values.py
+          git diff --cached --check
+          git commit -m "Support exact light power values"
+          git push origin HEAD:develop
