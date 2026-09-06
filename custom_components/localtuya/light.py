@@ -785,7 +785,8 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
     def _color_saturation_upper(self, *, extended: bool) -> int:
         """Return the raw saturation maximum for the active color payload."""
-        configured = self._config.get(CONF_COLOR_SATURATION_UPPER)
+        config = getattr(self, "_config", {})
+        configured = config.get(CONF_COLOR_SATURATION_UPPER) if isinstance(config, dict) else None
         if isinstance(configured, bool):
             configured = None
         if configured is not None:
@@ -796,6 +797,14 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             if value > 0:
                 return value
         return 255 if extended else 1000
+
+    def _color_brightness_range_configured(self) -> bool:
+        """Return whether an explicit HSV brightness range is configured."""
+        config = getattr(self, "_config", {})
+        return isinstance(config, dict) and (
+            CONF_COLOR_BRIGHTNESS_LOWER in config
+            or CONF_COLOR_BRIGHTNESS_UPPER in config
+        )
 
     def _raw_brightness_to_ha(self, value) -> int | None:
         """Convert a Tuya brightness value to HA's 0..255 range."""
@@ -999,10 +1008,7 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                     ),
                 )
 
-                if (
-                    CONF_COLOR_BRIGHTNESS_LOWER in self._config
-                    or CONF_COLOR_BRIGHTNESS_UPPER in self._config
-                ):
+                if self._color_brightness_range_configured():
                     brightness = self._raw_color_brightness_to_ha(value)
                 else:
                     brightness = min(max(value, 0), 255)
@@ -1051,10 +1057,7 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
             saturation_upper = self._color_saturation_upper(extended=True)
             raw_saturation = round(saturation * saturation_upper / 100.0)
-            if (
-                CONF_COLOR_BRIGHTNESS_LOWER in self._config
-                or CONF_COLOR_BRIGHTNESS_UPPER in self._config
-            ):
+            if self._color_brightness_range_configured():
                 raw_brightness = self._ha_brightness_to_raw_color(brightness)
             else:
                 raw_brightness = brightness
