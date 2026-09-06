@@ -260,6 +260,32 @@ def _transform_numeric(value: Any, rule: dict[str, Any], *, reverse: bool) -> An
     return int(result) if result.is_integer() else result
 
 
+def effective_mapping_metadata(
+    raw: Any, rules: list[dict[str, Any]], status: dict[str, Any]
+) -> dict[str, Any]:
+    """Return bounded numeric metadata for the currently active mapping."""
+    rule = _find_rule_for_raw(rules, raw)
+    if rule is None:
+        return {}
+    active = _active_condition(rule, status)
+    effective = dict(rule)
+    if active:
+        effective.update({key: value for key, value in active.items() if key != "dps_val"})
+    return {
+        key: effective[key]
+        for key in ("range", "target_range", "step", "scale")
+        if key in effective
+    }
+
+
+def _condition_for_requested_value(rule: dict[str, Any], value: Any) -> dict[str, Any] | None:
+    """Match Tuya Local's write-time condition selection semantics."""
+    for condition in rule.get("conditions", []):
+        if "value" in condition and _matches(condition["value"], value):
+            return condition
+    return None
+
+
 def map_value_from_dps(raw: Any, rules: list[dict[str, Any]], status: dict[str, Any]) -> tuple[Any, int | None]:
     rule = _find_rule_for_raw(rules, raw)
     if rule is None:
@@ -278,13 +304,19 @@ def map_value_to_dps(value: Any, rules: list[dict[str, Any]], status: dict[str, 
     rule = _find_rule_for_value(rules, value)
     if rule is None:
         return {primary_dp: value}
-    active = _active_condition(rule, status)
+    active = _condition_for_requested_value(rule, value) or _active_condition(rule, status)
     effective = dict(rule)
     if active:
         effective.update({key: item for key, item in active.items() if key != "dps_val"})
     if effective.get("invalid", False):
         raise ValueError("Value is invalid for the active advanced mapping")
     result = _transform_numeric(effective.get("dps_val", value), effective, reverse=True)
+    active_range = effective.get("range")
+    if active_range is not None and isinstance(result, (int, float)) and not isinstance(result, bool):
+        minimum = float(active_range["min"])
+        maximum = float(active_range["max"])
+        if float(result) < minimum or float(result) > maximum:
+            raise ValueError("Value is outside the active advanced mapping range")
     target_dp = int(effective.get("value_redirect_dp", primary_dp))
     writes = {target_dp: result}
     constraint_dp = rule.get("constraint_dp")

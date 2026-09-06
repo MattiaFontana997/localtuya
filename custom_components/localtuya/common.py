@@ -23,6 +23,7 @@ from .advanced_mapping import (
     CONF_ADVANCED_MAPPING_BY_DP,
     advanced_mapping_by_dp_references,
     advanced_mapping_dp_references,
+    effective_mapping_metadata,
     map_value_from_dps,
     map_value_to_dps,
     validate_advanced_mapping,
@@ -538,6 +539,15 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         """Return whether one logical DP has a declarative catalog mapping."""
         dp_index = self._dp_id if dp_index is None else dp_index
         return bool(self._mapping_for_dp(dp_index))
+
+    def mapped_numeric_metadata(self, dp_index=None):
+        """Return active declarative range/step metadata for one logical DP."""
+        dp_index = self._dp_id if dp_index is None else dp_index
+        rules = self._mapping_for_dp(dp_index)
+        if not rules:
+            return {}
+        raw = self.raw_dps(dp_index)
+        return effective_mapping_metadata(raw, rules, self._status)
 
     def _mapped_dps_value(self, dp_index, seen):
         value = self.raw_dps(dp_index)

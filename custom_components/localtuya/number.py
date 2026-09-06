@@ -63,6 +63,30 @@ class LocaltuyaNumber(LocalTuyaEntity, NumberEntity):
     def native_value(self) -> float | None:
         return self._state
 
+    @property
+    def native_min_value(self) -> float:
+        metadata = self.mapped_numeric_metadata(self._dp_id)
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "min" in value_range:
+            return float(value_range["min"]) * self._scaling
+        return self._attr_native_min_value
+
+    @property
+    def native_max_value(self) -> float:
+        metadata = self.mapped_numeric_metadata(self._dp_id)
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "max" in value_range:
+            return float(value_range["max"]) * self._scaling
+        return self._attr_native_max_value
+
+    @property
+    def native_step(self) -> float:
+        metadata = self.mapped_numeric_metadata(self._dp_id)
+        step = metadata.get("step")
+        if isinstance(step, (int, float)) and not isinstance(step, bool) and step > 0:
+            return float(step) * self._scaling
+        return self._attr_native_step
+
     def status_updated(self):
         raw_state = self.dps(self._dp_id)
         if raw_state is None or isinstance(raw_state, bool):

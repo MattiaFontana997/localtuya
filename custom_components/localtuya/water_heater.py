@@ -149,22 +149,41 @@ class LocaltuyaWaterHeater(LocalTuyaEntity, WaterHeaterEntity):
 
     @property
     def target_temperature_step(self):
-        """Return target temperature step."""
+        """Return target temperature step for the active mapping."""
+        dp_id = self._config.get(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP)
+        metadata = self.mapped_numeric_metadata(dp_id) if dp_id is not None else {}
+        step = metadata.get("step")
+        if isinstance(step, (int, float)) and not isinstance(step, bool) and step > 0:
+            return float(step) * self._scaling
         return self._temp_step
 
     @property
     def min_temp(self):
-        """Return minimum target temperature."""
+        """Return minimum target temperature for the active mapping."""
         dp_id = self._config.get(CONF_WATER_HEATER_MIN_TEMPERATURE_DP)
         value = _scaled(self.dps(dp_id), self._scaling) if dp_id is not None else None
-        return value if value is not None else self._temp_min
+        if value is not None:
+            return value
+        target_dp = self._config.get(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP)
+        metadata = self.mapped_numeric_metadata(target_dp) if target_dp is not None else {}
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "min" in value_range:
+            return float(value_range["min"]) * self._scaling
+        return self._temp_min
 
     @property
     def max_temp(self):
-        """Return maximum target temperature."""
+        """Return maximum target temperature for the active mapping."""
         dp_id = self._config.get(CONF_WATER_HEATER_MAX_TEMPERATURE_DP)
         value = _scaled(self.dps(dp_id), self._scaling) if dp_id is not None else None
-        return value if value is not None else self._temp_max
+        if value is not None:
+            return value
+        target_dp = self._config.get(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP)
+        metadata = self.mapped_numeric_metadata(target_dp) if target_dp is not None else {}
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "max" in value_range:
+            return float(value_range["max"]) * self._scaling
+        return self._temp_max
 
     @property
     def current_operation(self):

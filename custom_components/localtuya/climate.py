@@ -533,15 +533,31 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
 
     @property
     def min_humidity(self):
+        dp = self._config.get(CONF_TARGET_HUMIDITY_DP)
+        metadata = self.mapped_numeric_metadata(dp) if dp is not None else {}
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "min" in value_range:
+            return float(value_range["min"]) * self._target_humidity_precision
         return self._config.get(CONF_HUMIDITY_MIN, DEFAULT_MIN_HUMIDITY)
 
     @property
     def max_humidity(self):
+        dp = self._config.get(CONF_TARGET_HUMIDITY_DP)
+        metadata = self.mapped_numeric_metadata(dp) if dp is not None else {}
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "max" in value_range:
+            return float(value_range["max"]) * self._target_humidity_precision
         return self._config.get(CONF_HUMIDITY_MAX, DEFAULT_MAX_HUMIDITY)
 
     @property
     def target_temperature_step(self):
-        """Return the supported step of target temperature."""
+        """Return the supported step of the active target-temperature mapping."""
+        target_dp = self._active_target_temperature_dp()
+        if target_dp is not None:
+            metadata = self.mapped_numeric_metadata(target_dp)
+            step = metadata.get("step")
+            if isinstance(step, (int, float)) and not isinstance(step, bool) and step > 0:
+                return float(step) * self._target_precision
         return self._config.get(CONF_TEMPERATURE_STEP, DEFAULT_TEMPERATURE_STEP)
 
     @property
@@ -760,22 +776,30 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
 
     @property
     def min_temp(self):
-        """Return the minimum target temperature."""
+        """Return the minimum target temperature for the active mapping."""
         if self.has_config(CONF_MIN_TEMP_DP):
             value = self.dps_conf(CONF_MIN_TEMP_DP)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 return value
-
+        target_dp = self._active_target_temperature_dp()
+        metadata = self.mapped_numeric_metadata(target_dp) if target_dp is not None else {}
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "min" in value_range:
+            return float(value_range["min"]) * self._target_precision
         return self._config.get(CONF_TEMP_MIN, DEFAULT_MIN_TEMP)
 
     @property
     def max_temp(self):
-        """Return the maximum target temperature."""
+        """Return the maximum target temperature for the active mapping."""
         if self.has_config(CONF_MAX_TEMP_DP):
             value = self.dps_conf(CONF_MAX_TEMP_DP)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 return value
-
+        target_dp = self._active_target_temperature_dp()
+        metadata = self.mapped_numeric_metadata(target_dp) if target_dp is not None else {}
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "max" in value_range:
+            return float(value_range["max"]) * self._target_precision
         return self._config.get(CONF_TEMP_MAX, DEFAULT_MAX_TEMP)
 
     def status_updated(self):
