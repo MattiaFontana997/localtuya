@@ -41,8 +41,10 @@ from .const import (
     CONF_FAN_OSCILLATING_CONTROL,
     CONF_FAN_OSCILLATING_OFF,
     CONF_FAN_OSCILLATING_ON,
+    CONF_FAN_PRESET_DEFAULT,
     CONF_FAN_PRESET_DP,
     CONF_FAN_PRESET_VALUES,
+    CONF_FAN_NO_SWITCH,
     CONF_FAN_SPEED_CONTROL,
     CONF_FAN_SPEED_MAX,
     CONF_FAN_SPEED_MIN,
@@ -84,6 +86,7 @@ def flow_schema(dps):
             CONF_FAN_DPS_TYPE,
             default="str",
         ): vol.In(["str", "int"]),
+        vol.Optional(CONF_FAN_NO_SWITCH, default=False): bool,
     }
 
 
@@ -125,9 +128,13 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
             self._config.get("fan_oscillating_mapping")
         )
         self._preset_values = self._configured_preset_values()
+        self._preset_default = self._config.get(CONF_FAN_PRESET_DEFAULT)
+        if self._preset_default not in self._preset_values:
+            self._preset_default = None
         self._preset_raw_to_name = {
             raw: name for name, raw in self._preset_values.items()
         }
+        self._no_switch = self._config.get(CONF_FAN_NO_SWITCH) is True
         self._attr_preset_modes = (
             list(self._preset_values) if self._preset_values else None
         )
@@ -189,7 +196,9 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
             else str
         )
 
-        features = FanEntityFeature.TURN_ON | FanEntityFeature.TURN_OFF
+        features = FanEntityFeature(0)
+        if not self._no_switch:
+            features |= FanEntityFeature.TURN_ON | FanEntityFeature.TURN_OFF
 
         if self.has_config(CONF_FAN_SPEED_CONTROL):
             features |= FanEntityFeature.SET_SPEED
@@ -335,9 +344,7 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
         **kwargs,
     ) -> None:
         """Turn on the fan."""
-        states = {
-            self._dp_id: True,
-        }
+        states = {} if self._no_switch else {self._dp_id: True}
 
         if (
             percentage is not None
@@ -365,6 +372,8 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn off the fan."""
+        if self._no_switch:
+            raise NotImplementedError("This fan has no power control")
         await self._device.set_dp(
             False,
             self._dp_id,
@@ -393,7 +402,7 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
                 self._percentage_to_raw(percentage),
         }
 
-        if self.is_on is not True:
+        if self.is_on is not True and not self._no_switch:
             states[self._dp_id] = True
 
         if any(self.has_advanced_mapping(dp) for dp in states):
@@ -466,7 +475,11 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
 
         raw_power = self._state
 
-        if isinstance(raw_power, bool):
+        if self._no_switch:
+            # Tuya Local models a fan without a switch as on whenever its
+            # entity is available; HA availability already gates visibility.
+            self._is_on = True
+        elif isinstance(raw_power, bool):
             self._is_on = raw_power
         elif raw_power in (0, 1):
             self._is_on = bool(raw_power)
@@ -497,7 +510,9 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
 
         if self.has_config(CONF_FAN_PRESET_DP):
             raw_preset = self.dps_conf(CONF_FAN_PRESET_DP)
-            self._attr_preset_mode = self._preset_raw_to_name.get(raw_preset)
+            self._attr_preset_mode = self._preset_raw_to_name.get(
+                raw_preset, self._preset_default
+            )
         else:
             self._attr_preset_mode = None
 

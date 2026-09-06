@@ -243,7 +243,10 @@ def _validate_entity(entity):
     config = copy.deepcopy(config)
     if platform == "fan" and any(
         key in config
-        for key in ("fan_speed_mapping", "fan_oscillating_mapping", "fan_preset_raw_type")
+        for key in (
+            "fan_speed_mapping", "fan_oscillating_mapping", "fan_preset_raw_type",
+            "fan_preset_default", "fan_no_switch",
+        )
     ):
         from .fan_mapping import (
             RAW_TYPES as FAN_RAW_TYPES,
@@ -288,6 +291,17 @@ def _validate_entity(entity):
                 normalized_values[name] = raw
                 seen_raw.append(raw)
             config["fan_preset_values"] = normalized_values
+
+        if "fan_preset_default" in config:
+            default = config["fan_preset_default"]
+            values = config.get("fan_preset_values")
+            if not isinstance(default, str) or not isinstance(values, dict) or default not in values:
+                return None
+        if "fan_no_switch" in config:
+            if config["fan_no_switch"] is not True or "fan_speed_control" not in config:
+                return None
+            if config.get("id") != config.get("fan_speed_control"):
+                return None
 
     if "sensor_value_mapping" in config:
         from .sensor_mapping import validate_sensor_value_mapping
