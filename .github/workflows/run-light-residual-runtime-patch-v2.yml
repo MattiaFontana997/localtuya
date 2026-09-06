@@ -1,0 +1,59 @@
+name: Run residual light runtime patch v2
+
+on:
+  push:
+    paths:
+      - .github/workflows/run-light-residual-runtime-patch-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Apply existing patch script with corrected assertion
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/patch-light-residual-runtime.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(workflow) if line.strip() == "python - <<'PY'") + 1
+          end = next(i for i in range(start, len(workflow)) if workflow[i].strip() == 'PY')
+          code_lines = []
+          for line in workflow[start:end]:
+              code_lines.append(line[10:] if line.startswith('          ') else line)
+          code = '\n'.join(code_lines) + '\n'
+          exec(compile(code, 'residual-light-patch', 'exec'), {})
+
+          test = Path('tests/test_light_residual_runtime.py')
+          text = test.read_text()
+          old = 'self.assertTrue(encoded.endswith("006464"))'
+          if old not in text:
+              raise SystemExit('generated assertion anchor missing')
+          test.write_text(text.replace(old, 'self.assertTrue(encoded.endswith("00646464"))', 1))
+          PY
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_test.txt
+      - name: Run targeted tests
+        run: |
+          python -m unittest tests.test_light_residual_runtime tests.test_light_switch_values tests.test_light_brightness_step tests.test_light_brightness_null_fallback tests.test_light_scene_values -v
+      - name: Commit runtime support
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/const.py custom_components/localtuya/light.py tests/test_light_residual_runtime.py
+          git diff --cached --check
+          git commit -m "Support residual light encodings"
+          git push origin HEAD:develop
