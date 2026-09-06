@@ -26,8 +26,11 @@ from .const import (
     CONF_BRIGHTNESS_NULL_VALUE,
     CONF_BRIGHTNESS_STEP,
     CONF_BRIGHTNESS_UPPER,
+    CONF_BRIGHTNESS_VALUES,
+    CONF_BRIGHTNESS_AS_POWER,
     CONF_COLOR,
     CONF_COLOR_RGB_ENCODING,
+    CONF_COLOR_SATURATION_UPPER,
     CONF_COLOR_BRIGHTNESS_LOWER,
     CONF_COLOR_BRIGHTNESS_UPPER,
     CONF_COLOR_MODE,
@@ -35,11 +38,14 @@ from .const import (
     CONF_COLOR_TEMP_MAX_KELVIN,
     CONF_COLOR_TEMP_MIN_KELVIN,
     CONF_COLOR_TEMP_REVERSE,
+    CONF_COLOR_TEMP_STEP,
+    CONF_COLOR_TEMP_VALUES,
     CONF_EFFECT,
     CONF_EFFECT_VALUES,
     CONF_LIGHT_OFF_VALUE,
     CONF_LIGHT_ON_VALUE,
     CONF_LIGHT_NULL_VALUE,
+    CONF_LIGHT_POWER_MASK,
     CONF_MUSIC_MODE,
     CONF_SCENE_VALUES,
     CONF_WHITE_MODE,
@@ -192,6 +198,9 @@ def flow_schema(dps):
         vol.Optional(CONF_LIGHT_ON_VALUE): _light_power_scalar,
         vol.Optional(CONF_LIGHT_OFF_VALUE): _light_power_scalar,
         vol.Optional(CONF_LIGHT_NULL_VALUE): bool,
+        vol.Optional(CONF_LIGHT_POWER_MASK): str,
+        vol.Optional(CONF_BRIGHTNESS_VALUES): dict,
+        vol.Optional(CONF_BRIGHTNESS_AS_POWER, default=False): bool,
         vol.Optional(
             CONF_BRIGHTNESS_LOWER,
             default=DEFAULT_LOWER_BRIGHTNESS,
@@ -238,6 +247,15 @@ def flow_schema(dps):
             default=DEFAULT_COLOR_TEMP_REVERSE,
             description={"suggested_value": DEFAULT_COLOR_TEMP_REVERSE},
         ): bool,
+        vol.Optional(CONF_COLOR_TEMP_STEP, default=1): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=1, max=10000),
+        ),
+        vol.Optional(CONF_COLOR_TEMP_VALUES): dict,
+        vol.Optional(CONF_COLOR_SATURATION_UPPER): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=1, max=65535),
+        ),
         vol.Optional(CONF_SCENE): vol.In(dps),
         vol.Optional(
             CONF_MUSIC_MODE,
@@ -276,6 +294,11 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
         self._power_on_value = self._config.get(CONF_LIGHT_ON_VALUE, True)
         self._power_off_value = self._config.get(CONF_LIGHT_OFF_VALUE, False)
+        self._brightness_as_power = bool(
+            self._config.get(CONF_BRIGHTNESS_AS_POWER, False)
+        )
+        self._brightness_values = self._configured_brightness_values()
+        self._light_power_mask = self._configured_light_power_mask()
 
         self._lower_brightness = int(
             self._config.get(
@@ -384,6 +407,15 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                 DEFAULT_COLOR_TEMP_REVERSE,
             )
         )
+        try:
+            self._color_temp_step = int(
+                self._config.get(CONF_COLOR_TEMP_STEP, 1)
+            )
+        except (TypeError, ValueError):
+            self._color_temp_step = 1
+        if self._color_temp_step <= 0:
+            self._color_temp_step = 1
+        self._color_temp_values = self._configured_color_temp_values()
 
         mode_set = self._config.get(CONF_COLOR_MODE_SET, 0)
 
@@ -665,6 +697,106 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
         return ColorMode.ONOFF
 
+    def _configured_brightness_values(self) -> list[tuple[int, object]]:
+        """Return ordered HA-brightness -> exact raw value mappings."""
+        configured = self._config.get(CONF_BRIGHTNESS_VALUES)
+        if not isinstance(configured, dict):
+            return []
+
+        result: list[tuple[int, object]] = []
+        raw_values: list[object] = []
+        for raw_brightness, raw_value in configured.items():
+            if isinstance(raw_brightness, bool):
+                continue
+            try:
+                brightness = int(raw_brightness)
+            except (TypeError, ValueError):
+                continue
+            if brightness < 0 or brightness > 255:
+                continue
+            if not isinstance(raw_value, (bool, int, str)):
+                continue
+            if any(_same_raw_value(raw_value, seen) for seen in raw_values):
+                continue
+            result.append((brightness, raw_value))
+            raw_values.append(raw_value)
+        return result
+
+    def _configured_color_temp_values(self) -> list[tuple[int, int]]:
+        """Return ordered Kelvin -> raw discrete color-temperature mappings."""
+        configured = self._config.get(CONF_COLOR_TEMP_VALUES)
+        if not isinstance(configured, dict):
+            return []
+
+        result: list[tuple[int, int]] = []
+        raw_values: set[int] = set()
+        for raw_kelvin, raw_value in configured.items():
+            if isinstance(raw_kelvin, bool) or isinstance(raw_value, bool):
+                continue
+            try:
+                kelvin = int(raw_kelvin)
+                value = int(raw_value)
+            except (TypeError, ValueError):
+                continue
+            if not 1500 <= kelvin <= 8000 or value in raw_values:
+                continue
+            result.append((kelvin, value))
+            raw_values.add(value)
+        return result
+
+    def _configured_light_power_mask(self) -> tuple[int, int] | None:
+        """Validate an exact big-endian hex bit mask for a packed light switch."""
+        raw_mask = self._config.get(CONF_LIGHT_POWER_MASK)
+        if not isinstance(raw_mask, str):
+            return None
+        mask = raw_mask.strip()
+        if not mask or len(mask) % 2 or any(ch not in "0123456789abcdefABCDEF" for ch in mask):
+            return None
+        value = int(mask, 16)
+        if value <= 0:
+            return None
+        return value, len(mask)
+
+    def _masked_power_state(self, raw_power) -> bool | None:
+        """Read one boolean bit from a packed big-endian hex DP."""
+        configured = getattr(self, "_light_power_mask", None)
+        if configured is None or not isinstance(raw_power, str):
+            return None
+        value = raw_power.strip()
+        if not value or len(value) % 2 or any(ch not in "0123456789abcdefABCDEF" for ch in value):
+            return None
+        mask, _ = configured
+        return bool(int(value, 16) & mask)
+
+    def _masked_power_write_value(self, turn_on: bool) -> str | None:
+        """Return a read-modify-write packed hex value, or None if current is unknown."""
+        configured = getattr(self, "_light_power_mask", None)
+        current = getattr(self, "_state", None)
+        if configured is None or not isinstance(current, str):
+            return None
+        current = current.strip()
+        if not current or len(current) % 2 or any(ch not in "0123456789abcdefABCDEF" for ch in current):
+            return None
+        mask, mask_width = configured
+        value = int(current, 16)
+        value = value | mask if turn_on else value & ~mask
+        width = max(mask_width, len(current))
+        return f"{value:0{width}x}"
+
+    def _color_saturation_upper(self, *, extended: bool) -> int:
+        """Return the raw saturation maximum for the active color payload."""
+        configured = self._config.get(CONF_COLOR_SATURATION_UPPER)
+        if isinstance(configured, bool):
+            configured = None
+        if configured is not None:
+            try:
+                value = int(configured)
+            except (TypeError, ValueError):
+                value = 0
+            if value > 0:
+                return value
+        return 255 if extended else 1000
+
     def _raw_brightness_to_ha(self, value) -> int | None:
         """Convert a Tuya brightness value to HA's 0..255 range."""
         if value is None:
@@ -673,6 +805,13 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                 value = config.get(CONF_BRIGHTNESS_NULL_VALUE)
             if value is None:
                 return None
+
+        mapped = getattr(self, "_brightness_values", [])
+        if mapped:
+            for brightness, raw_value in mapped:
+                if _same_raw_value(value, raw_value):
+                    return brightness
+            return None
 
         if isinstance(value, bool):
             return None
@@ -690,8 +829,20 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             255,
         )
 
-    def _ha_brightness_to_raw(self, value) -> int:
-        """Convert HA brightness to the Tuya brightness range."""
+    def _ha_brightness_to_raw(self, value):
+        """Convert HA brightness to the exact Tuya brightness representation."""
+        mapped = getattr(self, "_brightness_values", [])
+        if mapped:
+            target = min(max(int(value), 0), 255)
+            best_raw = mapped[0][1]
+            best_distance = abs(mapped[0][0] - target)
+            for brightness, raw_value in mapped[1:]:
+                distance = abs(brightness - target)
+                if distance < best_distance:
+                    best_raw = raw_value
+                    best_distance = distance
+            return best_raw
+
         raw_value = map_range(
             int(value),
             0,
@@ -739,6 +890,17 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         if value is None or isinstance(value, bool):
             return None
 
+        discrete = getattr(self, "_color_temp_values", [])
+        if discrete:
+            try:
+                raw_value = int(value)
+            except (TypeError, ValueError):
+                return None
+            for kelvin, configured_raw in discrete:
+                if raw_value == configured_raw:
+                    return kelvin
+            return None
+
         try:
             raw_value = float(value)
         except (TypeError, ValueError):
@@ -773,6 +935,17 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             self._max_kelvin,
         )
 
+        discrete = getattr(self, "_color_temp_values", [])
+        if discrete:
+            best_raw = discrete[0][1]
+            best_distance = abs(discrete[0][0] - kelvin)
+            for configured_kelvin, raw_value in discrete[1:]:
+                distance = abs(configured_kelvin - kelvin)
+                if distance < best_distance:
+                    best_raw = raw_value
+                    best_distance = distance
+            return best_raw
+
         mired = color_util.color_temperature_kelvin_to_mired(kelvin)
 
         ratio = (
@@ -791,6 +964,11 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
         if self._color_temp_reverse:
             raw_value = self._raw_color_temp_max - raw_value
+
+        step = getattr(self, "_color_temp_step", 1)
+        if step != 1:
+            raw_value = step * round(float(raw_value) / step)
+            raw_value = min(max(raw_value, 0), self._raw_color_temp_max)
 
         return raw_value
 
@@ -812,15 +990,22 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                 saturation = int(raw_color[10:12], 16)
                 value = int(raw_color[12:14], 16)
 
+                saturation_upper = self._color_saturation_upper(extended=True)
                 hs = (
                     min(max(float(hue), 0.0), 360.0),
                     min(
-                        max(saturation * 100.0 / 255.0, 0.0),
+                        max(saturation * 100.0 / saturation_upper, 0.0),
                         100.0,
                     ),
                 )
 
-                brightness = min(max(value, 0), 255)
+                if (
+                    CONF_COLOR_BRIGHTNESS_LOWER in self._config
+                    or CONF_COLOR_BRIGHTNESS_UPPER in self._config
+                ):
+                    brightness = self._raw_color_brightness_to_ha(value)
+                else:
+                    brightness = min(max(value, 0), 255)
 
                 return hs, brightness
 
@@ -838,9 +1023,10 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                 for chunk in textwrap.wrap(raw_color[:12], 4)
             ]
 
+            saturation_upper = self._color_saturation_upper(extended=False)
             hs = (
                 min(max(float(hue), 0.0), 360.0),
-                min(max(saturation / 10.0, 0.0), 100.0),
+                min(max(saturation * 100.0 / saturation_upper, 0.0), 100.0),
             )
 
             brightness = self._raw_color_brightness_to_ha(value)
@@ -863,22 +1049,34 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                 brightness * 100.0 / 255.0,
             )
 
+            saturation_upper = self._color_saturation_upper(extended=True)
+            raw_saturation = round(saturation * saturation_upper / 100.0)
+            if (
+                CONF_COLOR_BRIGHTNESS_LOWER in self._config
+                or CONF_COLOR_BRIGHTNESS_UPPER in self._config
+            ):
+                raw_brightness = self._ha_brightness_to_raw_color(brightness)
+            else:
+                raw_brightness = brightness
+
             return (
                 f"{round(rgb[0]):02x}"
                 f"{round(rgb[1]):02x}"
                 f"{round(rgb[2]):02x}"
                 f"{round(hue):04x}"
-                f"{round(saturation * 255.0 / 100.0):02x}"
-                f"{brightness:02x}"
+                f"{raw_saturation:02x}"
+                f"{raw_brightness:02x}"
             )
 
         raw_brightness = self._ha_brightness_to_raw_color(
             brightness
         )
+        saturation_upper = self._color_saturation_upper(extended=False)
+        raw_saturation = round(saturation * saturation_upper / 100.0)
 
         return (
             f"{round(hue):04x}"
-            f"{round(saturation * 10.0):04x}"
+            f"{raw_saturation:04x}"
             f"{raw_brightness:04x}"
         )
 
@@ -905,6 +1103,8 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
     def _power_state_from_raw(self, raw_power):
         """Translate an exact raw Tuya power value to HA state."""
         config = getattr(self, "_config", {})
+        if getattr(self, "_light_power_mask", None) is not None:
+            return self._masked_power_state(raw_power)
         if raw_power is None and isinstance(config, dict) and CONF_LIGHT_NULL_VALUE in config:
             return bool(config[CONF_LIGHT_NULL_VALUE])
 
@@ -935,7 +1135,15 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         states = {}
 
         if self.is_on is not True:
-            states[self._dp_id] = getattr(self, "_power_on_value", True)
+            if getattr(self, "_brightness_as_power", False):
+                if ATTR_BRIGHTNESS not in kwargs:
+                    states[self._dp_id] = self._ha_brightness_to_raw(255)
+            elif getattr(self, "_light_power_mask", None) is not None:
+                masked = self._masked_power_write_value(True)
+                if masked is not None:
+                    states[self._dp_id] = masked
+            else:
+                states[self._dp_id] = getattr(self, "_power_on_value", True)
 
         requested_effect = kwargs.get(ATTR_EFFECT)
 
@@ -1119,6 +1327,14 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
     async def async_turn_off(self, **kwargs):
         """Turn the Tuya light off."""
+        if getattr(self, "_brightness_as_power", False):
+            await self._device.set_dp(self._ha_brightness_to_raw(0), self._dp_id)
+            return
+        if getattr(self, "_light_power_mask", None) is not None:
+            masked = self._masked_power_write_value(False)
+            if masked is not None:
+                await self._device.set_dp(masked, self._dp_id)
+            return
         await self._device.set_dp(getattr(self, "_power_off_value", False), self._dp_id)
 
     def status_updated(self):
@@ -1126,7 +1342,13 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         super().status_updated()
 
         raw_power = self._state
-        self._attr_is_on = self._power_state_from_raw(raw_power)
+        if getattr(self, "_brightness_as_power", False):
+            power_brightness = self._raw_brightness_to_ha(raw_power)
+            self._attr_is_on = (
+                power_brightness is not None and power_brightness > 0
+            )
+        else:
+            self._attr_is_on = self._power_state_from_raw(raw_power)
 
         mode = self._raw_mode()
         self._attr_color_mode = self._determine_color_mode(mode)
