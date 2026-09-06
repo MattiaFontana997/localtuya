@@ -1,0 +1,40 @@
+name: Apply Bitfield Mapped Extra Runtime
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'tools/_apply_bitfield_mapped_extra.py'
+      - '.github/workflows/apply-bitfield-mapped-extra.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install 'tox>=4.20,<5'
+      - name: Apply runtime patch
+        run: python tools/_apply_bitfield_mapped_extra.py
+      - name: Run full LocalTuya suite
+        run: python -m tox -e py314
+      - name: Commit runtime core
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/advanced_mapping.py custom_components/localtuya/common.py custom_components/localtuya/const.py custom_components/localtuya/device_catalog.py tests/test_advanced_mapping.py tests/test_catalog_runtime_flags.py
+          if git diff --cached --quiet; then
+            echo 'Runtime already current'
+            exit 0
+          fi
+          git commit -m 'Support attribute-scoped bitfield mappings'
+          git push origin HEAD:develop
