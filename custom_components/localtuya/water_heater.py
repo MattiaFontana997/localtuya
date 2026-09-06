@@ -214,23 +214,31 @@ class LocaltuyaWaterHeater(LocalTuyaEntity, WaterHeaterEntity):
             dp_id = self._config.get(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP)
             if dp_id is None:
                 raise NotImplementedError()
-            await self._device.set_dp(
-                _unscaled(kwargs[ATTR_TEMPERATURE], self._scaling),
-                dp_id,
-            )
+            raw_value = _unscaled(kwargs[ATTR_TEMPERATURE], self._scaling)
+            if self.has_advanced_mapping(dp_id):
+                await self.set_mapped_dp(raw_value, dp_id)
+            else:
+                await self._device.set_dp(raw_value, dp_id)
 
     async def async_set_operation_mode(self, operation_mode):
         """Set the exact catalog-provided raw operation mode."""
         dp_id = self._config.get(CONF_WATER_HEATER_MODE_DP)
         if dp_id is None or operation_mode not in self._mode_values:
             raise NotImplementedError()
-        await self._device.set_dp(self._mode_values[operation_mode], dp_id)
+        raw_value = self._mode_values[operation_mode]
+        if self.has_advanced_mapping(dp_id):
+            await self.set_mapped_dp(raw_value, dp_id)
+        else:
+            await self._device.set_dp(raw_value, dp_id)
 
     async def async_turn_away_mode_on(self):
         """Enable away mode."""
         away_dp = self._config.get(CONF_WATER_HEATER_AWAY_DP)
         if away_dp is not None:
-            await self._device.set_dp(self._away_on, away_dp)
+            if self.has_advanced_mapping(away_dp):
+                await self.set_mapped_dp(self._away_on, away_dp)
+            else:
+                await self._device.set_dp(self._away_on, away_dp)
             return
         if self._away_mode in self._mode_values:
             await self.async_set_operation_mode(self._away_mode)
@@ -241,7 +249,10 @@ class LocaltuyaWaterHeater(LocalTuyaEntity, WaterHeaterEntity):
         """Disable away mode."""
         away_dp = self._config.get(CONF_WATER_HEATER_AWAY_DP)
         if away_dp is not None:
-            await self._device.set_dp(self._away_off, away_dp)
+            if self.has_advanced_mapping(away_dp):
+                await self.set_mapped_dp(self._away_off, away_dp)
+            else:
+                await self._device.set_dp(self._away_off, away_dp)
             return
         candidates = [mode for mode in self._mode_values if mode != self._away_mode]
         mode = self._default_mode if self._default_mode in candidates else (candidates[0] if candidates else None)
