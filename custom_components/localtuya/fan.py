@@ -224,6 +224,14 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
             self.warning("Invalid fan_preset_values config; ignoring presets")
             return {}
 
+        raw_type = getattr(
+            self,
+            "_preset_raw_type",
+            self._config.get("fan_preset_raw_type", "string"),
+        )
+        if raw_type not in FAN_RAW_TYPES:
+            raw_type = "string"
+
         result: dict[str, object] = {}
         raw_values: list[object] = []
         for name, raw in configured.items():
@@ -231,7 +239,7 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
                 self.warning("Ignoring invalid fan preset %r: %r", name, raw)
                 continue
             try:
-                raw = coerce_fan_raw(raw, self._preset_raw_type)
+                raw = coerce_fan_raw(raw, raw_type)
             except ValueError:
                 self.warning("Ignoring invalid fan preset %r: %r", name, raw)
                 continue
@@ -378,9 +386,10 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
         if not self.has_config(CONF_FAN_OSCILLATING_CONTROL):
             return
 
+        oscillation_mapping = getattr(self, "_oscillation_mapping", None)
         raw_value = (
-            fan_oscillation_to_raw(oscillating, self._oscillation_mapping)
-            if self._oscillation_mapping
+            fan_oscillation_to_raw(oscillating, oscillation_mapping)
+            if oscillation_mapping
             else (self._oscillating_on if oscillating else self._oscillating_off)
         )
         await self._device.set_dp(
@@ -450,9 +459,10 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
 
         if self.has_config(CONF_FAN_OSCILLATING_CONTROL):
             value = self.dps_conf(CONF_FAN_OSCILLATING_CONTROL)
-            if self._oscillation_mapping:
+            oscillation_mapping = getattr(self, "_oscillation_mapping", None)
+            if oscillation_mapping:
                 self._attr_oscillating = fan_oscillation_from_raw(
-                    value, self._oscillation_mapping
+                    value, oscillation_mapping
                 )
             elif value == self._oscillating_on:
                 self._attr_oscillating = True
