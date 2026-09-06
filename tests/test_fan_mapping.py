@@ -1,13 +1,20 @@
 """Tests for bounded catalog fan mappings."""
 
-from custom_components.localtuya.fan_mapping import (
-    fan_oscillation_from_raw,
-    fan_oscillation_to_raw,
-    fan_speed_from_raw,
-    fan_speed_to_raw,
-    validate_fan_oscillation_mapping,
-    validate_fan_speed_mapping,
-)
+import importlib.util
+from pathlib import Path
+
+MODULE_PATH = Path(__file__).resolve().parents[1] / "custom_components" / "localtuya" / "fan_mapping.py"
+SPEC = importlib.util.spec_from_file_location("localtuya_fan_mapping_test", MODULE_PATH)
+MODULE = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader is not None
+SPEC.loader.exec_module(MODULE)
+
+fan_oscillation_from_raw = MODULE.fan_oscillation_from_raw
+fan_oscillation_to_raw = MODULE.fan_oscillation_to_raw
+fan_speed_from_raw = MODULE.fan_speed_from_raw
+fan_speed_to_raw = MODULE.fan_speed_to_raw
+validate_fan_oscillation_mapping = MODULE.validate_fan_oscillation_mapping
+validate_fan_speed_mapping = MODULE.validate_fan_speed_mapping
 
 
 def test_exact_custom_speed_percentages_and_closest_write():
