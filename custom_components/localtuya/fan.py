@@ -22,6 +22,16 @@ from homeassistant.util.percentage import (
 )
 
 from .common import LocalTuyaEntity, async_setup_entry
+from .fan_mapping import (
+    RAW_TYPES as FAN_RAW_TYPES,
+    coerce_fan_raw,
+    fan_oscillation_from_raw,
+    fan_oscillation_to_raw,
+    fan_speed_from_raw,
+    fan_speed_to_raw,
+    validate_fan_oscillation_mapping,
+    validate_fan_speed_mapping,
+)
 from .const import (
     CONF_FAN_DIRECTION,
     CONF_FAN_DIRECTION_FWD,
@@ -104,6 +114,16 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
         self._attr_current_direction = None
         self._attr_preset_mode = None
 
+        self._preset_raw_type = self._config.get("fan_preset_raw_type", "string")
+        if self._preset_raw_type not in FAN_RAW_TYPES:
+            self.warning("Invalid fan preset raw type %r; disabling presets", self._preset_raw_type)
+            self._preset_raw_type = "string"
+        self._speed_mapping = validate_fan_speed_mapping(
+            self._config.get("fan_speed_mapping")
+        )
+        self._oscillation_mapping = validate_fan_oscillation_mapping(
+            self._config.get("fan_oscillating_mapping")
+        )
         self._preset_values = self._configured_preset_values()
         self._preset_raw_to_name = {
             raw: name for name, raw in self._preset_values.items()
@@ -186,15 +206,17 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
         self._attr_supported_features = features
 
         if self.has_config(CONF_FAN_SPEED_CONTROL):
-            if self._use_ordered_list:
+            if self._speed_mapping:
+                self._attr_speed_count = len(self._speed_mapping["rules"])
+            elif self._use_ordered_list:
                 self._attr_speed_count = len(self._ordered_list)
             else:
                 self._attr_speed_count = int_states_in_range(
                     self._speed_range
                 )
 
-    def _configured_preset_values(self) -> dict[str, str]:
-        """Return valid catalog-provided friendly -> raw fan presets."""
+    def _configured_preset_values(self) -> dict[str, object]:
+        """Return validated friendly -> typed raw fan presets."""
         configured = self._config.get(CONF_FAN_PRESET_VALUES)
         if configured is None:
             return {}
@@ -202,23 +224,23 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
             self.warning("Invalid fan_preset_values config; ignoring presets")
             return {}
 
-        result: dict[str, str] = {}
-        raw_values: set[str] = set()
+        result: dict[str, object] = {}
+        raw_values: list[object] = []
         for name, raw in configured.items():
-            if (
-                not isinstance(name, str)
-                or not name.strip()
-                or not isinstance(raw, str)
-                or not raw
-            ):
+            if not isinstance(name, str) or not name.strip():
+                self.warning("Ignoring invalid fan preset %r: %r", name, raw)
+                continue
+            try:
+                raw = coerce_fan_raw(raw, self._preset_raw_type)
+            except ValueError:
                 self.warning("Ignoring invalid fan preset %r: %r", name, raw)
                 continue
             name = name.strip()
-            if name in result or raw in raw_values:
+            if name in result or any(raw == previous for previous in raw_values):
                 self.warning("Ignoring duplicate fan preset %r: %r", name, raw)
                 continue
             result[name] = raw
-            raw_values.add(raw)
+            raw_values.append(raw)
         return result
 
     @property
@@ -229,6 +251,9 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
     def _percentage_to_raw(self, percentage: int):
         """Convert an HA percentage to the configured Tuya speed."""
         percentage = min(max(int(percentage), 1), 100)
+
+        if self._speed_mapping:
+            return fan_speed_to_raw(percentage, self._speed_mapping)
 
         if self._use_ordered_list:
             raw_value = percentage_to_ordered_list_item(
@@ -257,6 +282,9 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
             return None
 
         try:
+            if self._speed_mapping:
+                return fan_speed_from_raw(raw_value, self._speed_mapping)
+
             if self._use_ordered_list:
                 return ordered_list_item_to_percentage(
                     self._ordered_list,
@@ -350,8 +378,13 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
         if not self.has_config(CONF_FAN_OSCILLATING_CONTROL):
             return
 
+        raw_value = (
+            fan_oscillation_to_raw(oscillating, self._oscillation_mapping)
+            if self._oscillation_mapping
+            else (self._oscillating_on if oscillating else self._oscillating_off)
+        )
         await self._device.set_dp(
-            self._oscillating_on if oscillating else self._oscillating_off,
+            raw_value,
             self._config[CONF_FAN_OSCILLATING_CONTROL],
         )
 
@@ -417,7 +450,11 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
 
         if self.has_config(CONF_FAN_OSCILLATING_CONTROL):
             value = self.dps_conf(CONF_FAN_OSCILLATING_CONTROL)
-            if value == self._oscillating_on:
+            if self._oscillation_mapping:
+                self._attr_oscillating = fan_oscillation_from_raw(
+                    value, self._oscillation_mapping
+                )
+            elif value == self._oscillating_on:
                 self._attr_oscillating = True
             elif value == self._oscillating_off:
                 self._attr_oscillating = False

@@ -221,6 +221,54 @@ def _validate_entity(entity):
     if not isinstance(config, dict) or not _json_structure_safe(config) or _contains_forbidden_keys(config):
         return None
     config = copy.deepcopy(config)
+    if platform == "fan" and any(
+        key in config
+        for key in ("fan_speed_mapping", "fan_oscillating_mapping", "fan_preset_raw_type")
+    ):
+        from .fan_mapping import (
+            RAW_TYPES as FAN_RAW_TYPES,
+            coerce_fan_raw,
+            validate_fan_oscillation_mapping,
+            validate_fan_speed_mapping,
+        )
+
+        if "fan_speed_mapping" in config:
+            mapping = validate_fan_speed_mapping(config["fan_speed_mapping"])
+            if mapping is None or "fan_speed_control" not in config:
+                return None
+            config["fan_speed_mapping"] = mapping
+        if "fan_oscillating_mapping" in config:
+            mapping = validate_fan_oscillation_mapping(config["fan_oscillating_mapping"])
+            if mapping is None or "fan_oscillating_control" not in config:
+                return None
+            config["fan_oscillating_mapping"] = mapping
+        if "fan_preset_raw_type" in config:
+            raw_type = config["fan_preset_raw_type"]
+            values = config.get("fan_preset_values")
+            if (
+                raw_type not in FAN_RAW_TYPES
+                or "fan_preset_dp" not in config
+                or not isinstance(values, dict)
+                or not values
+                or len(values) > 32
+            ):
+                return None
+            normalized_values = {}
+            seen_raw = []
+            for name, raw in values.items():
+                if not isinstance(name, str) or not name.strip():
+                    return None
+                try:
+                    raw = coerce_fan_raw(raw, raw_type)
+                except ValueError:
+                    return None
+                name = name.strip()
+                if name in normalized_values or any(raw == previous for previous in seen_raw):
+                    return None
+                normalized_values[name] = raw
+                seen_raw.append(raw)
+            config["fan_preset_values"] = normalized_values
+
     if "sensor_value_mapping" in config:
         from .sensor_mapping import validate_sensor_value_mapping
 
@@ -440,8 +488,10 @@ def _adapt_entity_for_available_dps(entity, optional_dps, available_dps):
             del config[key]
             removed.add(key)
     dependent = {
-        "effect": ("effect_values",), "fan_preset_dp": ("fan_preset_values",),
-        "fan_oscillating_control": ("fan_oscillating_on", "fan_oscillating_off"),
+        "effect": ("effect_values",),
+        "fan_speed_control": ("fan_speed_mapping", "fan_speed_ordered_list", "fan_dps_type", "fan_speed_min", "fan_speed_max"),
+        "fan_preset_dp": ("fan_preset_values", "fan_preset_raw_type"),
+        "fan_oscillating_control": ("fan_oscillating_on", "fan_oscillating_off", "fan_oscillating_mapping"),
         "hvac_mode_dp": ("hvac_mode_values",), "hvac_action_dp": ("hvac_action_values",),
         "hvac_fan_mode_dp": ("hvac_fan_mode_values",), "hvac_swing_mode_dp": ("hvac_swing_mode_values",),
         "hvac_swing_horizontal_mode_dp": ("hvac_swing_horizontal_mode_values",), "preset_dp": ("preset_values",),
