@@ -1,0 +1,215 @@
+name: Patch JSON v2 light color
+
+on:
+  push:
+    branches:
+      - compat/light-json-color-v2
+    paths:
+      - .github/workflows/patch-light-json-color-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: compat/light-json-color-v2
+          fetch-depth: 0
+
+      - name: Apply JSON v2 color support
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one anchor, found {count}")
+              path.write_text(text.replace(old, new, 1))
+
+          const = Path("custom_components/localtuya/const.py")
+          replace_once(
+              const,
+              'CONF_COLOR_RGB_ENCODING = "color_rgb_encoding"\n',
+              'CONF_COLOR_RGB_ENCODING = "color_rgb_encoding"\n'
+              'CONF_COLOR_JSON_ENCODING = "color_json_encoding"\n',
+          )
+
+          light = Path("custom_components/localtuya/light.py")
+          replace_once(light, "import logging\n", "import json\nimport logging\n")
+          replace_once(
+              light,
+              "    CONF_COLOR_RGB_ENCODING,\n",
+              "    CONF_COLOR_RGB_ENCODING,\n    CONF_COLOR_JSON_ENCODING,\n",
+          )
+          replace_once(
+              light,
+              "        # Catalog mappings can explicitly require Tuya's legacy 14-hex\n",
+              "        self._color_json_encoding_forced = bool(\n"
+              "            self._config.get(CONF_COLOR_JSON_ENCODING, False)\n"
+              "        )\n"
+              "        self._color_json_encoding = self._color_json_encoding_forced\n"
+              "        self._color_json_payload_as_string = False\n\n"
+              "        # Catalog mappings can explicitly require Tuya's legacy 14-hex\n",
+          )
+
+          helper_marker = "    def _decode_color(self, raw_color):\n"
+          helper = (
+              "    def _json_color_payload(self, raw_color):\n"
+              "        \"\"\"Return a Tuya JSON HSV payload and remember its transport.\"\"\"\n"
+              "        if isinstance(raw_color, dict):\n"
+              "            self._color_json_encoding = True\n"
+              "            self._color_json_payload_as_string = False\n"
+              "            return raw_color\n\n"
+              "        if not isinstance(raw_color, str):\n"
+              "            return None\n\n"
+              "        stripped = raw_color.strip()\n"
+              "        if not stripped.startswith(\"{\"):\n"
+              "            return None\n\n"
+              "        try:\n"
+              "            payload = json.loads(stripped)\n"
+              "        except (TypeError, ValueError):\n"
+              "            return None\n"
+              "        if not isinstance(payload, dict):\n"
+              "            return None\n\n"
+              "        self._color_json_encoding = True\n"
+              "        self._color_json_payload_as_string = True\n"
+              "        return payload\n\n"
+              "    def _decode_json_color(self, payload):\n"
+              "        \"\"\"Decode Tuya JSON HSV into Home Assistant HS/brightness.\"\"\"\n"
+              "        values = []\n"
+              "        for key in (\"h\", \"s\", \"v\"):\n"
+              "            value = payload.get(key)\n"
+              "            if value is None or isinstance(value, bool):\n"
+              "                return None\n"
+              "            try:\n"
+              "                values.append(float(value))\n"
+              "            except (TypeError, ValueError):\n"
+              "                return None\n\n"
+              "        hue, saturation, value = values\n"
+              "        saturation_upper = self._color_saturation_upper(extended=False)\n"
+              "        hs = (\n"
+              "            min(max(hue, 0.0), 360.0),\n"
+              "            min(max(saturation * 100.0 / saturation_upper, 0.0), 100.0),\n"
+              "        )\n"
+              "        brightness = self._raw_color_brightness_to_ha(value)\n"
+              "        return hs, brightness\n\n"
+          )
+          replace_once(light, helper_marker, helper + helper_marker)
+
+          replace_once(
+              light,
+              "    def _decode_color(self, raw_color):\n"
+              "        \"\"\"Decode a Tuya HSV/RGB+HSV color payload.\"\"\"\n"
+              "        if not isinstance(raw_color, str):\n"
+              "            return None\n\n"
+              "        raw_color = raw_color.strip()\n",
+              "    def _decode_color(self, raw_color):\n"
+              "        \"\"\"Decode a Tuya JSON/HSV/RGB+HSV color payload.\"\"\"\n"
+              "        json_payload = self._json_color_payload(raw_color)\n"
+              "        if json_payload is not None:\n"
+              "            return self._decode_json_color(json_payload)\n\n"
+              "        if not isinstance(raw_color, str):\n"
+              "            return None\n\n"
+              "        if not getattr(self, \"_color_json_encoding_forced\", False):\n"
+              "            self._color_json_encoding = False\n"
+              "            self._color_json_payload_as_string = False\n\n"
+              "        raw_color = raw_color.strip()\n",
+          )
+          replace_once(
+              light,
+              "    def _encode_color(self, hs, brightness) -> str:\n",
+              "    def _encode_color(self, hs, brightness) -> str | dict[str, int]:\n",
+          )
+          replace_once(
+              light,
+              "        brightness = min(max(int(brightness), 0), 255)\n\n"
+              "        if self._color_uses_rgb_encoding:\n",
+              "        brightness = min(max(int(brightness), 0), 255)\n\n"
+              "        if getattr(self, \"_color_json_encoding\", False):\n"
+              "            saturation_upper = self._color_saturation_upper(extended=False)\n"
+              "            payload = {\n"
+              "                \"h\": round(hue),\n"
+              "                \"s\": round(saturation * saturation_upper / 100.0),\n"
+              "                \"v\": self._ha_brightness_to_raw_color(brightness),\n"
+              "            }\n"
+              "            if getattr(self, \"_color_json_payload_as_string\", False):\n"
+              "                return json.dumps(payload, separators=(\",\", \":\"))\n"
+              "            return payload\n\n"
+              "        if self._color_uses_rgb_encoding:\n",
+          )
+
+          mapper = Path("custom_components/localtuya/device_mapper.py")
+          replace_once(
+              mapper,
+              "    CONF_COLOR,\n    CONF_COLOR_MODE,\n",
+              "    CONF_COLOR,\n"
+              "    CONF_COLOR_BRIGHTNESS_LOWER,\n"
+              "    CONF_COLOR_BRIGHTNESS_UPPER,\n"
+              "    CONF_COLOR_JSON_ENCODING,\n"
+              "    CONF_COLOR_MODE,\n"
+              "    CONF_COLOR_SATURATION_UPPER,\n",
+          )
+          replace_once(
+              mapper,
+              "_LIGHT_COLOR_CODES = (\n"
+              "    \"colour_data\",\n"
+              "    \"color_data\",\n"
+              "    \"colour_data_v2\",\n"
+              "    \"color_data_v2\",\n"
+              ")\n",
+              "_LIGHT_COLOR_CODES = (\n"
+              "    \"colour_data\",\n"
+              "    \"color_data\",\n"
+              "    \"colour_data_v2\",\n"
+              "    \"color_data_v2\",\n"
+              ")\n\n"
+              "_LIGHT_JSON_V2_COLOR_CODES = {\n"
+              "    \"colour_data_v2\",\n"
+              "    \"color_data_v2\",\n"
+              "}\n",
+          )
+          replace_once(
+              mapper,
+              "    if (\n"
+              "        color is not None\n"
+              "        and color.type_name in (\"\", \"string\", \"raw\")\n"
+              "    ):\n"
+              "        config[CONF_COLOR] = color.id\n"
+              "        matched_codes.append(color.code)\n",
+              "    if color is not None:\n"
+              "        if color.type_name in (\"\", \"string\", \"raw\"):\n"
+              "            config[CONF_COLOR] = color.id\n"
+              "            matched_codes.append(color.code)\n"
+              "        elif (\n"
+              "            color.type_name == \"json\"\n"
+              "            and color.code in _LIGHT_JSON_V2_COLOR_CODES\n"
+              "        ):\n"
+              "            config[CONF_COLOR] = color.id\n"
+              "            config[CONF_COLOR_JSON_ENCODING] = True\n"
+              "            config[CONF_COLOR_SATURATION_UPPER] = 1000\n"
+              "            config[CONF_COLOR_BRIGHTNESS_LOWER] = 0\n"
+              "            config[CONF_COLOR_BRIGHTNESS_UPPER] = 1000\n"
+              "            matched_codes.append(color.code)\n",
+          )
+          PY
+
+      - name: Validate syntax and diff
+        shell: bash
+        run: |
+          python -m compileall custom_components/localtuya/const.py custom_components/localtuya/light.py custom_components/localtuya/device_mapper.py tests/test_light_json_color_v2.py
+          git diff --check
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/const.py custom_components/localtuya/light.py custom_components/localtuya/device_mapper.py
+          git commit -m "Support JSON v2 light color payloads"
+          git push origin HEAD:compat/light-json-color-v2
