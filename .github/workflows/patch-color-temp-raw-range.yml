@@ -1,4 +1,4 @@
-name: Patch independent color temperature raw range
+name: Fix independent color temperature raw range
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  patch:
+  fix:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -19,204 +19,156 @@ jobs:
           ref: compat/light-color-temp-raw-range
           fetch-depth: 0
 
-      - name: Apply runtime and regression patch
+      - name: Correct generated Python blocks
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          def replace_once(path: Path, old: str, new: str) -> None:
-              text = path.read_text()
-              if text.count(old) != 1:
-                  raise SystemExit(f"{path}: expected exactly one anchor, found {text.count(old)}")
-              path.write_text(text.replace(old, new, 1))
-
-          const = Path("custom_components/localtuya/const.py")
-          replace_once(
-              const,
-              'CONF_COLOR_TEMP_MAX_KELVIN = "color_temp_max_kelvin"\nCONF_COLOR_TEMP_REVERSE = "color_temp_reverse"',
-              'CONF_COLOR_TEMP_MAX_KELVIN = "color_temp_max_kelvin"\n'
-              'CONF_COLOR_TEMP_LOWER = "color_temp_lower"\n'
-              'CONF_COLOR_TEMP_UPPER = "color_temp_upper"\n'
-              'CONF_COLOR_TEMP_REVERSE = "color_temp_reverse"',
-          )
-
           light = Path("custom_components/localtuya/light.py")
-          replace_once(
-              light,
-              '    CONF_COLOR_TEMP_MAX_KELVIN,\n    CONF_COLOR_TEMP_MIN_KELVIN,\n    CONF_COLOR_TEMP_REVERSE,',
-              '    CONF_COLOR_TEMP_MAX_KELVIN,\n    CONF_COLOR_TEMP_MIN_KELVIN,\n'
-              '    CONF_COLOR_TEMP_LOWER,\n    CONF_COLOR_TEMP_UPPER,\n    CONF_COLOR_TEMP_REVERSE,',
-          )
-          replace_once(
-              light,
-              '        vol.Optional(\n            CONF_COLOR_TEMP_REVERSE,\n            default=DEFAULT_COLOR_TEMP_REVERSE,',
-              '        vol.Optional(CONF_COLOR_TEMP_LOWER): vol.All(\n'
-              '            vol.Coerce(int),\n'
-              '            vol.Range(min=0, max=65535),\n'
-              '        ),\n'
-              '        vol.Optional(CONF_COLOR_TEMP_UPPER): vol.All(\n'
-              '            vol.Coerce(int),\n'
-              '            vol.Range(min=0, max=65535),\n'
-              '        ),\n'
-              '        vol.Optional(\n'
-              '            CONF_COLOR_TEMP_REVERSE,\n'
-              '            default=DEFAULT_COLOR_TEMP_REVERSE,',
-          )
-          replace_once(
-              light,
-              '        self._raw_color_temp_max = self._upper_brightness\n',
-              '        raw_color_temp_lower = self._config.get(CONF_COLOR_TEMP_LOWER, 0)\n'
-              '        raw_color_temp_upper = self._config.get(\n'
-              '            CONF_COLOR_TEMP_UPPER, self._upper_brightness\n'
-              '        )\n'
-              '        try:\n'
-              '            self._raw_color_temp_lower = int(raw_color_temp_lower)\n'
-              '            self._raw_color_temp_upper = int(raw_color_temp_upper)\n'
-              '        except (TypeError, ValueError):\n'
-              '            self._raw_color_temp_lower = 0\n'
-              '            self._raw_color_temp_upper = self._upper_brightness\n'
-              '\n'
-              '        if (\n'
-              '            isinstance(raw_color_temp_lower, bool)\n'
-              '            or isinstance(raw_color_temp_upper, bool)\n'
-              '            or self._raw_color_temp_lower < 0\n'
-              '            or self._raw_color_temp_upper <= self._raw_color_temp_lower\n'
-              '        ):\n'
-              '            self.warning(\n'
-              '                "Invalid raw color temperature range %r..%r; using 0..%s",\n'
-              '                raw_color_temp_lower,\n'
-              '                raw_color_temp_upper,\n'
-              '                self._upper_brightness,\n'
-              '            )\n'
-              '            self._raw_color_temp_lower = 0\n'
-              '            self._raw_color_temp_upper = self._upper_brightness\n'
-              '\n'
-              '        self._raw_color_temp_max = self._raw_color_temp_upper\n',
-          )
-
           text = light.read_text()
-          start = text.index('    def _raw_color_temp_to_kelvin(self, value) -> int | None:\n')
-          end = text.index('    def _decode_color(self, raw_color):\n', start)
-          replacement = '''    def _raw_color_temp_to_kelvin(self, value) -> int | None:
-              """Convert a Tuya color-temperature DP to Kelvin."""
-              if value is None or isinstance(value, bool):
-                  return None
-              discrete = getattr(self, "_color_temp_values", [])
-              if discrete:
-                  try:
-                      raw_value = int(value)
-                  except (TypeError, ValueError):
-                      return None
-                  for kelvin, configured_raw in discrete:
-                      if raw_value == configured_raw:
-                          return kelvin
-                  return None
-              try:
-                  raw_value = float(value)
-              except (TypeError, ValueError):
-                  return None
-              raw_lower = getattr(self, "_raw_color_temp_lower", 0)
-              raw_upper = getattr(self, "_raw_color_temp_upper", getattr(self, "_raw_color_temp_max", getattr(self, "_upper_brightness", DEFAULT_UPPER_BRIGHTNESS)))
-              if raw_upper <= raw_lower:
-                  return None
-              raw_value = min(max(raw_value, raw_lower), raw_upper)
-              if self._color_temp_reverse:
-                  raw_value = raw_lower + raw_upper - raw_value
-              ratio = (raw_value - raw_lower) / (raw_upper - raw_lower)
-              mired = self._max_mired - ((self._max_mired - self._min_mired) * ratio)
-              kelvin = color_util.color_temperature_mired_to_kelvin(mired)
-              return min(max(kelvin, self._min_kelvin), self._max_kelvin)
-
-          def _kelvin_to_raw_color_temp(self, kelvin) -> int:
-              """Convert a Kelvin color temperature to Tuya DP format."""
-              kelvin = min(max(int(kelvin), self._min_kelvin), self._max_kelvin)
-              discrete = getattr(self, "_color_temp_values", [])
-              if discrete:
-                  best_raw = discrete[0][1]
-                  best_distance = abs(discrete[0][0] - kelvin)
-                  for configured_kelvin, raw_value in discrete[1:]:
-                      distance = abs(configured_kelvin - kelvin)
-                      if distance < best_distance:
-                          best_raw = raw_value
-                          best_distance = distance
-                  return best_raw
-              raw_lower = getattr(self, "_raw_color_temp_lower", 0)
-              raw_upper = getattr(self, "_raw_color_temp_upper", getattr(self, "_raw_color_temp_max", getattr(self, "_upper_brightness", DEFAULT_UPPER_BRIGHTNESS)))
-              if raw_upper <= raw_lower:
-                  return round(raw_lower)
-              mired = color_util.color_temperature_kelvin_to_mired(kelvin)
-              ratio = (self._max_mired - mired) / (self._max_mired - self._min_mired)
-              raw_value = round(raw_lower + ratio * (raw_upper - raw_lower))
-              raw_value = min(max(raw_value, raw_lower), raw_upper)
-              if self._color_temp_reverse:
-                  raw_value = raw_lower + raw_upper - raw_value
-              step = getattr(self, "_color_temp_step", 1)
-              if step != 1:
-                  raw_value = raw_lower + step * round(float(raw_value - raw_lower) / step)
-                  raw_value = min(max(raw_value, raw_lower), raw_upper)
-              return round(raw_value)
-
-          '''
-          light.write_text(text[:start] + replacement + text[end:])
+          start = text.index("    def _raw_color_temp_to_kelvin(self, value) -> int | None:\n")
+          end = text.index("    def _decode_color(self, raw_color):\n", start)
+          lines = [
+              "    def _raw_color_temp_to_kelvin(self, value) -> int | None:",
+              "        \"\"\"Convert a Tuya color-temperature DP to Kelvin.\"\"\"",
+              "        if value is None or isinstance(value, bool):",
+              "            return None",
+              "",
+              "        discrete = getattr(self, \"_color_temp_values\", [])",
+              "        if discrete:",
+              "            try:",
+              "                raw_value = int(value)",
+              "            except (TypeError, ValueError):",
+              "                return None",
+              "            for kelvin, configured_raw in discrete:",
+              "                if raw_value == configured_raw:",
+              "                    return kelvin",
+              "            return None",
+              "",
+              "        try:",
+              "            raw_value = float(value)",
+              "        except (TypeError, ValueError):",
+              "            return None",
+              "",
+              "        raw_lower = getattr(self, \"_raw_color_temp_lower\", 0)",
+              "        raw_upper = getattr(",
+              "            self,",
+              "            \"_raw_color_temp_upper\",",
+              "            getattr(",
+              "                self,",
+              "                \"_raw_color_temp_max\",",
+              "                getattr(self, \"_upper_brightness\", DEFAULT_UPPER_BRIGHTNESS),",
+              "            ),",
+              "        )",
+              "        if raw_upper <= raw_lower:",
+              "            return None",
+              "",
+              "        raw_value = min(max(raw_value, raw_lower), raw_upper)",
+              "        if self._color_temp_reverse:",
+              "            raw_value = raw_lower + raw_upper - raw_value",
+              "",
+              "        ratio = (raw_value - raw_lower) / (raw_upper - raw_lower)",
+              "        mired = self._max_mired - ((self._max_mired - self._min_mired) * ratio)",
+              "        kelvin = color_util.color_temperature_mired_to_kelvin(mired)",
+              "        return min(max(kelvin, self._min_kelvin), self._max_kelvin)",
+              "",
+              "    def _kelvin_to_raw_color_temp(self, kelvin) -> int:",
+              "        \"\"\"Convert a Kelvin color temperature to Tuya DP format.\"\"\"",
+              "        kelvin = min(max(int(kelvin), self._min_kelvin), self._max_kelvin)",
+              "",
+              "        discrete = getattr(self, \"_color_temp_values\", [])",
+              "        if discrete:",
+              "            best_raw = discrete[0][1]",
+              "            best_distance = abs(discrete[0][0] - kelvin)",
+              "            for configured_kelvin, raw_value in discrete[1:]:",
+              "                distance = abs(configured_kelvin - kelvin)",
+              "                if distance < best_distance:",
+              "                    best_raw = raw_value",
+              "                    best_distance = distance",
+              "            return best_raw",
+              "",
+              "        raw_lower = getattr(self, \"_raw_color_temp_lower\", 0)",
+              "        raw_upper = getattr(",
+              "            self,",
+              "            \"_raw_color_temp_upper\",",
+              "            getattr(",
+              "                self,",
+              "                \"_raw_color_temp_max\",",
+              "                getattr(self, \"_upper_brightness\", DEFAULT_UPPER_BRIGHTNESS),",
+              "            ),",
+              "        )",
+              "        if raw_upper <= raw_lower:",
+              "            return round(raw_lower)",
+              "",
+              "        mired = color_util.color_temperature_kelvin_to_mired(kelvin)",
+              "        ratio = (self._max_mired - mired) / (self._max_mired - self._min_mired)",
+              "        raw_value = round(raw_lower + ratio * (raw_upper - raw_lower))",
+              "        raw_value = min(max(raw_value, raw_lower), raw_upper)",
+              "",
+              "        if self._color_temp_reverse:",
+              "            raw_value = raw_lower + raw_upper - raw_value",
+              "",
+              "        step = getattr(self, \"_color_temp_step\", 1)",
+              "        if step != 1:",
+              "            raw_value = raw_lower + step * round(float(raw_value - raw_lower) / step)",
+              "            raw_value = min(max(raw_value, raw_lower), raw_upper)",
+              "",
+              "        return round(raw_value)",
+              "",
+              "",
+          ]
+          light.write_text(text[:start] + "\n".join(lines) + text[end:])
 
           tests = Path("tests/test_light_residual_runtime.py")
-          replace_once(tests, 'import unittest\n\nfrom custom_components.localtuya.light import LocaltuyaLight', 'import unittest\n\nimport homeassistant.util.color as color_util\n\nfrom custom_components.localtuya.light import LocaltuyaLight')
-          replace_once(
-              tests,
-              '        light._color_temp_values = light._configured_color_temp_values()\n        light._color_temp_step = int(light._config.get("color_temp_step", 1))',
-              '        light._color_temp_values = light._configured_color_temp_values()\n'
-              '        light._color_temp_step = int(light._config.get("color_temp_step", 1))\n'
-              '        light._raw_color_temp_lower = int(light._config.get("color_temp_lower", 0))\n'
-              '        light._raw_color_temp_upper = int(light._config.get("color_temp_upper", light._upper_brightness))\n'
-              '        light._raw_color_temp_max = light._raw_color_temp_upper\n'
-              '        light._color_temp_reverse = bool(light._config.get("color_temp_reverse", False))\n'
-              '        light._min_kelvin = int(light._config.get("color_temp_min_kelvin", 2700))\n'
-              '        light._max_kelvin = int(light._config.get("color_temp_max_kelvin", 6500))\n'
-              '        light._max_mired = color_util.color_temperature_kelvin_to_mired(light._min_kelvin)\n'
-              '        light._min_mired = color_util.color_temperature_kelvin_to_mired(light._max_kelvin)',
-          )
-          marker = '    def test_extended_rgbhsv_scales_saturation_and_value(self):\n'
           text = tests.read_text()
-          new_tests = '''    def test_color_temperature_uses_independent_raw_range(self):
-              light = self._light({"color_temp_lower": 100, "color_temp_upper": 1100})
-              self.assertEqual(light._kelvin_to_raw_color_temp(2700), 100)
-              self.assertEqual(light._kelvin_to_raw_color_temp(6500), 1100)
-              self.assertEqual(light._raw_color_temp_to_kelvin(100), 2700)
-              self.assertEqual(light._raw_color_temp_to_kelvin(1100), 6500)
-
-          def test_color_temperature_reverse_respects_both_raw_bounds(self):
-              light = self._light({"color_temp_lower": 100, "color_temp_upper": 1100, "color_temp_reverse": True})
-              self.assertEqual(light._kelvin_to_raw_color_temp(2700), 1100)
-              self.assertEqual(light._kelvin_to_raw_color_temp(6500), 100)
-              self.assertEqual(light._raw_color_temp_to_kelvin(100), 6500)
-              self.assertEqual(light._raw_color_temp_to_kelvin(1100), 2700)
-
-          def test_color_temperature_step_is_relative_to_raw_minimum(self):
-              light = self._light({"color_temp_lower": 5, "color_temp_upper": 105, "color_temp_step": 10})
-              self.assertEqual(light._kelvin_to_raw_color_temp(2700), 5)
-              self.assertEqual(light._kelvin_to_raw_color_temp(6500), 105)
-
-          '''
-          if text.count(marker) != 1:
-              raise SystemExit('tests: expected color temp insertion marker once')
-          tests.write_text(text.replace(marker, new_tests + marker, 1))
+          start = text.index("    def test_color_temperature_uses_independent_raw_range(self):\n")
+          end = text.index("    def test_extended_rgbhsv_scales_saturation_and_value(self):\n", start)
+          lines = [
+              "    def test_color_temperature_uses_independent_raw_range(self):",
+              "        light = self._light({\"color_temp_lower\": 100, \"color_temp_upper\": 1100})",
+              "        self.assertEqual(light._kelvin_to_raw_color_temp(2700), 100)",
+              "        self.assertEqual(light._kelvin_to_raw_color_temp(6500), 1100)",
+              "        self.assertEqual(light._raw_color_temp_to_kelvin(100), 2700)",
+              "        self.assertEqual(light._raw_color_temp_to_kelvin(1100), 6500)",
+              "",
+              "    def test_color_temperature_reverse_respects_both_raw_bounds(self):",
+              "        light = self._light({",
+              "            \"color_temp_lower\": 100,",
+              "            \"color_temp_upper\": 1100,",
+              "            \"color_temp_reverse\": True,",
+              "        })",
+              "        self.assertEqual(light._kelvin_to_raw_color_temp(2700), 1100)",
+              "        self.assertEqual(light._kelvin_to_raw_color_temp(6500), 100)",
+              "        self.assertEqual(light._raw_color_temp_to_kelvin(100), 6500)",
+              "        self.assertEqual(light._raw_color_temp_to_kelvin(1100), 2700)",
+              "",
+              "    def test_color_temperature_step_is_relative_to_raw_minimum(self):",
+              "        light = self._light({",
+              "            \"color_temp_lower\": 5,",
+              "            \"color_temp_upper\": 105,",
+              "            \"color_temp_step\": 10,",
+              "        })",
+              "        self.assertEqual(light._kelvin_to_raw_color_temp(2700), 5)",
+              "        self.assertEqual(light._kelvin_to_raw_color_temp(6500), 105)",
+              "",
+              "",
+          ]
+          tests.write_text(text[:start] + "\n".join(lines) + text[end:])
           PY
 
-      - name: Capture focused test result
+      - name: Verify focused runtime
         shell: bash
         run: |
-          set +e
-          python -m compileall custom_components/localtuya/light.py tests/test_light_residual_runtime.py > color-temp-test-output.txt 2>&1
-          python -m pytest -q tests/test_light_residual_runtime.py tests/test_light_brightness_step.py >> color-temp-test-output.txt 2>&1
-          exit 0
+          python -m compileall custom_components/localtuya/light.py tests/test_light_residual_runtime.py tests/test_light_brightness_step.py
+          python -m unittest tests.test_light_residual_runtime tests.test_light_brightness_step
 
-      - name: Commit patch and diagnostics
+      - name: Commit correction
         shell: bash
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add custom_components/localtuya/const.py custom_components/localtuya/light.py tests/test_light_residual_runtime.py color-temp-test-output.txt
+          git add custom_components/localtuya/light.py tests/test_light_residual_runtime.py
           git diff --cached --check
-          git commit -m "Support independent light color temperature ranges"
+          git commit -m "Fix independent color temperature range tests"
           git push origin HEAD:compat/light-color-temp-raw-range
