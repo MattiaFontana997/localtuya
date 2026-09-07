@@ -1,0 +1,106 @@
+name: Patch climate temperature step
+
+on:
+  push:
+    branches:
+      - compat/climate-temperature-step
+    paths:
+      - .github/workflows/patch-climate-temperature-step.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: compat/climate-temperature-step
+          fetch-depth: 0
+
+      - name: Apply arbitrary positive temperature step support
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one anchor, found {count}")
+              path.write_text(text.replace(old, new, 1))
+
+          climate = Path("custom_components/localtuya/climate.py")
+          replace_once(
+              climate,
+              "import asyncio\nimport logging\n",
+              "import asyncio\nimport logging\nimport math\n",
+          )
+          replace_once(
+              climate,
+              "    return value if value > 0 else default\nDEFAULT_TEMPERATURE_UNIT = TEMPERATURE_CELSIUS\n",
+              "    return value if value > 0 else default\n\n\n"
+              "def _positive_temperature_step(value):\n"
+              "    \"\"\"Validate a finite, strictly positive target-temperature step.\"\"\"\n"
+              "    if isinstance(value, bool):\n"
+              "        raise vol.Invalid(\"temperature step must be a positive number\")\n"
+              "    try:\n"
+              "        value = float(value)\n"
+              "    except (TypeError, ValueError) as exc:\n"
+              "        raise vol.Invalid(\"temperature step must be a positive number\") from exc\n"
+              "    if not math.isfinite(value) or value <= 0:\n"
+              "        raise vol.Invalid(\"temperature step must be a positive number\")\n"
+              "    return value\n\n\n"
+              "DEFAULT_TEMPERATURE_UNIT = TEMPERATURE_CELSIUS\n",
+          )
+          replace_once(
+              climate,
+              "        vol.Optional(CONF_TEMPERATURE_STEP, default=PRECISION_WHOLE): vol.In(\n"
+              "            [PRECISION_WHOLE, PRECISION_HALVES, PRECISION_TENTHS]\n"
+              "        ),\n",
+              "        vol.Optional(\n"
+              "            CONF_TEMPERATURE_STEP, default=PRECISION_WHOLE\n"
+              "        ): _positive_temperature_step,\n",
+          )
+
+          mapper = Path("custom_components/localtuya/device_mapper.py")
+          replace_once(
+              mapper,
+              "import json\n",
+              "import json\nimport math\n",
+          )
+          replace_once(
+              mapper,
+              "        # Current LocalTuya climate config flow supports\n"
+              "        # these standard HA increments.\n"
+              "        if real_step in {\n"
+              "            0.1,\n"
+              "            0.5,\n"
+              "            1.0,\n"
+              "        }:\n"
+              "            config[\n"
+              "                CONF_TEMPERATURE_STEP\n"
+              "            ] = real_step\n",
+              "        if math.isfinite(real_step) and real_step > 0:\n"
+              "            config[\n"
+              "                CONF_TEMPERATURE_STEP\n"
+              "            ] = real_step\n",
+          )
+          PY
+
+      - name: Validate syntax and diff
+        shell: bash
+        run: |
+          python -m compileall custom_components/localtuya/climate.py custom_components/localtuya/device_mapper.py tests/test_climate_temperature_step.py
+          git diff --check
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/climate.py custom_components/localtuya/device_mapper.py
+          git commit -m "Support arbitrary climate temperature steps"
+          git push origin HEAD:compat/climate-temperature-step
