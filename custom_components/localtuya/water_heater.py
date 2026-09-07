@@ -28,6 +28,7 @@ from .const import (
     CONF_WATER_HEATER_POWER_OFF,
     CONF_WATER_HEATER_POWER_ON,
     CONF_WATER_HEATER_TARGET_TEMPERATURE_DP,
+    CONF_WATER_HEATER_TARGET_READONLY,
     CONF_WATER_HEATER_TEMPERATURE_MAX,
     CONF_WATER_HEATER_TEMPERATURE_MIN,
     CONF_WATER_HEATER_TEMPERATURE_SCALING,
@@ -104,11 +105,12 @@ class LocaltuyaWaterHeater(LocalTuyaEntity, WaterHeaterEntity):
         self._away_off = self._config.get(CONF_WATER_HEATER_AWAY_OFF, False)
         self._away_mode = str(self._config.get(CONF_WATER_HEATER_AWAY_MODE, "away"))
         self._default_mode = self._config.get(CONF_WATER_HEATER_DEFAULT_MODE)
+        self._target_readonly = bool(self._config.get(CONF_WATER_HEATER_TARGET_READONLY, False))
 
         features = WaterHeaterEntityFeature(0)
         if self.has_config(CONF_WATER_HEATER_POWER_DP):
             features |= WaterHeaterEntityFeature.ON_OFF
-        if self.has_config(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP):
+        if self.has_config(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP) and not self._target_readonly:
             features |= WaterHeaterEntityFeature.TARGET_TEMPERATURE
         if self.has_config(CONF_WATER_HEATER_MODE_DP) and self._mode_values:
             features |= WaterHeaterEntityFeature.OPERATION_MODE
@@ -230,6 +232,8 @@ class LocaltuyaWaterHeater(LocalTuyaEntity, WaterHeaterEntity):
         if kwargs.get(ATTR_OPERATION_MODE) is not None:
             await self.async_set_operation_mode(kwargs[ATTR_OPERATION_MODE])
         if kwargs.get(ATTR_TEMPERATURE) is not None:
+            if getattr(self, "_target_readonly", False):
+                raise NotImplementedError()
             dp_id = self._config.get(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP)
             if dp_id is None:
                 raise NotImplementedError()
