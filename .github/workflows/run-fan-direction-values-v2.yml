@@ -1,0 +1,52 @@
+name: Run corrected exact fan direction patch
+
+on:
+  push:
+    paths:
+      - .github/workflows/run-fan-direction-values-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Apply corrected reviewed patch body
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          lines = Path('.github/workflows/patch-fan-direction-values.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(lines) if line.strip() == "python - <<'PY'")
+          end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'PY')
+          body_lines = []
+          for line in lines[start + 1:end]:
+              body_lines.append(line[10:] if line.startswith('          ') else line)
+          body = '\n'.join(body_lines)
+          body = body.replace(
+              "marker = '\\n\\ndef validate_fan_speed_mapping(value):\\n'",
+              "marker = '\\n\\ndef validate_fan_speed_mapping(value: Any) -> dict[str, Any] | None:\\n'",
+          )
+          exec(compile(body, 'fan-direction-patch', 'exec'))
+          PY
+      - name: Syntax check
+        run: python -m py_compile custom_components/localtuya/const.py custom_components/localtuya/fan_mapping.py custom_components/localtuya/fan.py custom_components/localtuya/device_catalog.py tests/test_fan_direction_values.py
+      - name: Install tox
+        run: python -m pip install "tox>=4.20,<5"
+      - name: Run full suite
+        run: python -m tox -e py314
+      - name: Commit runtime support
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/const.py custom_components/localtuya/fan_mapping.py custom_components/localtuya/fan.py custom_components/localtuya/device_catalog.py tests/test_fan_direction_values.py
+          git diff --cached --check
+          git commit -m "Support exact fan direction mappings"
+          git push origin HEAD:develop
