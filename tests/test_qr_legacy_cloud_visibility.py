@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 import voluptuous as vol
@@ -18,16 +18,22 @@ from custom_components.localtuya.const import (
 )
 
 
+class _OptionsFlowUnderTest(LocalTuyaOptionsFlowHandler):
+    """Expose a deterministic config entry without the HA flow manager."""
+
+    @property
+    def config_entry(self):
+        return self._test_entry
+
+
 class LegacyCloudVisibilityTests(unittest.IsolatedAsyncioTestCase):
     """Developer Platform setup must not appear in the new standard UX."""
 
     async def _schema_for(self, data):
         entry = SimpleNamespace(data=data)
-        flow = LocalTuyaOptionsFlowHandler(entry)
-        config_entries = SimpleNamespace(
-            async_get_known_entry=MagicMock(return_value=entry)
-        )
-        flow.hass = SimpleNamespace(config_entries=config_entries)
+        flow = _OptionsFlowUnderTest(entry)
+        flow._test_entry = entry
+        flow.hass = SimpleNamespace()
         labels = {
             CONF_ADD_DEVICE: "Add a new device",
             CONF_SETUP_CLOUD: "Reconfigure Cloud API account",
