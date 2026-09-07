@@ -153,6 +153,7 @@ CONF_FAN_OSCILLATING_OFF = "fan_oscillating_off"
 CONF_SCALING = "scaling"
 CONF_NUMBER_MODE = "number_mode"
 CONF_SENSOR_UNIX_TIMESTAMP = "sensor_unix_timestamp"
+CONF_DYNAMIC_UNIT_DP = "dynamic_unit_dp"
 
 # binary sensor
 CONF_STATE_ON = "state_on"

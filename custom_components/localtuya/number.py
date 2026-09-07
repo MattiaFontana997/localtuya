@@ -7,10 +7,11 @@ import voluptuous as vol
 from homeassistant.components.number import DOMAIN, NumberDeviceClass, NumberEntity, NumberMode
 from homeassistant.const import CONF_DEVICE_CLASS, CONF_UNIT_OF_MEASUREMENT
 
-from .common import LocalTuyaEntity, async_setup_entry
+from .common import LocalTuyaEntity, async_setup_entry, tuya_unit_from_ascii
 from .const import (
     CONF_DEFAULT_VALUE, CONF_MAX_VALUE, CONF_MIN_VALUE, CONF_PASSIVE_ENTITY,
     CONF_RESTORE_ON_RECONNECT, CONF_SCALING, CONF_STEPSIZE_VALUE, CONF_NUMBER_MODE,
+    CONF_DYNAMIC_UNIT_DP,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ def flow_schema(dps):
         vol.Required(CONF_MAX_VALUE, default=DEFAULT_MAX): vol.All(vol.Coerce(float), vol.Range(min=-1000000.0, max=1000000.0)),
         vol.Required(CONF_STEPSIZE_VALUE, default=DEFAULT_STEP): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1000000.0)),
         vol.Optional(CONF_UNIT_OF_MEASUREMENT): str,
+        vol.Optional(CONF_DYNAMIC_UNIT_DP): vol.In(dps),
         vol.Optional(CONF_SCALING, default=1.0): vol.All(vol.Coerce(float), vol.Range(min=0.000000001, max=1000000000.0)),
         vol.Optional(CONF_DEVICE_CLASS): vol.In([device_class.value for device_class in NumberDeviceClass]),
         vol.Optional(CONF_NUMBER_MODE, default=NumberMode.AUTO.value): vol.In([mode.value for mode in NumberMode]),
@@ -68,6 +70,14 @@ class LocaltuyaNumber(LocalTuyaEntity, NumberEntity):
         default_value = self._config.get(CONF_DEFAULT_VALUE)
         if default_value is not None:
             self._default_value = float(default_value)
+
+    @property
+    def native_unit_of_measurement(self):
+        """Return a catalog-provided live unit when configured."""
+        dp_id = self._config.get(CONF_DYNAMIC_UNIT_DP)
+        if dp_id is not None:
+            return tuya_unit_from_ascii(self.dps(dp_id))
+        return self._attr_native_unit_of_measurement
 
     @property
     def native_value(self) -> float | None:

@@ -10,6 +10,7 @@ from datetime import timedelta
 from homeassistant.const import (
     CONF_DEVICE_ID, CONF_DEVICES, CONF_ENTITIES, CONF_FRIENDLY_NAME, CONF_HOST,
     CONF_ID, CONF_PLATFORM, CONF_SCAN_INTERVAL, STATE_UNKNOWN,
+    UnitOfArea, UnitOfDensity, UnitOfTemperature,
 )
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -38,6 +39,18 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+_TUYA_ASCII_UNIT_MAP = {
+    "C": UnitOfTemperature.CELSIUS,
+    "F": UnitOfTemperature.FAHRENHEIT,
+    "ugm3": UnitOfDensity.MICROGRAMS_PER_CUBIC_METER,
+    "m2": UnitOfArea.SQUARE_METERS,
+}
+
+
+def tuya_unit_from_ascii(unit):
+    """Translate the exact ASCII unit aliases used by pinned Tuya Local."""
+    return _TUYA_ASCII_UNIT_MAP.get(unit, unit)
 MAX_EXTRA_STATE_ATTRIBUTES = 32
 MAX_NON_PERSISTENT_DPS = 32
 CONF_ENTITY_REGISTRY_ENABLED_DEFAULT = "entity_registry_enabled_default"

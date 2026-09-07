@@ -17,8 +17,8 @@ from homeassistant.const import (
     CONF_UNIT_OF_MEASUREMENT,
 )
 
-from .common import LocalTuyaEntity, async_setup_entry
-from .const import CONF_SCALING, CONF_SENSOR_UNIX_TIMESTAMP
+from .common import LocalTuyaEntity, async_setup_entry, tuya_unit_from_ascii
+from .const import CONF_DYNAMIC_UNIT_DP, CONF_SCALING, CONF_SENSOR_UNIX_TIMESTAMP
 from .sensor_mapping import evaluate_sensor_value_mapping, validate_sensor_value_mapping
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,6 +30,7 @@ def flow_schema(dps):
     """Return schema used in config flow."""
     return {
         vol.Optional(CONF_UNIT_OF_MEASUREMENT): str,
+        vol.Optional(CONF_DYNAMIC_UNIT_DP): vol.In(dps),
         vol.Optional(CONF_DEVICE_CLASS): vol.In(
             [device_class.value for device_class in SensorDeviceClass]
         ),
@@ -78,6 +79,14 @@ class LocaltuyaSensor(LocalTuyaEntity, SensorEntity):
         self._attr_native_unit_of_measurement = self._config.get(
             CONF_UNIT_OF_MEASUREMENT
         )
+
+    @property
+    def native_unit_of_measurement(self):
+        """Return a catalog-provided live unit when configured."""
+        dp_id = self._config.get(CONF_DYNAMIC_UNIT_DP)
+        if dp_id is not None:
+            return tuya_unit_from_ascii(self.dps(dp_id))
+        return self._attr_native_unit_of_measurement
 
     @property
     def native_value(self):
