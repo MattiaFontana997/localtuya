@@ -24,6 +24,9 @@ from .const import (
     CONF_BRIGHTNESS_UPPER,
     CONF_COLOR,
     CONF_COLOR_MODE,
+    CONF_COLOR_TEMP_LOWER,
+    CONF_COLOR_TEMP_STEP,
+    CONF_COLOR_TEMP_UPPER,
     CONF_COMMANDS_SET,
     CONF_CURRENT_POSITION_DP,
     CONF_CURRENT_TEMPERATURE_DP,
@@ -693,26 +696,19 @@ def _build_light_candidate(
             )
 
     if color_temp is not None:
+        config[CONF_COLOR_TEMP] = color_temp.id
+        matched_codes.append(color_temp.code)
+
         temperature_range = _integer_range(color_temp)
+        if temperature_range is not None:
+            config[CONF_COLOR_TEMP_LOWER] = temperature_range[0]
+            config[CONF_COLOR_TEMP_UPPER] = temperature_range[1]
 
-        # Current LocalTuya light code uses brightness_upper as the
-        # raw color-temperature maximum. Auto-map temperature only
-        # where the metadata confirms the ranges are compatible.
-        brightness_max = (
-            brightness_range[1]
-            if brightness_range is not None
-            else 1000
-        )
-
-        temperature_max = (
-            temperature_range[1]
-            if temperature_range is not None
-            else brightness_max
-        )
-
-        if temperature_max == brightness_max:
-            config[CONF_COLOR_TEMP] = color_temp.id
-            matched_codes.append(color_temp.code)
+        temperature_step = _numeric_value(color_temp, "step")
+        if temperature_step is not None:
+            temperature_step = int(temperature_step)
+            if 1 <= temperature_step <= 10000:
+                config[CONF_COLOR_TEMP_STEP] = temperature_step
 
     if work_mode is not None:
         modes = work_mode.values.get("range", [])

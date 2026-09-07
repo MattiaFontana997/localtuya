@@ -1009,6 +1009,11 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         if self._color_temp_reverse:
             raw_value = raw_lower + raw_upper - raw_value
 
+        if raw_value <= raw_lower:
+            return self._min_kelvin
+        if raw_value >= raw_upper:
+            return self._max_kelvin
+
         ratio = (raw_value - raw_lower) / (raw_upper - raw_lower)
         mired = self._max_mired - ((self._max_mired - self._min_mired) * ratio)
         kelvin = color_util.color_temperature_mired_to_kelvin(mired)
