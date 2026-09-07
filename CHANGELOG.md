@@ -1,5 +1,69 @@
 # Changelog
 
+## 6.5.0 — 2026-09-07
+
+Compatibility, catalog and release-hygiene update building on the 6.4.0
+catalog-driven runtime. This release closes the remaining deterministic Tuya
+Local importer gaps found during the final compatibility sweep and prepares a
+clean stable baseline without relaxing fail-closed safety rules.
+
+### Tuya Local compatibility
+
+- Added independent raw color-temperature ranges for lights, so CCT datapoints
+  no longer have to share the white-brightness range
+- Preserved reverse CCT mapping and raw-step quantization across non-zero raw
+  lower bounds
+- Added support for arbitrary finite positive climate target-temperature steps
+  instead of limiting automatic mapping to 0.1, 0.5 or 1.0 degree increments
+- Added deterministic structured JSON HSV support for `colour_data_v2` and
+  `color_data_v2`
+- JSON v2 light colors use Tuya's h 0–360 and s/v 0–1000 ranges and preserve
+  the observed dictionary vs JSON-string transport form when writing values
+
+### Catalog and Community Catalog workflow
+
+- Updated bundled-catalog synchronization tooling to accept remote Catalog
+  Schema V3 while continuing to emit the deterministic Schema V2 offline
+  snapshot containing physically verified product-ID mappings only
+- Added regression coverage ensuring experimental productless V3 fingerprints
+  are not promoted into the verified offline snapshot
+- Added an explicit translated `Submit to Community Catalog` action after the
+  contribution JSON review step
+- Added a visible `GitHub ↗` cue for the pre-filled Community Catalog submission
+  action
+- Kept contribution privacy guarantees unchanged; nothing is uploaded
+  automatically
+
+### Safety and compatibility
+
+- Legacy structured `colour_data` JSON remains fail-closed because its raw
+  saturation/value ranges are not deterministic across Tuya device families
+- Climate metadata without a reliable scale remains fail-closed rather than
+  guessing temperature precision
+- Product-ID catalog matches remain authoritative over productless
+  fingerprints
+- Referenced-DP validation continues to reject mappings whose required LAN
+  datapoints are not present
+- Existing manual configurations and Catalog V1/V2/V3 runtime compatibility
+  are preserved
+
+### Release hygiene
+
+- Removed temporary patch, inspection and diagnostic GitHub Actions workflows
+  used during compatibility development
+- Removed temporary repository patch helper scripts
+- Kept only the normal LocalTuya test, HACS/Hassfest validation and catalog
+  snapshot workflows for the release baseline
+
+### Validation
+
+- LocalTuya regression tests pass on Python 3.14 / Home Assistant 2026
+- HACS validation passes
+- Hassfest validation passes
+- Catalog Snapshot validation passes against the current Schema V3 Community
+  Device Catalog
+
+
 ## 6.4.0 — 2026-09-06
 
 Comprehensive catalog-driven runtime and Tuya Local compatibility release.
