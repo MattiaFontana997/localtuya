@@ -24,7 +24,11 @@ from .const import (
     CONF_BRIGHTNESS_LOWER,
     CONF_BRIGHTNESS_UPPER,
     CONF_COLOR,
+    CONF_COLOR_BRIGHTNESS_LOWER,
+    CONF_COLOR_BRIGHTNESS_UPPER,
+    CONF_COLOR_JSON_ENCODING,
     CONF_COLOR_MODE,
+    CONF_COLOR_SATURATION_UPPER,
     CONF_COLOR_TEMP_LOWER,
     CONF_COLOR_TEMP_STEP,
     CONF_COLOR_TEMP_UPPER,
@@ -162,6 +166,11 @@ _LIGHT_COLOR_CODES = (
     "colour_data_v2",
     "color_data_v2",
 )
+
+_LIGHT_JSON_V2_COLOR_CODES = {
+    "colour_data_v2",
+    "color_data_v2",
+}
 
 _THERMOSTAT_CATEGORIES = {
     "wk",
@@ -724,12 +733,20 @@ def _build_light_candidate(
             config[CONF_COLOR_MODE] = work_mode.id
             matched_codes.append(work_mode.code)
 
-    if (
-        color is not None
-        and color.type_name in ("", "string", "raw")
-    ):
-        config[CONF_COLOR] = color.id
-        matched_codes.append(color.code)
+    if color is not None:
+        if color.type_name in ("", "string", "raw"):
+            config[CONF_COLOR] = color.id
+            matched_codes.append(color.code)
+        elif (
+            color.type_name == "json"
+            and color.code in _LIGHT_JSON_V2_COLOR_CODES
+        ):
+            config[CONF_COLOR] = color.id
+            config[CONF_COLOR_JSON_ENCODING] = True
+            config[CONF_COLOR_SATURATION_UPPER] = 1000
+            config[CONF_COLOR_BRIGHTNESS_LOWER] = 0
+            config[CONF_COLOR_BRIGHTNESS_UPPER] = 1000
+            matched_codes.append(color.code)
 
     referenced_dps = [power.id]
 

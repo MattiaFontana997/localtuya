@@ -1,5 +1,6 @@
 """Platform to locally control Tuya-based light devices."""
 
+import json
 import logging
 import textwrap
 from dataclasses import dataclass
@@ -31,6 +32,7 @@ from .const import (
     CONF_BRIGHTNESS_POWER_OFF_VALUE,
     CONF_COLOR,
     CONF_COLOR_RGB_ENCODING,
+    CONF_COLOR_JSON_ENCODING,
     CONF_COLOR_SATURATION_UPPER,
     CONF_COLOR_BRIGHTNESS_LOWER,
     CONF_COLOR_BRIGHTNESS_UPPER,
@@ -472,6 +474,12 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             mode_set = 0
 
         self._modes = MAP_MODE_SET.get(mode_set, Mode())
+
+        self._color_json_encoding_forced = bool(
+            self._config.get(CONF_COLOR_JSON_ENCODING, False)
+        )
+        self._color_json_encoding = self._color_json_encoding_forced
+        self._color_json_payload_as_string = False
 
         # Catalog mappings can explicitly require Tuya's legacy 14-hex
         # RRGGBB+HHHH+SS+VV payload. Without this flag, keep the historical
@@ -1062,10 +1070,64 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
         return round(raw_value)
 
-    def _decode_color(self, raw_color):
-        """Decode a Tuya HSV/RGB+HSV color payload."""
+    def _json_color_payload(self, raw_color):
+        """Return a Tuya JSON HSV payload and remember its transport."""
+        if isinstance(raw_color, dict):
+            self._color_json_encoding = True
+            self._color_json_payload_as_string = False
+            return raw_color
+
         if not isinstance(raw_color, str):
             return None
+
+        stripped = raw_color.strip()
+        if not stripped.startswith("{"):
+            return None
+
+        try:
+            payload = json.loads(stripped)
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+
+        self._color_json_encoding = True
+        self._color_json_payload_as_string = True
+        return payload
+
+    def _decode_json_color(self, payload):
+        """Decode Tuya JSON HSV into Home Assistant HS/brightness."""
+        values = []
+        for key in ("h", "s", "v"):
+            value = payload.get(key)
+            if value is None or isinstance(value, bool):
+                return None
+            try:
+                values.append(float(value))
+            except (TypeError, ValueError):
+                return None
+
+        hue, saturation, value = values
+        saturation_upper = self._color_saturation_upper(extended=False)
+        hs = (
+            min(max(hue, 0.0), 360.0),
+            min(max(saturation * 100.0 / saturation_upper, 0.0), 100.0),
+        )
+        brightness = self._raw_color_brightness_to_ha(value)
+        return hs, brightness
+
+    def _decode_color(self, raw_color):
+        """Decode a Tuya JSON/HSV/RGB+HSV color payload."""
+        json_payload = self._json_color_payload(raw_color)
+        if json_payload is not None:
+            return self._decode_json_color(json_payload)
+
+        if not isinstance(raw_color, str):
+            return None
+
+        if not getattr(self, "_color_json_encoding_forced", False):
+            self._color_json_encoding = False
+            self._color_json_payload_as_string = False
 
         raw_color = raw_color.strip()
 
@@ -1123,11 +1185,22 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         except ValueError:
             return None
 
-    def _encode_color(self, hs, brightness) -> str:
+    def _encode_color(self, hs, brightness) -> str | dict[str, int]:
         """Encode HA HSV values into the Tuya color DP format."""
         hue = min(max(float(hs[0]), 0.0), 360.0)
         saturation = min(max(float(hs[1]), 0.0), 100.0)
         brightness = min(max(int(brightness), 0), 255)
+
+        if getattr(self, "_color_json_encoding", False):
+            saturation_upper = self._color_saturation_upper(extended=False)
+            payload = {
+                "h": round(hue),
+                "s": round(saturation * saturation_upper / 100.0),
+                "v": self._ha_brightness_to_raw_color(brightness),
+            }
+            if getattr(self, "_color_json_payload_as_string", False):
+                return json.dumps(payload, separators=(",", ":"))
+            return payload
 
         if self._color_uses_rgb_encoding:
             rgb = color_util.color_hsv_to_RGB(
