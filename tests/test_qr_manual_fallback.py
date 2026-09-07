@@ -65,21 +65,14 @@ class QrManualFallbackTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(result["step_id"], "manual_configure_entity")
 
+            # With one available DP, configuring that entity consumes the last
+            # DP and the flow completes automatically without an extra click.
             result = await flow.async_step_manual_configure_entity(
                 {
                     "id": "1 (value: True)",
                     "friendly_name": "Manual Switch",
                 }
             )
-
-        self.assertEqual(result["step_id"], "manual_pick_entity_type")
-
-        result = await flow.async_step_manual_pick_entity_type(
-            {
-                "manual_platform": "switch",
-                "manual_finish": True,
-            }
-        )
 
         self.assertEqual(result["type"], FlowResultType.CREATE_ENTRY)
         self.assertTrue(result["data"][CONF_NO_CLOUD])
