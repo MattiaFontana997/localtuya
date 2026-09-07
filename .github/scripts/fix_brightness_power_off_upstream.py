@@ -32,8 +32,10 @@ old_write = '''            raw_value = round(
 new_write = '''            if target == 1 and self._lower_brightness != 0:
                 raw_value = self._lower_brightness
             else:
-                raw_value = color_util.brightness_to_value(
-                    (self._lower_brightness, self._upper_brightness), target
+                raw_value = round(
+                    color_util.brightness_to_value(
+                        (self._lower_brightness, self._upper_brightness), target
+                    )
                 )
 '''
 assert text.count(old_write) == 1
