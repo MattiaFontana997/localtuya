@@ -11,7 +11,7 @@ _MAX_RULES = 64
 _MAX_MAPPING_DPS = 32
 _MAX_CONDITIONS = 16
 _RULE_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "constraint_dp", "conditions", "value_redirect_dp", "hidden", "invalid", "default", "bitmask"}
-_CONDITION_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "value_redirect_dp", "hidden", "invalid"}
+_CONDITION_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "value_redirect_dp", "hidden", "invalid", "bitmask"}
 
 
 def _valid_scalar(value: Any) -> bool:
@@ -199,15 +199,33 @@ def _matches(expected: Any, actual: Any) -> bool:
     return expected == actual or str(expected) == str(actual)
 
 
+def _condition_matches_raw(condition: dict[str, Any], actual: Any) -> bool:
+    """Match one condition, including Tuya Local constraint-bitfield semantics."""
+    expected = condition.get("dps_val")
+    if condition.get("bitmask", False):
+        if _matches(expected, actual):
+            return True
+        try:
+            expected_int = int(expected)
+            actual_int = int(actual)
+        except (TypeError, ValueError):
+            return False
+        if expected_int == 0:
+            return False
+        return (actual_int & expected_int) == expected_int
+    return _matches(expected, actual)
+
+
 def _active_condition(rule: dict[str, Any], status: dict[str, Any]) -> dict[str, Any] | None:
     constraint_dp = rule.get("constraint_dp")
     if constraint_dp is None:
         return None
     current = status.get(str(constraint_dp))
+    active = None
     for condition in rule.get("conditions", []):
-        if _matches(condition.get("dps_val"), current):
-            return condition
-    return None
+        if _condition_matches_raw(condition, current):
+            active = condition
+    return active
 
 
 def _rule_matches_raw(rule: dict[str, Any], actual: Any) -> bool:
