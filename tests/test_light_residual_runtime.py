@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import unittest
 
+import homeassistant.util.color as color_util
+
 from custom_components.localtuya.light import LocaltuyaLight
 
 
@@ -23,6 +25,14 @@ class ResidualLightRuntimeTests(unittest.TestCase):
         light._brightness_values = light._configured_brightness_values()
         light._color_temp_values = light._configured_color_temp_values()
         light._color_temp_step = int(light._config.get("color_temp_step", 1))
+        light._raw_color_temp_lower = int(light._config.get("color_temp_lower", 0))
+        light._raw_color_temp_upper = int(light._config.get("color_temp_upper", light._upper_brightness))
+        light._raw_color_temp_max = light._raw_color_temp_upper
+        light._color_temp_reverse = bool(light._config.get("color_temp_reverse", False))
+        light._min_kelvin = int(light._config.get("color_temp_min_kelvin", 2700))
+        light._max_kelvin = int(light._config.get("color_temp_max_kelvin", 6500))
+        light._max_mired = color_util.color_temperature_kelvin_to_mired(light._min_kelvin)
+        light._min_mired = color_util.color_temperature_kelvin_to_mired(light._max_kelvin)
         light._light_power_mask = light._configured_light_power_mask()
         light._color_uses_rgb_encoding = bool(light._config.get("color_rgb_encoding", False))
         light._color_rgb_encoding_forced = light._color_uses_rgb_encoding
@@ -60,6 +70,33 @@ class ResidualLightRuntimeTests(unittest.TestCase):
         self.assertIsNone(light._raw_color_temp_to_kelvin(4))
         self.assertEqual(light._kelvin_to_raw_color_temp(4500), 2)
         self.assertEqual(light._kelvin_to_raw_color_temp(5500), 3)
+
+    def test_color_temperature_uses_independent_raw_range(self):
+        light = self._light({"color_temp_lower": 100, "color_temp_upper": 1100})
+        self.assertEqual(light._kelvin_to_raw_color_temp(2700), 100)
+        self.assertEqual(light._kelvin_to_raw_color_temp(6500), 1100)
+        self.assertEqual(light._raw_color_temp_to_kelvin(100), 2700)
+        self.assertEqual(light._raw_color_temp_to_kelvin(1100), 6500)
+
+    def test_color_temperature_reverse_respects_both_raw_bounds(self):
+        light = self._light({
+            "color_temp_lower": 100,
+            "color_temp_upper": 1100,
+            "color_temp_reverse": True,
+        })
+        self.assertEqual(light._kelvin_to_raw_color_temp(2700), 1100)
+        self.assertEqual(light._kelvin_to_raw_color_temp(6500), 100)
+        self.assertEqual(light._raw_color_temp_to_kelvin(100), 6500)
+        self.assertEqual(light._raw_color_temp_to_kelvin(1100), 2700)
+
+    def test_color_temperature_step_is_relative_to_raw_minimum(self):
+        light = self._light({
+            "color_temp_lower": 5,
+            "color_temp_upper": 105,
+            "color_temp_step": 10,
+        })
+        self.assertEqual(light._kelvin_to_raw_color_temp(2700), 5)
+        self.assertEqual(light._kelvin_to_raw_color_temp(6500), 105)
 
     def test_extended_rgbhsv_scales_saturation_and_value(self):
         light = self._light({"color_rgb_encoding": True, "color_saturation_upper": 100, "color_brightness_lower": 0, "color_brightness_upper": 100})

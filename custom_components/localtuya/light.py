@@ -38,6 +38,8 @@ from .const import (
     CONF_COLOR_MODE_SET,
     CONF_COLOR_TEMP_MAX_KELVIN,
     CONF_COLOR_TEMP_MIN_KELVIN,
+    CONF_COLOR_TEMP_LOWER,
+    CONF_COLOR_TEMP_UPPER,
     CONF_COLOR_TEMP_REVERSE,
     CONF_COLOR_TEMP_STEP,
     CONF_COLOR_TEMP_VALUES,
@@ -244,6 +246,14 @@ def flow_schema(dps):
             vol.Coerce(int),
             vol.Range(min=1500, max=8000),
         ),
+        vol.Optional(CONF_COLOR_TEMP_LOWER): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=0, max=65535),
+        ),
+        vol.Optional(CONF_COLOR_TEMP_UPPER): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=0, max=65535),
+        ),
         vol.Optional(
             CONF_COLOR_TEMP_REVERSE,
             default=DEFAULT_COLOR_TEMP_REVERSE,
@@ -407,7 +417,33 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             )
         )
 
-        self._raw_color_temp_max = self._upper_brightness
+        raw_color_temp_lower = self._config.get(CONF_COLOR_TEMP_LOWER, 0)
+        raw_color_temp_upper = self._config.get(
+            CONF_COLOR_TEMP_UPPER, self._upper_brightness
+        )
+        try:
+            self._raw_color_temp_lower = int(raw_color_temp_lower)
+            self._raw_color_temp_upper = int(raw_color_temp_upper)
+        except (TypeError, ValueError):
+            self._raw_color_temp_lower = 0
+            self._raw_color_temp_upper = self._upper_brightness
+
+        if (
+            isinstance(raw_color_temp_lower, bool)
+            or isinstance(raw_color_temp_upper, bool)
+            or self._raw_color_temp_lower < 0
+            or self._raw_color_temp_upper <= self._raw_color_temp_lower
+        ):
+            self.warning(
+                "Invalid raw color temperature range %r..%r; using 0..%s",
+                raw_color_temp_lower,
+                raw_color_temp_upper,
+                self._upper_brightness,
+            )
+            self._raw_color_temp_lower = 0
+            self._raw_color_temp_upper = self._upper_brightness
+
+        self._raw_color_temp_max = self._raw_color_temp_upper
 
         self._color_temp_reverse = bool(
             self._config.get(
@@ -956,34 +992,36 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         except (TypeError, ValueError):
             return None
 
-        raw_value = min(
-            max(raw_value, 0),
-            self._raw_color_temp_max,
+        raw_lower = getattr(self, "_raw_color_temp_lower", 0)
+        raw_upper = getattr(
+            self,
+            "_raw_color_temp_upper",
+            getattr(
+                self,
+                "_raw_color_temp_max",
+                getattr(self, "_upper_brightness", DEFAULT_UPPER_BRIGHTNESS),
+            ),
         )
+        if raw_upper <= raw_lower:
+            return None
 
+        raw_value = min(max(raw_value, raw_lower), raw_upper)
         if self._color_temp_reverse:
-            raw_value = self._raw_color_temp_max - raw_value
+            raw_value = raw_lower + raw_upper - raw_value
 
-        ratio = raw_value / self._raw_color_temp_max
+        if raw_value <= raw_lower:
+            return self._min_kelvin
+        if raw_value >= raw_upper:
+            return self._max_kelvin
 
-        mired = (
-            self._max_mired
-            - ((self._max_mired - self._min_mired) * ratio)
-        )
-
+        ratio = (raw_value - raw_lower) / (raw_upper - raw_lower)
+        mired = self._max_mired - ((self._max_mired - self._min_mired) * ratio)
         kelvin = color_util.color_temperature_mired_to_kelvin(mired)
-
-        return min(
-            max(kelvin, self._min_kelvin),
-            self._max_kelvin,
-        )
+        return min(max(kelvin, self._min_kelvin), self._max_kelvin)
 
     def _kelvin_to_raw_color_temp(self, kelvin) -> int:
         """Convert a Kelvin color temperature to Tuya DP format."""
-        kelvin = min(
-            max(int(kelvin), self._min_kelvin),
-            self._max_kelvin,
-        )
+        kelvin = min(max(int(kelvin), self._min_kelvin), self._max_kelvin)
 
         discrete = getattr(self, "_color_temp_values", [])
         if discrete:
@@ -996,31 +1034,33 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                     best_distance = distance
             return best_raw
 
+        raw_lower = getattr(self, "_raw_color_temp_lower", 0)
+        raw_upper = getattr(
+            self,
+            "_raw_color_temp_upper",
+            getattr(
+                self,
+                "_raw_color_temp_max",
+                getattr(self, "_upper_brightness", DEFAULT_UPPER_BRIGHTNESS),
+            ),
+        )
+        if raw_upper <= raw_lower:
+            return round(raw_lower)
+
         mired = color_util.color_temperature_kelvin_to_mired(kelvin)
-
-        ratio = (
-            (self._max_mired - mired)
-            / (self._max_mired - self._min_mired)
-        )
-
-        raw_value = round(
-            ratio * self._raw_color_temp_max
-        )
-
-        raw_value = min(
-            max(raw_value, 0),
-            self._raw_color_temp_max,
-        )
+        ratio = (self._max_mired - mired) / (self._max_mired - self._min_mired)
+        raw_value = round(raw_lower + ratio * (raw_upper - raw_lower))
+        raw_value = min(max(raw_value, raw_lower), raw_upper)
 
         if self._color_temp_reverse:
-            raw_value = self._raw_color_temp_max - raw_value
+            raw_value = raw_lower + raw_upper - raw_value
 
         step = getattr(self, "_color_temp_step", 1)
         if step != 1:
-            raw_value = step * round(float(raw_value) / step)
-            raw_value = min(max(raw_value, 0), self._raw_color_temp_max)
+            raw_value = raw_lower + step * round(float(raw_value - raw_lower) / step)
+            raw_value = min(max(raw_value, raw_lower), raw_upper)
 
-        return raw_value
+        return round(raw_value)
 
     def _decode_color(self, raw_color):
         """Decode a Tuya HSV/RGB+HSV color payload."""
