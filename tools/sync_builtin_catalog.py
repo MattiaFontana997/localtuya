@@ -11,6 +11,8 @@ from urllib.request import urlopen
 
 
 CURRENT_SCHEMA_VERSION = 2
+# The remote catalog may use V3 fingerprints; the bundled offline snapshot
+# deliberately normalizes physically verified product mappings back to V2.
 SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3}
 
 DEFAULT_SOURCE = (
