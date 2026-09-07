@@ -1,0 +1,117 @@
+name: Patch brightness-only light off value
+
+on:
+  push:
+    paths:
+      - .github/workflows/patch-brightness-power-off-value.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Apply exact brightness-only off-value support
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          # const.py
+          path = Path('custom_components/localtuya/const.py')
+          text = path.read_text()
+          old = 'CONF_BRIGHTNESS_AS_POWER = "brightness_as_power"\n'
+          new = old + 'CONF_BRIGHTNESS_POWER_OFF_VALUE = "brightness_power_off_value"\n'
+          assert text.count(old) == 1
+          path.write_text(text.replace(old, new, 1))
+
+          # light.py imports/schema/init/conversion.
+          path = Path('custom_components/localtuya/light.py')
+          text = path.read_text()
+          old = '    CONF_BRIGHTNESS_AS_POWER,\n'
+          new = old + '    CONF_BRIGHTNESS_POWER_OFF_VALUE,\n'
+          assert text.count(old) == 1
+          text = text.replace(old, new, 1)
+
+          old = '        vol.Optional(CONF_BRIGHTNESS_AS_POWER, default=False): bool,\n'
+          new = old + '        vol.Optional(CONF_BRIGHTNESS_POWER_OFF_VALUE): _light_power_scalar,\n'
+          assert text.count(old) == 1
+          text = text.replace(old, new, 1)
+
+          old = '''        self._brightness_as_power = bool(\n            self._config.get(CONF_BRIGHTNESS_AS_POWER, False)\n        )\n        self._brightness_values = self._configured_brightness_values()\n'''
+          new = '''        self._brightness_as_power = bool(\n            self._config.get(CONF_BRIGHTNESS_AS_POWER, False)\n        )\n        self._brightness_power_off_configured = (\n            CONF_BRIGHTNESS_POWER_OFF_VALUE in self._config\n        )\n        self._brightness_power_off_value = self._config.get(\n            CONF_BRIGHTNESS_POWER_OFF_VALUE\n        )\n        self._brightness_values = self._configured_brightness_values()\n'''
+          assert text.count(old) == 1
+          text = text.replace(old, new, 1)
+
+          old = '''        mapped = getattr(self, "_brightness_values", [])\n        if mapped:\n            for brightness, raw_value in mapped:\n                if _same_raw_value(value, raw_value):\n                    return brightness\n            return None\n\n        if isinstance(value, bool):\n            return None\n\n        try:\n            value = float(value)\n        except (TypeError, ValueError):\n            return None\n\n        return map_range(\n            value,\n            self._lower_brightness,\n            self._upper_brightness,\n            0,\n            255,\n        )\n'''
+          new = '''        mapped = getattr(self, "_brightness_values", [])\n        if mapped:\n            for brightness, raw_value in mapped:\n                if _same_raw_value(value, raw_value):\n                    return brightness\n            return None\n\n        if (\n            getattr(self, "_brightness_as_power", False)\n            and getattr(self, "_brightness_power_off_configured", False)\n        ):\n            if _same_raw_value(\n                value, getattr(self, "_brightness_power_off_value", None)\n            ):\n                return 0\n            if isinstance(value, bool):\n                return None\n            try:\n                numeric = float(value)\n            except (TypeError, ValueError):\n                return None\n            if not self._lower_brightness <= numeric <= self._upper_brightness:\n                return None\n            return color_util.value_to_brightness(\n                (self._lower_brightness, self._upper_brightness), numeric\n            )\n\n        if isinstance(value, bool):\n            return None\n\n        try:\n            value = float(value)\n        except (TypeError, ValueError):\n            return None\n\n        return map_range(\n            value,\n            self._lower_brightness,\n            self._upper_brightness,\n            0,\n            255,\n        )\n'''
+          assert text.count(old) == 1
+          text = text.replace(old, new, 1)
+
+          old = '''        mapped = getattr(self, "_brightness_values", [])\n        if mapped:\n            target = min(max(int(value), 0), 255)\n            best_raw = mapped[0][1]\n            best_distance = abs(mapped[0][0] - target)\n            for brightness, raw_value in mapped[1:]:\n                distance = abs(brightness - target)\n                if distance < best_distance:\n                    best_raw = raw_value\n                    best_distance = distance\n            return best_raw\n\n        raw_value = map_range(\n            int(value),\n            0,\n            255,\n            self._lower_brightness,\n            self._upper_brightness,\n        )\n'''
+          new = '''        mapped = getattr(self, "_brightness_values", [])\n        if mapped:\n            target = min(max(int(value), 0), 255)\n            best_raw = mapped[0][1]\n            best_distance = abs(mapped[0][0] - target)\n            for brightness, raw_value in mapped[1:]:\n                distance = abs(brightness - target)\n                if distance < best_distance:\n                    best_raw = raw_value\n                    best_distance = distance\n            return best_raw\n\n        if (\n            getattr(self, "_brightness_as_power", False)\n            and getattr(self, "_brightness_power_off_configured", False)\n        ):\n            target = min(max(int(value), 0), 255)\n            if target == 0:\n                return getattr(self, "_brightness_power_off_value", 0)\n            raw_value = round(\n                color_util.brightness_to_value(\n                    (self._lower_brightness, self._upper_brightness), target\n                )\n            )\n        else:\n            raw_value = map_range(\n                int(value),\n                0,\n                255,\n                self._lower_brightness,\n                self._upper_brightness,\n            )\n'''
+          assert text.count(old) == 1
+          text = text.replace(old, new, 1)
+
+          old = '''        if getattr(self, "_brightness_as_power", False):\n            power_brightness = self._raw_brightness_to_ha(raw_power)\n            self._attr_is_on = (\n                power_brightness is not None and power_brightness > 0\n            )\n'''
+          new = '''        if getattr(self, "_brightness_as_power", False):\n            power_brightness = self._raw_brightness_to_ha(raw_power)\n            self._attr_is_on = (\n                power_brightness is not None and power_brightness > 0\n            )\n'''
+          # Kept intentionally identical: the corrected conversion now gives
+          # normal nonzero range values HA brightness >=1 and exact OFF 0.
+          assert text.count(old) == 1
+
+          path.write_text(text)
+
+          # device_catalog.py: reject unsafe/mixed combinations at ingress.
+          path = Path('custom_components/localtuya/device_catalog.py')
+          text = path.read_text()
+          old = '    CONF_EXTRA_STATE_ATTRIBUTES_DPS,\n'
+          new = old + '    CONF_BRIGHTNESS_POWER_OFF_VALUE,\n'
+          assert text.count(old) == 1
+          text = text.replace(old, new, 1)
+
+          anchor = '    if "sensor_value_mapping" in config:\n'
+          assert text.count(anchor) == 1
+          validation = '''    if CONF_BRIGHTNESS_POWER_OFF_VALUE in config:\n        off_value = config[CONF_BRIGHTNESS_POWER_OFF_VALUE]\n        lower = config.get("brightness_lower")\n        upper = config.get("brightness_upper")\n        if (\n            platform != "light"\n            or config.get("brightness_as_power") is not True\n            or config.get("id") != config.get("brightness")\n            or "brightness_values" in config\n            or isinstance(off_value, bool)\n            or not isinstance(off_value, int)\n            or isinstance(lower, bool)\n            or isinstance(upper, bool)\n            or not isinstance(lower, int)\n            or not isinstance(upper, int)\n            or lower < 0\n            or upper <= lower\n            or lower <= off_value <= upper\n        ):\n            return None\n\n'''
+          path.write_text(text.replace(anchor, validation + anchor, 1))
+
+          # Runtime regression tests.
+          path = Path('tests/test_light_residual_runtime.py')
+          text = path.read_text()
+          old = '''        light._brightness_step = 1\n        light._brightness_values = light._configured_brightness_values()\n'''
+          new = '''        light._brightness_step = 1\n        light._brightness_as_power = bool(light._config.get("brightness_as_power", False))\n        light._brightness_power_off_configured = "brightness_power_off_value" in light._config\n        light._brightness_power_off_value = light._config.get("brightness_power_off_value")\n        light._brightness_values = light._configured_brightness_values()\n'''
+          assert text.count(old) == 1
+          text = text.replace(old, new, 1)
+          marker = '    def test_discrete_color_temperature_mapping(self):\n'
+          assert text.count(marker) == 1
+          cases = '''    def test_brightness_power_off_value_keeps_nonzero_range_on(self):\n        light = self._light({\n            "brightness_as_power": True,\n            "brightness_power_off_value": 0,\n        })\n        light._lower_brightness = 1\n        light._upper_brightness = 3\n        self.assertEqual(light._raw_brightness_to_ha(0), 0)\n        self.assertEqual(light._raw_brightness_to_ha(1), 1)\n        self.assertEqual(light._raw_brightness_to_ha(2), 128)\n        self.assertEqual(light._raw_brightness_to_ha(3), 255)\n        self.assertIsNone(light._raw_brightness_to_ha(4))\n        self.assertEqual(light._ha_brightness_to_raw(0), 0)\n        self.assertEqual(light._ha_brightness_to_raw(1), 1)\n        self.assertEqual(light._ha_brightness_to_raw(128), 2)\n        self.assertEqual(light._ha_brightness_to_raw(255), 3)\n\n'''
+          path.write_text(text.replace(marker, cases + marker, 1))
+
+          # Catalog ingress regression.
+          path = Path('tests/test_device_catalog.py')
+          text = path.read_text()
+          marker = 'class '
+          # Avoid depending on test class layout: append a small independent case.
+          text += '''\n\nclass BrightnessPowerOffCatalogTests(unittest.TestCase):\n    def test_exact_out_of_range_brightness_off_value_is_accepted(self):\n        entity = {"platform": "light", "config": {\n            "platform": "light", "id": 102, "brightness": 102,\n            "brightness_as_power": True, "brightness_lower": 1,\n            "brightness_upper": 3, "brightness_power_off_value": 0,\n        }}\n        self.assertIsNotNone(_validate_entity(entity))\n\n    def test_in_range_brightness_off_value_is_rejected(self):\n        entity = {"platform": "light", "config": {\n            "platform": "light", "id": 102, "brightness": 102,\n            "brightness_as_power": True, "brightness_lower": 1,\n            "brightness_upper": 3, "brightness_power_off_value": 1,\n        }}\n        self.assertIsNone(_validate_entity(entity))\n'''
+          path.write_text(text)
+          PY
+      - name: Syntax check
+        run: python -m py_compile custom_components/localtuya/const.py custom_components/localtuya/light.py custom_components/localtuya/device_catalog.py tests/test_light_residual_runtime.py tests/test_device_catalog.py
+      - name: Install tox
+        run: python -m pip install "tox>=4.20,<5"
+      - name: Run full suite
+        run: python -m tox -e py314
+      - name: Commit runtime support
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/const.py custom_components/localtuya/light.py custom_components/localtuya/device_catalog.py tests/test_light_residual_runtime.py tests/test_device_catalog.py
+          git diff --cached --check
+          git commit -m "Support out-of-range brightness off values"
+          git push origin HEAD:develop
