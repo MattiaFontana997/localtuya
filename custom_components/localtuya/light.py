@@ -28,6 +28,7 @@ from .const import (
     CONF_BRIGHTNESS_UPPER,
     CONF_BRIGHTNESS_VALUES,
     CONF_BRIGHTNESS_AS_POWER,
+    CONF_BRIGHTNESS_POWER_OFF_VALUE,
     CONF_COLOR,
     CONF_COLOR_RGB_ENCODING,
     CONF_COLOR_SATURATION_UPPER,
@@ -201,6 +202,7 @@ def flow_schema(dps):
         vol.Optional(CONF_LIGHT_POWER_MASK): str,
         vol.Optional(CONF_BRIGHTNESS_VALUES): dict,
         vol.Optional(CONF_BRIGHTNESS_AS_POWER, default=False): bool,
+        vol.Optional(CONF_BRIGHTNESS_POWER_OFF_VALUE): _light_power_scalar,
         vol.Optional(
             CONF_BRIGHTNESS_LOWER,
             default=DEFAULT_LOWER_BRIGHTNESS,
@@ -296,6 +298,12 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         self._power_off_value = self._config.get(CONF_LIGHT_OFF_VALUE, False)
         self._brightness_as_power = bool(
             self._config.get(CONF_BRIGHTNESS_AS_POWER, False)
+        )
+        self._brightness_power_off_configured = (
+            CONF_BRIGHTNESS_POWER_OFF_VALUE in self._config
+        )
+        self._brightness_power_off_value = self._config.get(
+            CONF_BRIGHTNESS_POWER_OFF_VALUE
         )
         self._brightness_values = self._configured_brightness_values()
         self._light_power_mask = self._configured_light_power_mask()
@@ -822,16 +830,40 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                     return brightness
             return None
 
+        if (
+            getattr(self, "_brightness_as_power", False)
+            and getattr(self, "_brightness_power_off_configured", False)
+        ):
+            if _same_raw_value(
+                value, getattr(self, "_brightness_power_off_value", None)
+            ):
+                return 0
+            if isinstance(value, bool):
+                return None
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                return None
+            if not self._lower_brightness <= numeric <= self._upper_brightness:
+                return None
+            return round(
+                map_range(
+                    numeric,
+                    self._lower_brightness,
+                    self._upper_brightness,
+                    1,
+                    255,
+                )
+            )
+
         if isinstance(value, bool):
             return None
-
         try:
-            value = float(value)
+            numeric = float(value)
         except (TypeError, ValueError):
             return None
-
         return map_range(
-            value,
+            numeric,
             self._lower_brightness,
             self._upper_brightness,
             0,
@@ -852,19 +884,35 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                     best_distance = distance
             return best_raw
 
-        raw_value = map_range(
-            int(value),
-            0,
-            255,
-            self._lower_brightness,
-            self._upper_brightness,
-        )
+        if (
+            getattr(self, "_brightness_as_power", False)
+            and getattr(self, "_brightness_power_off_configured", False)
+        ):
+            target = min(max(int(value), 0), 255)
+            if target == 0:
+                return getattr(self, "_brightness_power_off_value", 0)
+            raw_value = round(
+                map_range(
+                    target,
+                    1,
+                    255,
+                    self._lower_brightness,
+                    self._upper_brightness,
+                )
+            )
+        else:
+            raw_value = map_range(
+                int(value),
+                0,
+                255,
+                self._lower_brightness,
+                self._upper_brightness,
+            )
+
         brightness_step = getattr(self, "_brightness_step", 1)
         if brightness_step != 1:
-            raw_value = brightness_step * round(
-                float(raw_value) / brightness_step
-            )
-        return raw_value
+            raw_value = brightness_step * round(float(raw_value) / brightness_step)
+        return min(max(raw_value, self._lower_brightness), self._upper_brightness)
 
     def _raw_color_brightness_to_ha(self, value) -> int | None:
         """Convert a Tuya HSV value to HA's 0..255 brightness range."""

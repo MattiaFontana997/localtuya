@@ -24,6 +24,7 @@ from .advanced_mapping import (
     validate_advanced_mapping_by_dp,
 )
 from .const import (
+    CONF_BRIGHTNESS_POWER_OFF_VALUE,
     CONF_EXTRA_STATE_ATTRIBUTES_DPS,
     CONF_FAN_DIRECTION_VALUES,
     CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS,
@@ -309,6 +310,27 @@ def _validate_entity(entity):
                 return None
             if config.get("id") != config.get("fan_speed_control"):
                 return None
+
+    if CONF_BRIGHTNESS_POWER_OFF_VALUE in config:
+        off_value = config[CONF_BRIGHTNESS_POWER_OFF_VALUE]
+        lower = config.get("brightness_lower")
+        upper = config.get("brightness_upper")
+        if (
+            platform != "light"
+            or config.get("brightness_as_power") is not True
+            or config.get("id") != config.get("brightness")
+            or "brightness_values" in config
+            or isinstance(off_value, bool)
+            or not isinstance(off_value, int)
+            or isinstance(lower, bool)
+            or isinstance(upper, bool)
+            or not isinstance(lower, int)
+            or not isinstance(upper, int)
+            or lower < 0
+            or upper <= lower
+            or lower <= off_value <= upper
+        ):
+            return None
 
     if "sensor_value_mapping" in config:
         from .sensor_mapping import validate_sensor_value_mapping

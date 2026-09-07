@@ -17,6 +17,9 @@ class ResidualLightRuntimeTests(unittest.TestCase):
         light._lower_color_brightness = int(light._config.get("color_brightness_lower", 0))
         light._upper_color_brightness = int(light._config.get("color_brightness_upper", 255))
         light._brightness_step = 1
+        light._brightness_as_power = bool(light._config.get("brightness_as_power", False))
+        light._brightness_power_off_configured = "brightness_power_off_value" in light._config
+        light._brightness_power_off_value = light._config.get("brightness_power_off_value")
         light._brightness_values = light._configured_brightness_values()
         light._color_temp_values = light._configured_color_temp_values()
         light._color_temp_step = int(light._config.get("color_temp_step", 1))
@@ -31,6 +34,23 @@ class ResidualLightRuntimeTests(unittest.TestCase):
         self.assertIsNone(light._raw_brightness_to_ha("LEVEL2"))
         self.assertEqual(light._ha_brightness_to_raw(200), "level2")
         self.assertEqual(light._ha_brightness_to_raw(250), "level3")
+
+    def test_brightness_power_off_value_keeps_nonzero_range_on(self):
+        light = self._light({
+            "brightness_as_power": True,
+            "brightness_power_off_value": 0,
+        })
+        light._lower_brightness = 1
+        light._upper_brightness = 3
+        self.assertEqual(light._raw_brightness_to_ha(0), 0)
+        self.assertEqual(light._raw_brightness_to_ha(1), 1)
+        self.assertEqual(light._raw_brightness_to_ha(2), 128)
+        self.assertEqual(light._raw_brightness_to_ha(3), 255)
+        self.assertIsNone(light._raw_brightness_to_ha(4))
+        self.assertEqual(light._ha_brightness_to_raw(0), 0)
+        self.assertEqual(light._ha_brightness_to_raw(1), 1)
+        self.assertEqual(light._ha_brightness_to_raw(128), 2)
+        self.assertEqual(light._ha_brightness_to_raw(255), 3)
 
     def test_discrete_color_temperature_mapping(self):
         light = self._light({"color_temp_values": {"3000": 1, "4000": 2, "6000": 3}})

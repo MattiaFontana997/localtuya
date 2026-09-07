@@ -3,6 +3,7 @@
 import unittest
 
 from custom_components.localtuya.device_catalog import (
+    _validate_entity,
     match_catalog_mapping,
     validate_catalog,
 )
@@ -293,3 +294,21 @@ class TestDeviceCatalog(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BrightnessPowerOffCatalogTests(unittest.TestCase):
+    def test_exact_out_of_range_brightness_off_value_is_accepted(self):
+        entity = {"platform": "light", "config": {
+            "platform": "light", "id": 102, "brightness": 102,
+            "brightness_as_power": True, "brightness_lower": 1,
+            "brightness_upper": 3, "brightness_power_off_value": 0,
+        }}
+        self.assertIsNotNone(_validate_entity(entity))
+
+    def test_in_range_brightness_off_value_is_rejected(self):
+        entity = {"platform": "light", "config": {
+            "platform": "light", "id": 102, "brightness": 102,
+            "brightness_as_power": True, "brightness_lower": 1,
+            "brightness_upper": 3, "brightness_power_off_value": 1,
+        }}
+        self.assertIsNone(_validate_entity(entity))
