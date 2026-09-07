@@ -43,8 +43,8 @@ class ResidualLightRuntimeTests(unittest.TestCase):
         light._lower_brightness = 1
         light._upper_brightness = 3
         self.assertEqual(light._raw_brightness_to_ha(0), 0)
-        self.assertEqual(light._raw_brightness_to_ha(1), 1)
-        self.assertEqual(light._raw_brightness_to_ha(2), 128)
+        self.assertEqual(light._raw_brightness_to_ha(1), 85)
+        self.assertEqual(light._raw_brightness_to_ha(2), 170)
         self.assertEqual(light._raw_brightness_to_ha(3), 255)
         self.assertIsNone(light._raw_brightness_to_ha(4))
         self.assertEqual(light._ha_brightness_to_raw(0), 0)

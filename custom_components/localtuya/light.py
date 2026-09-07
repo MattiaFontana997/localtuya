@@ -846,14 +846,8 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                 return None
             if not self._lower_brightness <= numeric <= self._upper_brightness:
                 return None
-            return round(
-                map_range(
-                    numeric,
-                    self._lower_brightness,
-                    self._upper_brightness,
-                    1,
-                    255,
-                )
+            return color_util.value_to_brightness(
+                (self._lower_brightness, self._upper_brightness), numeric
             )
 
         if isinstance(value, bool):
@@ -891,15 +885,14 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
             target = min(max(int(value), 0), 255)
             if target == 0:
                 return getattr(self, "_brightness_power_off_value", 0)
-            raw_value = round(
-                map_range(
-                    target,
-                    1,
-                    255,
-                    self._lower_brightness,
-                    self._upper_brightness,
+            if target == 1 and self._lower_brightness != 0:
+                raw_value = self._lower_brightness
+            else:
+                raw_value = round(
+                    color_util.brightness_to_value(
+                        (self._lower_brightness, self._upper_brightness), target
+                    )
                 )
-            )
         else:
             raw_value = map_range(
                 int(value),
