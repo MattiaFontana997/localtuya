@@ -41,14 +41,14 @@
                 "title": "连接 Smart Life / Tuya",
                 "description": "输入 Smart Life 或 Tuya 应用账户设置中显示的 User Code。",
                 "data": {
-                    "user_code": "User Code"
+                    "user_code": "用户代码"
                 }
             },
             "qr_scan": {
                 "title": "使用 Smart Life / Tuya 扫描",
                 "description": "在 Smart Life 或 Tuya 应用中扫描二维码并批准授权，然后继续。",
                 "data": {
-                    "QR": "QR"
+                    "QR": "二维码"
                 }
             },
             "qr_choose_device": {
@@ -68,7 +68,21 @@
             "manual_device": {
                 "title": "手动配置设备",
                 "description": "无需连接 Tuya 账户的高级配置。",
-                "data": {}
+                "data": {
+                    "friendly_name": "名称",
+                    "host": "IP 地址 / 主机",
+                    "device_id": "设备 ID",
+                    "local_key": "本地密钥",
+                    "protocol_version": "协议版本",
+                    "enable_debug": "启用此设备的调试",
+                    "scan_interval": "扫描间隔",
+                    "entities": "已配置实体",
+                    "add_entities": "在“编辑设备”模式下添加更多实体",
+                    "manual_dps_strings": "手动添加 DPS，以逗号分隔；仅在自动检测无法工作时使用（可选）",
+                    "reset_dpids": "RESET 命令中发送的 DPID，以逗号分隔（可选，设备开机后不响应状态请求时使用）",
+                    "manual_dps": "手动添加 DPS，以逗号分隔（可选，仅在自动检测失败时使用）",
+                    "enable_add_entities": "添加更多实体"
+                }
             }
         }
     },
@@ -98,7 +112,8 @@
             "qr_device_not_on_lan": "在 Home Assistant 局域网中找不到所选设备。{msg}",
             "qr_device_not_local": "所选设备未提供可用的本地凭据。{msg}",
             "qr_subdevice_not_supported": "此二维码流程暂不支持网关子设备。{msg}",
-            "qr_mapping_required": "继续前请至少选择一个映射。"
+            "qr_mapping_required": "继续前请至少选择一个映射。",
+            "qr_login_error": "无法完成二维码登录。{msg}"
         },
         "step": {
             "yaml_import": {
@@ -324,11 +339,15 @@
                 "description": "选择添加设备的方式。",
                 "menu_options": {
                     "qr_add_device": "从 Smart Life / Tuya 添加",
-                    "manual_add_device": "手动 / 局域网配置"
+                    "manual_add_device": "手动 / 局域网配置",
+                    "qr_relink": "重新连接 Smart Life / Tuya 账户",
+                    "qr_disconnect": "断开 Smart Life / Tuya 账户"
                 },
                 "menu_option_descriptions": {
                     "qr_add_device": "推荐 — 按需刷新一次已连接账户，然后将所选设备配置为局域网控制。",
-                    "manual_add_device": "手动输入 Device ID 和 local_key。"
+                    "manual_add_device": "手动输入 Device ID 和 local_key。",
+                    "qr_relink": "如果保存的 Tuya 会话已过期或被撤销，请使用新的二维码授权。",
+                    "qr_disconnect": "清除云端授权。已配置的设备仍会继续通过局域网工作。"
                 }
             },
             "qr_add_device": {
@@ -343,6 +362,27 @@
                 "description": "LocalTuya 找到了需要确认的映射。高置信度映射已自动包含。",
                 "data": {
                     "qr_mapping_selection": "其他映射"
+                }
+            },
+            "qr_relink": {
+                "title": "重新连接 Smart Life / Tuya",
+                "description": "输入用户代码以创建新的可续期配网授权。",
+                "data": {
+                    "user_code": "用户代码"
+                }
+            },
+            "qr_relink_scan": {
+                "title": "重新连接 Smart Life / Tuya",
+                "description": "在 Smart Life 或 Tuya 应用中扫描二维码并批准授权，然后继续。",
+                "data": {
+                    "QR": "二维码"
+                }
+            },
+            "qr_disconnect": {
+                "title": "断开 Tuya 账户",
+                "description": "仅删除保存的 Tuya 授权。已配置设备及其本地密钥不会被更改。",
+                "data": {
+                    "confirm": "断开账户"
                 }
             }
         }

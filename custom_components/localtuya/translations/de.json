@@ -41,14 +41,14 @@
                 "title": "Smart Life / Tuya verknüpfen",
                 "description": "Gib den User Code aus den Kontoeinstellungen der Smart-Life- oder Tuya-App ein.",
                 "data": {
-                    "user_code": "User Code"
+                    "user_code": "Benutzercode"
                 }
             },
             "qr_scan": {
                 "title": "Mit Smart Life / Tuya scannen",
                 "description": "Scanne den QR-Code in der Smart-Life- oder Tuya-App, bestätige die Autorisierung und fahre dann fort.",
                 "data": {
-                    "QR": "QR"
+                    "QR": "QR-Code"
                 }
             },
             "qr_choose_device": {
@@ -68,7 +68,21 @@
             "manual_device": {
                 "title": "Manuelle Geräteeinrichtung",
                 "description": "Erweiterte Einrichtung ohne Verknüpfung eines Tuya-Kontos.",
-                "data": {}
+                "data": {
+                    "friendly_name": "Gerätename",
+                    "host": "IP-Adresse / Host",
+                    "device_id": "Geräte-ID",
+                    "local_key": "Lokaler Schlüssel",
+                    "protocol_version": "Protokollversion",
+                    "enable_debug": "Debugging für dieses Gerät aktivieren",
+                    "scan_interval": "Abfrageintervall",
+                    "entities": "Konfigurierte Entitäten",
+                    "add_entities": "Weitere Entitäten im Modus „Gerät bearbeiten“ hinzufügen",
+                    "manual_dps_strings": "Manuelle DPS hinzufügen, durch Kommas getrennt – nur verwenden, wenn die automatische Erkennung nicht funktioniert (optional)",
+                    "reset_dpids": "DPIDs für den RESET-Befehl, durch Kommas getrennt (optional; verwenden, wenn das Gerät nach dem Einschalten nicht auf Statusanfragen antwortet)",
+                    "manual_dps": "Manuelle DPS, durch Kommas getrennt (optional; nur verwenden, wenn die automatische Erkennung nicht funktioniert)",
+                    "enable_add_entities": "Weitere Entitäten hinzufügen"
+                }
             }
         }
     },
@@ -98,7 +112,8 @@
             "qr_device_not_on_lan": "Das ausgewählte Gerät wurde im Home-Assistant-LAN nicht gefunden. {msg}",
             "qr_device_not_local": "Das ausgewählte Gerät stellt keine nutzbaren lokalen Zugangsdaten bereit. {msg}",
             "qr_subdevice_not_supported": "Hub-Untergeräte werden von diesem QR-Ablauf noch nicht unterstützt. {msg}",
-            "qr_mapping_required": "Wähle mindestens eine Zuordnung aus, bevor du fortfährst."
+            "qr_mapping_required": "Wähle mindestens eine Zuordnung aus, bevor du fortfährst.",
+            "qr_login_error": "QR-Anmeldung konnte nicht abgeschlossen werden. {msg}"
         },
         "step": {
             "yaml_import": {
@@ -324,11 +339,15 @@
                 "description": "Wähle aus, wie das Gerät hinzugefügt werden soll.",
                 "menu_options": {
                     "qr_add_device": "Aus Smart Life / Tuya",
-                    "manual_add_device": "Manuelle / LAN-Einrichtung"
+                    "manual_add_device": "Manuelle / LAN-Einrichtung",
+                    "qr_relink": "Smart-Life/Tuya-Konto erneut verknüpfen",
+                    "qr_disconnect": "Smart-Life/Tuya-Konto trennen"
                 },
                 "menu_option_descriptions": {
                     "qr_add_device": "Empfohlen — das verknüpfte Konto einmal aktualisieren und das gewählte Gerät für LAN-Steuerung konfigurieren.",
-                    "manual_add_device": "Geräte-ID und local_key manuell eingeben."
+                    "manual_add_device": "Geräte-ID und local_key manuell eingeben.",
+                    "qr_relink": "Neue QR-Autorisierung verwenden, wenn die gespeicherte Tuya-Sitzung abgelaufen oder widerrufen wurde.",
+                    "qr_disconnect": "Cloud-Autorisierung vergessen. Bereits konfigurierte Geräte funktionieren weiter über LAN."
                 }
             },
             "qr_add_device": {
@@ -343,6 +362,27 @@
                 "description": "LocalTuya hat Zuordnungen gefunden, die bestätigt werden müssen. Zuordnungen mit hoher Sicherheit sind bereits enthalten.",
                 "data": {
                     "qr_mapping_selection": "Zusätzliche Zuordnungen"
+                }
+            },
+            "qr_relink": {
+                "title": "Smart Life / Tuya erneut verknüpfen",
+                "description": "Benutzercode eingeben, um eine neue erneuerbare Autorisierung für die Bereitstellung zu erstellen.",
+                "data": {
+                    "user_code": "Benutzercode"
+                }
+            },
+            "qr_relink_scan": {
+                "title": "Smart Life / Tuya erneut verknüpfen",
+                "description": "Scanne den QR-Code in der Smart-Life- oder Tuya-App, bestätige die Autorisierung und fahre dann fort.",
+                "data": {
+                    "QR": "QR-Code"
+                }
+            },
+            "qr_disconnect": {
+                "title": "Tuya-Konto trennen",
+                "description": "Nur die gespeicherte Tuya-Autorisierung wird entfernt. Konfigurierte Geräte und lokale Schlüssel bleiben erhalten.",
+                "data": {
+                    "confirm": "Konto trennen"
                 }
             }
         }

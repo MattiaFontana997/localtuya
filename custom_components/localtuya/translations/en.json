@@ -48,7 +48,7 @@
                 "title": "Scan with Smart Life / Tuya",
                 "description": "Scan the QR code in the Smart Life or Tuya app, approve the authorization, then continue.",
                 "data": {
-                    "QR": "QR"
+                    "QR": "QR code"
                 }
             },
             "qr_choose_device": {
@@ -68,7 +68,21 @@
             "manual_device": {
                 "title": "Manual device setup",
                 "description": "Advanced setup without linking a Tuya account.",
-                "data": {}
+                "data": {
+                    "friendly_name": "Name",
+                    "host": "IP address / Host",
+                    "device_id": "Device ID",
+                    "local_key": "Local key",
+                    "protocol_version": "Protocol version",
+                    "enable_debug": "Enable debug for this device",
+                    "scan_interval": "Scan interval",
+                    "entities": "Configured entities",
+                    "add_entities": "Add more entities in 'edit device' mode",
+                    "manual_dps_strings": "Manual DPS to add (separated by commas ',') - used when detection is not working (optional)",
+                    "reset_dpids": "DPIDs to send in the RESET command, separated by commas (optional; use when the device does not answer status requests after power-on)",
+                    "manual_dps": "Manual DPS to add, separated by commas (optional; use only when automatic detection does not work)",
+                    "enable_add_entities": "Add more entities"
+                }
             }
         }
     },
@@ -98,7 +112,8 @@
             "qr_device_not_on_lan": "The selected device was not found on the Home Assistant LAN. {msg}",
             "qr_device_not_local": "The selected device does not expose usable local credentials. {msg}",
             "qr_subdevice_not_supported": "Hub child devices are not supported by this QR flow yet. {msg}",
-            "qr_mapping_required": "Select at least one mapping before continuing."
+            "qr_mapping_required": "Select at least one mapping before continuing.",
+            "qr_login_error": "Unable to complete QR login. {msg}"
         },
         "step": {
             "yaml_import": {
@@ -324,11 +339,15 @@
                 "description": "Choose how to add the device.",
                 "menu_options": {
                     "qr_add_device": "From Smart Life / Tuya",
-                    "manual_add_device": "Manual / LAN setup"
+                    "manual_add_device": "Manual / LAN setup",
+                    "qr_relink": "Re-link Smart Life / Tuya account",
+                    "qr_disconnect": "Disconnect Smart Life / Tuya account"
                 },
                 "menu_option_descriptions": {
                     "qr_add_device": "Recommended — refresh the linked account once, then configure the selected device for LAN control.",
-                    "manual_add_device": "Enter Device ID and local_key manually."
+                    "manual_add_device": "Enter Device ID and local_key manually.",
+                    "qr_relink": "Use a new QR authorization if the saved Tuya session has expired or been revoked.",
+                    "qr_disconnect": "Forget cloud authorization. Already configured devices continue to work over LAN."
                 }
             },
             "qr_add_device": {
@@ -343,6 +362,27 @@
                 "description": "LocalTuya found mappings that need confirmation. High-confidence mappings are already included.",
                 "data": {
                     "qr_mapping_selection": "Additional mappings"
+                }
+            },
+            "qr_relink": {
+                "title": "Re-link Smart Life / Tuya",
+                "description": "Enter the User Code to create a new renewable provisioning authorization.",
+                "data": {
+                    "user_code": "User Code"
+                }
+            },
+            "qr_relink_scan": {
+                "title": "Re-link Smart Life / Tuya",
+                "description": "Scan the QR code in the Smart Life or Tuya app, approve the authorization, then continue.",
+                "data": {
+                    "QR": "QR code"
+                }
+            },
+            "qr_disconnect": {
+                "title": "Disconnect Tuya account",
+                "description": "This removes only the saved Tuya account authorization. Configured devices and their local keys remain untouched.",
+                "data": {
+                    "confirm": "Disconnect account"
                 }
             }
         }

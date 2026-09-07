@@ -41,14 +41,14 @@
                 "title": "Vincular Smart Life / Tuya",
                 "description": "Informe o User Code exibido nas configurações da conta no aplicativo Smart Life ou Tuya.",
                 "data": {
-                    "user_code": "User Code"
+                    "user_code": "Código do usuário"
                 }
             },
             "qr_scan": {
                 "title": "Escanear com Smart Life / Tuya",
                 "description": "Escaneie o QR no aplicativo Smart Life ou Tuya, aprove a autorização e depois continue.",
                 "data": {
-                    "QR": "QR"
+                    "QR": "Código QR"
                 }
             },
             "qr_choose_device": {
@@ -68,7 +68,21 @@
             "manual_device": {
                 "title": "Configuração manual do dispositivo",
                 "description": "Configuração avançada sem vincular uma conta Tuya.",
-                "data": {}
+                "data": {
+                    "friendly_name": "Nome",
+                    "host": "Endereço IP / Host",
+                    "device_id": "ID do dispositivo",
+                    "local_key": "Chave local",
+                    "protocol_version": "Versão do protocolo",
+                    "enable_debug": "Ative a depuração para este dispositivo (a depuração também deve ser ativada em configuration.yaml)",
+                    "scan_interval": "Intervalo de escaneamento (segundos, somente quando não estiver atualizando automaticamente)",
+                    "entities": "Entidades (desmarque uma entidade para removê-la)",
+                    "add_entities": "Adicionar mais entidades no modo “editar dispositivo”",
+                    "manual_dps_strings": "DPS manuais a adicionar, separados por vírgulas; use somente quando a detecção automática não funcionar (opcional)",
+                    "reset_dpids": "DPIDs a enviar no comando RESET, separados por vírgulas (opcional; use quando o dispositivo não responder às solicitações de estado após ser ligado)",
+                    "manual_dps": "DPS manuais a adicionar, separados por vírgulas (opcional; use somente quando a detecção automática não funcionar)",
+                    "enable_add_entities": "Adicionar mais entidades"
+                }
             }
         }
     },
@@ -98,7 +112,8 @@
             "qr_device_not_on_lan": "O dispositivo selecionado não foi encontrado na LAN do Home Assistant. {msg}",
             "qr_device_not_local": "O dispositivo selecionado não fornece credenciais locais utilizáveis. {msg}",
             "qr_subdevice_not_supported": "Dispositivos filhos de hub ainda não são suportados por este fluxo QR. {msg}",
-            "qr_mapping_required": "Selecione pelo menos um mapeamento antes de continuar."
+            "qr_mapping_required": "Selecione pelo menos um mapeamento antes de continuar.",
+            "qr_login_error": "Não foi possível concluir o login por QR. {msg}"
         },
         "step": {
             "yaml_import": {
@@ -324,11 +339,15 @@
                 "description": "Escolha como adicionar o dispositivo.",
                 "menu_options": {
                     "qr_add_device": "Do Smart Life / Tuya",
-                    "manual_add_device": "Configuração manual / LAN"
+                    "manual_add_device": "Configuração manual / LAN",
+                    "qr_relink": "Vincular novamente a conta Smart Life / Tuya",
+                    "qr_disconnect": "Desconectar conta Smart Life / Tuya"
                 },
                 "menu_option_descriptions": {
                     "qr_add_device": "Recomendado — atualize a conta vinculada uma vez e configure o dispositivo escolhido para controle pela LAN.",
-                    "manual_add_device": "Informe Device ID e local_key manualmente."
+                    "manual_add_device": "Informe Device ID e local_key manualmente.",
+                    "qr_relink": "Use uma nova autorização QR se a sessão Tuya salva tiver expirado ou sido revogada.",
+                    "qr_disconnect": "Esquece a autorização na nuvem. Dispositivos já configurados continuam funcionando pela LAN."
                 }
             },
             "qr_add_device": {
@@ -343,6 +362,27 @@
                 "description": "O LocalTuya encontrou mapeamentos que precisam de confirmação. Os de alta confiança já estão incluídos.",
                 "data": {
                     "qr_mapping_selection": "Mapeamentos adicionais"
+                }
+            },
+            "qr_relink": {
+                "title": "Vincular Smart Life / Tuya novamente",
+                "description": "Informe o Código do usuário para criar uma nova autorização renovável de provisionamento.",
+                "data": {
+                    "user_code": "Código do usuário"
+                }
+            },
+            "qr_relink_scan": {
+                "title": "Vincular Smart Life / Tuya novamente",
+                "description": "Escaneie o QR no aplicativo Smart Life ou Tuya, aprove a autorização e depois continue.",
+                "data": {
+                    "QR": "Código QR"
+                }
+            },
+            "qr_disconnect": {
+                "title": "Desconectar conta Tuya",
+                "description": "Remove apenas a autorização Tuya salva. Os dispositivos configurados e suas chaves locais permanecem intactos.",
+                "data": {
+                    "confirm": "Desconectar conta"
                 }
             }
         }

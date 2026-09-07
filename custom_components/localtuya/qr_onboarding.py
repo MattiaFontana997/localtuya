@@ -700,10 +700,15 @@ class QrOptionsFlowMixin:
     """Options-flow steps for future device sync without repeating QR login."""
 
     async def async_step_add_device_method(self, user_input=None):
-        """Choose linked-account provisioning or the advanced manual path."""
+        """Choose linked-account provisioning or account-management actions."""
         return self.async_show_menu(
             step_id="add_device_method",
-            menu_options=["qr_add_device", "manual_add_device"],
+            menu_options=[
+                "qr_add_device",
+                "manual_add_device",
+                "qr_relink",
+                "qr_disconnect",
+            ],
         )
 
     async def async_step_manual_add_device(self, user_input=None):
@@ -812,9 +817,103 @@ class QrOptionsFlowMixin:
         new_data[CONF_QR_AUTH] = copy.deepcopy(auth)
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
 
+    async def async_step_qr_relink(self, user_input=None):
+        """Generate a new QR authorization for an existing LocalTuya entry."""
+        errors = {}
+        placeholders = {}
+        current = self.config_entry.data.get(CONF_QR_AUTH, {})
+        default_code = (
+            current.get(CONF_QR_USER_CODE, "")
+            if isinstance(current, dict)
+            else ""
+        )
+        if user_input is not None:
+            self._qr_cloud = QrCloudClient(self.hass)
+            token = await self._qr_cloud.async_generate_qr(
+                user_input[CONF_QR_USER_CODE]
+            )
+            if token:
+                self._qr_token = token
+                return await self.async_step_qr_relink_scan()
+            errors["base"] = "qr_login_error"
+            placeholders = self._qr_cloud.last_error
+
+        return self.async_show_form(
+            step_id="qr_relink",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_QR_USER_CODE,
+                        default=default_code,
+                    ): str
+                }
+            ),
+            errors=errors,
+            description_placeholders=placeholders,
+        )
+
+    async def async_step_qr_relink_scan(self, user_input=None):
+        """Complete a replacement QR authorization and persist it."""
+        cloud = getattr(self, "_qr_cloud", None)
+        token = getattr(self, "_qr_token", None)
+        if cloud is None or not token:
+            return await self.async_step_qr_relink()
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="qr_relink_scan",
+                data_schema=vol.Schema(
+                    {
+                        vol.Optional("QR"): QrCodeSelector(
+                            config=QrCodeSelectorConfig(
+                                data=f"tuyaSmart--qrLogin?token={token}",
+                                scale=5,
+                                error_correction_level=(
+                                    QrErrorCorrectionLevel.QUARTILE
+                                ),
+                            )
+                        )
+                    }
+                ),
+            )
+
+        if not await cloud.async_login():
+            return self.async_show_form(
+                step_id="qr_relink_scan",
+                data_schema=vol.Schema(
+                    {
+                        vol.Optional("QR"): QrCodeSelector(
+                            config=QrCodeSelectorConfig(
+                                data=f"tuyaSmart--qrLogin?token={token}",
+                                scale=5,
+                                error_correction_level=(
+                                    QrErrorCorrectionLevel.QUARTILE
+                                ),
+                            )
+                        )
+                    }
+                ),
+                errors={"base": "qr_login_error"},
+                description_placeholders=cloud.last_error,
+            )
+
+        self._persist_qr_auth(cloud.auth)
+        return self.async_create_entry(title="", data={})
+
     async def async_step_qr_disconnect(self, user_input=None):
         """Forget the Tuya account link while leaving all LAN devices intact."""
-        new_data = copy.deepcopy(dict(self.config_entry.data))
-        new_data[CONF_QR_AUTH] = {}
-        self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-        return self.async_create_entry(title="", data={})
+        if user_input is not None and user_input.get("confirm", False):
+            new_data = copy.deepcopy(dict(self.config_entry.data))
+            new_data[CONF_QR_AUTH] = {}
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                data=new_data,
+            )
+            return self.async_create_entry(title="", data={})
+
+        return self.async_show_form(
+            step_id="qr_disconnect",
+            data_schema=vol.Schema(
+                {vol.Required("confirm", default=False): bool}
+            ),
+        )
