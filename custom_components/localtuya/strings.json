@@ -326,6 +326,16 @@
                     "contribution_json": "Sanitized contribution JSON"
                 },
                 "submit": "Submit to Community Catalog"
+            },
+            "community_contribution_actions": {
+                "title": "Submit community contribution",
+                "description": "Choose the action below to continue with the LocalTuya Community Device Catalog on GitHub: `{repository_url}`.",
+                "menu_options": {
+                    "submit_to_community_catalog": "Submit to Community Catalog"
+                },
+                "menu_option_descriptions": {
+                    "submit_to_community_catalog": "GitHub ↗ Open the pre-filled catalog submission."
+                }
             }
         },
         "error": {

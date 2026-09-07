@@ -11,7 +11,7 @@ from urllib.request import urlopen
 
 
 CURRENT_SCHEMA_VERSION = 2
-SUPPORTED_SCHEMA_VERSIONS = {1, 2}
+SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3}
 
 DEFAULT_SOURCE = (
     "https://raw.githubusercontent.com/"
@@ -49,7 +49,7 @@ def load_source(source: str) -> dict:
 
 
 def _normalize_mapping(mapping: dict, schema_version: int) -> dict:
-    """Normalize a V1/V2 source mapping to the bundled V2 representation."""
+    """Normalize a V1/V2/V3 source mapping to the bundled V2 representation."""
     normalized = copy.deepcopy(mapping)
     source_match = normalized.get("match")
     if not isinstance(source_match, dict):

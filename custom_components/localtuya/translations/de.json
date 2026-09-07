@@ -257,6 +257,16 @@
                     "contribution_json": "Bereinigtes JSON des Beitrags"
                 },
                 "submit": "An Community-Katalog senden"
+            },
+            "community_contribution_actions": {
+                "title": "Community-Beitrag einreichen",
+                "description": "Wähle die folgende Aktion, um mit dem LocalTuya Community-Gerätekatalog auf GitHub fortzufahren: `{repository_url}`.",
+                "menu_options": {
+                    "submit_to_community_catalog": "An Community-Katalog senden"
+                },
+                "menu_option_descriptions": {
+                    "submit_to_community_catalog": "GitHub ↗ Vorbefüllten Katalogbeitrag öffnen."
+                }
             }
         }
     },

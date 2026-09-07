@@ -87,6 +87,30 @@ class MappingTranslationTests(
                     f"{language}: {key}",
                 )
 
+    def test_community_catalog_cta_translations(self):
+        expected = {
+            "en": "Submit to Community Catalog",
+            "it": "Invia al catalogo della community",
+            "de": "An Community-Katalog senden",
+            "pt-BR": "Enviar ao catálogo da comunidade",
+            "zh-Hans": "提交到社区目录",
+        }
+
+        for language, label in expected.items():
+            payload = json.loads(
+                (TRANSLATIONS_DIR / f"{language}.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            current = (
+                payload["options"]["step"]
+                ["community_contribution_actions"]
+                ["menu_options"]
+                ["submit_to_community_catalog"]
+            )
+            self.assertEqual(current, label, language)
+
+
 
 if __name__ == "__main__":
     unittest.main()

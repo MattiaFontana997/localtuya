@@ -257,6 +257,16 @@
                     "contribution_json": "JSON sanitizzato del contributo"
                 },
                 "submit": "Invia al catalogo della community"
+            },
+            "community_contribution_actions": {
+                "title": "Invia contributo alla community",
+                "description": "Scegli l’azione qui sotto per continuare con il Catalogo dispositivi della community di LocalTuya su GitHub: `{repository_url}`.",
+                "menu_options": {
+                    "submit_to_community_catalog": "Invia al catalogo della community"
+                },
+                "menu_option_descriptions": {
+                    "submit_to_community_catalog": "GitHub ↗ Apri l’invio al catalogo già precompilato."
+                }
             }
         }
     },

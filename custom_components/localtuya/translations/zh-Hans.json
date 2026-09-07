@@ -257,6 +257,16 @@
                     "contribution_json": "已清理的贡献 JSON"
                 },
                 "submit": "提交到社区目录"
+            },
+            "community_contribution_actions": {
+                "title": "提交社区贡献",
+                "description": "选择下面的操作，在 GitHub 上继续提交到 LocalTuya 社区设备目录：`{repository_url}`。",
+                "menu_options": {
+                    "submit_to_community_catalog": "提交到社区目录"
+                },
+                "menu_option_descriptions": {
+                    "submit_to_community_catalog": "GitHub ↗ 打开已预填的目录提交页面。"
+                }
             }
         }
     },
