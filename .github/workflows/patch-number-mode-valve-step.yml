@@ -36,25 +36,18 @@ jobs:
 
           path = Path('custom_components/localtuya/number.py')
           text = path.read_text()
-          text = text.replace(
-              'from homeassistant.components.number import DOMAIN, NumberDeviceClass, NumberEntity\n',
-              'from homeassistant.components.number import DOMAIN, NumberDeviceClass, NumberEntity, NumberMode\n',
-              1,
-          )
+          old = 'from homeassistant.components.number import DOMAIN, NumberDeviceClass, NumberEntity\n'
+          assert text.count(old) == 1
+          text = text.replace(old, 'from homeassistant.components.number import DOMAIN, NumberDeviceClass, NumberEntity, NumberMode\n', 1)
           anchor = '    CONF_RESTORE_ON_RECONNECT, CONF_SCALING, CONF_STEPSIZE_VALUE,\n'
           assert text.count(anchor) == 1
           text = text.replace(anchor, '    CONF_RESTORE_ON_RECONNECT, CONF_SCALING, CONF_STEPSIZE_VALUE, CONF_NUMBER_MODE,\n', 1)
           anchor = 'DEFAULT_STEP = 1.0\n\n\ndef _scale_number_value'
           assert text.count(anchor) == 1
-          helper = '''DEFAULT_STEP = 1.0\n\n\ndef _configured_number_mode(value) -> NumberMode:\n    """Return one validated Home Assistant number display mode."""\n    try:\n        return NumberMode(value) if value is not None else NumberMode.AUTO\n    except (TypeError, ValueError):\n        return NumberMode.AUTO\n\n\ndef _scale_number_value'''
-          text = text.replace(anchor, helper, 1)
+          text = text.replace(anchor, '''DEFAULT_STEP = 1.0\n\n\ndef _configured_number_mode(value) -> NumberMode:\n    """Return one validated Home Assistant number display mode."""\n    try:\n        return NumberMode(value) if value is not None else NumberMode.AUTO\n    except (TypeError, ValueError):\n        return NumberMode.AUTO\n\n\ndef _scale_number_value''', 1)
           anchor = '        vol.Optional(CONF_DEVICE_CLASS): vol.In([device_class.value for device_class in NumberDeviceClass]),\n'
           assert text.count(anchor) == 1
-          text = text.replace(
-              anchor,
-              anchor + '        vol.Optional(CONF_NUMBER_MODE, default=NumberMode.AUTO.value): vol.In([mode.value for mode in NumberMode]),\n',
-              1,
-          )
+          text = text.replace(anchor, anchor + '        vol.Optional(CONF_NUMBER_MODE, default=NumberMode.AUTO.value): vol.In([mode.value for mode in NumberMode]),\n', 1)
           anchor = '        self._attr_native_unit_of_measurement = self._config.get(CONF_UNIT_OF_MEASUREMENT)\n'
           assert text.count(anchor) == 1
           text = text.replace(anchor, anchor + '        self._attr_mode = _configured_number_mode(self._config.get(CONF_NUMBER_MODE))\n', 1)
@@ -66,24 +59,35 @@ jobs:
           assert text.count(anchor) == 1
           text = text.replace(anchor, anchor + '    CONF_VALVE_POSITION_STEP,\n', 1)
           old = '''def _position_to_raw(position, minimum, maximum, inverted):\n    """Convert Home Assistant percent to the configured raw valve range."""\n    percent = max(0.0, min(100.0, float(position)))\n    if inverted:\n        percent = 100.0 - percent\n    raw = minimum + (maximum - minimum) * percent / 100.0\n    return int(round(raw)) if float(raw).is_integer() else raw\n'''
-          new = '''def _position_to_raw(position, minimum, maximum, inverted, step=1.0):\n    """Convert HA percent to raw, applying Tuya Local's write-only step."""\n    percent = max(0.0, min(100.0, float(position)))\n    if inverted:\n        percent = 100.0 - percent\n    raw = minimum + (maximum - minimum) * percent / 100.0\n    step = float(step)\n    if step <= 0:\n        raise ValueError("Valve position step must be greater than zero")\n    if step != 1.0:\n        # Tuya Local applies mapping.step as: step * round(raw / step).\n        raw = step * round(float(raw) / step)\n    if raw < minimum or raw > maximum:\n        raise ValueError("Stepped valve position is outside the configured range")\n    return int(raw) if float(raw).is_integer() else raw\n'''
+          new = '''def _position_to_raw(position, minimum, maximum, inverted, step=1.0):\n    """Convert HA percent to raw, applying Tuya Local's write-only step."""\n    percent = max(0.0, min(100.0, float(position)))\n    if inverted:\n        percent = 100.0 - percent\n    raw = minimum + (maximum - minimum) * percent / 100.0\n    step = float(step)\n    if step <= 0:\n        raise ValueError("Valve position step must be greater than zero")\n    if step != 1.0:\n        raw = step * round(float(raw) / step)\n    if raw < minimum or raw > maximum:\n        raise ValueError("Stepped valve position is outside the configured range")\n    return int(raw) if float(raw).is_integer() else raw\n'''
           assert text.count(old) == 1
           text = text.replace(old, new, 1)
           anchor = '        self._position_inverted = bool(self._config.get(CONF_VALVE_POSITION_INVERTED, False))\n'
           assert text.count(anchor) == 1
           text = text.replace(anchor, anchor + '        self._position_step = float(self._config.get(CONF_VALVE_POSITION_STEP, 1.0))\n        if self._position_step <= 0:\n            raise ValueError("Valve position step must be greater than zero")\n', 1)
-          text = text.replace(
-              '                self._position_inverted,\n            )',
-              '                self._position_inverted,\n                self._position_step,\n            )',
-          )
-          text = text.replace(
-              '            self._position_inverted,\n        )',
-              '            self._position_inverted,\n            self._position_step,\n        )',
-          )
+
+          for old, new in [
+              ('''                self._position_max,\n                self._position_inverted,\n            )''', '''                self._position_max,\n                self._position_inverted,\n                self._position_step,\n            )'''),
+              ('''                    self._position_max,\n                    self._position_inverted,\n                )''', '''                    self._position_max,\n                    self._position_inverted,\n                    self._position_step,\n                )'''),
+              ('''            self._position_max,\n            self._position_inverted,\n        )''', '''            self._position_max,\n            self._position_inverted,\n            self._position_step,\n        )'''),
+          ]:
+              text = text.replace(old, new)
+          # Read paths must remain unquantized: Tuya Local mapping.step is write-only.
+          bad = '''        return _position_from_raw(\n            self.dps(dp_id),\n            self._position_min,\n            self._position_max,\n            self._position_inverted,\n            self._position_step,\n        )'''
+          good = '''        return _position_from_raw(\n            self.dps(dp_id),\n            self._position_min,\n            self._position_max,\n            self._position_inverted,\n        )'''
+          if bad in text:
+              text = text.replace(bad, good, 1)
           path.write_text(text)
 
           test = Path('tests/test_number_mode_valve_step.py')
-          test.write_text('''"""Regression tests for catalog number mode and valve write step."""\n\nimport unittest\n\nfrom homeassistant.components.number import NumberMode\n\nfrom custom_components.localtuya.number import _configured_number_mode\nfrom custom_components.localtuya.valve import _position_to_raw\n\n\nclass NumberModeValveStepTests(unittest.TestCase):\n    def test_number_mode_preserves_slider_and_box(self):\n        self.assertEqual(_configured_number_mode("slider"), NumberMode.SLIDER)\n        self.assertEqual(_configured_number_mode("box"), NumberMode.BOX)\n        self.assertEqual(_configured_number_mode(None), NumberMode.AUTO)\n        self.assertEqual(_configured_number_mode("invalid"), NumberMode.AUTO)\n\n    def test_valve_step_matches_tuya_local_write_rounding(self):\n        self.assertEqual(_position_to_raw(53, 0, 100, False, 5), 55)\n        self.assertEqual(_position_to_raw(47, 0, 100, False, 5), 45)\n        self.assertEqual(_position_to_raw(47, 0, 100, True, 5), 55)\n\n    def test_valve_step_never_silently_clamps_out_of_range(self):\n        with self.assertRaises(ValueError):\n            _position_to_raw(100, 0, 98, False, 5)\n\n\nif __name__ == "__main__":\n    unittest.main()\n''')
+          test.write_text('''"""Regression tests for catalog number mode and valve write step."""\n\nimport unittest\nfrom homeassistant.components.number import NumberMode\nfrom custom_components.localtuya.number import _configured_number_mode\nfrom custom_components.localtuya.valve import _position_to_raw\n\nclass NumberModeValveStepTests(unittest.TestCase):\n    def test_number_mode_preserves_slider_and_box(self):\n        self.assertEqual(_configured_number_mode("slider"), NumberMode.SLIDER)\n        self.assertEqual(_configured_number_mode("box"), NumberMode.BOX)\n        self.assertEqual(_configured_number_mode(None), NumberMode.AUTO)\n        self.assertEqual(_configured_number_mode("invalid"), NumberMode.AUTO)\n\n    def test_valve_step_matches_tuya_local_write_rounding(self):\n        self.assertEqual(_position_to_raw(53, 0, 100, False, 5), 55)\n        self.assertEqual(_position_to_raw(47, 0, 100, False, 5), 45)\n        self.assertEqual(_position_to_raw(47, 0, 100, True, 5), 55)\n\n    def test_valve_step_never_silently_clamps_out_of_range(self):\n        with self.assertRaises(ValueError):\n            _position_to_raw(100, 0, 98, False, 5)\n''')
+
+          test = Path('tests/test_catalog_platforms_core.py')
+          text = test.read_text()
+          anchor = '        valve._position_inverted = False\n'
+          assert text.count(anchor) >= 1
+          text = text.replace(anchor, anchor + '        valve._position_step = 1.0\n', 1)
+          test.write_text(text)
           PY
       - name: Install dependencies
         run: |
@@ -95,7 +99,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add custom_components/localtuya/const.py custom_components/localtuya/number.py custom_components/localtuya/valve.py tests/test_number_mode_valve_step.py
+          git add custom_components/localtuya/const.py custom_components/localtuya/number.py custom_components/localtuya/valve.py tests/test_number_mode_valve_step.py tests/test_catalog_platforms_core.py
           git diff --cached --check
           git commit -m "Support number modes and valve position steps"
           git push origin HEAD:develop
