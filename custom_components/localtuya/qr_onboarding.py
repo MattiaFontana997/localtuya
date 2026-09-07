@@ -22,7 +22,6 @@ from homeassistant.const import (
     CONF_REGION,
     CONF_USERNAME,
 )
-from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     QrCodeSelector,
     QrCodeSelectorConfig,
@@ -115,6 +114,11 @@ class QrCloudClient:
     def auth(self) -> dict[str, Any]:
         """Return the current account link, including refreshed tokens."""
         return copy.deepcopy(self._auth)
+
+    @property
+    def user_code(self) -> str | None:
+        """Return the User Code associated with this QR session."""
+        return self._user_code
 
     @property
     def is_authenticated(self) -> bool:
@@ -526,7 +530,7 @@ class QrConfigFlowMixin:
             )
 
         if not await cloud.async_login():
-            refreshed = await cloud.async_generate_qr(cloud._user_code)
+            refreshed = await cloud.async_generate_qr(cloud.user_code)
             if refreshed:
                 self._qr_token = refreshed
             return self.async_show_form(
@@ -838,6 +842,10 @@ class QrConfigFlowMixin:
                 schema,
                 available,
             ),
+            description_placeholders={
+                "entity": "an entity",
+                "platform": platform,
+            },
         )
 
     def _finish_manual_initial_device(self):
