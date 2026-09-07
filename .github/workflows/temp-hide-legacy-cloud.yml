@@ -1,0 +1,44 @@
+name: Temporary hide legacy cloud setup
+
+on:
+  push:
+    branches:
+      - feature/qr-onboarding
+    paths:
+      - .github/workflows/temp-hide-legacy-cloud.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/qr-onboarding
+      - name: Hide Developer Platform action for non-legacy entries
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('custom_components/localtuya/config_flow.py')
+          text = path.read_text()
+          old = '''        action_labels = (\n            await _async_action_labels(\n                self.hass\n            )\n        )\n\n        return self.async_show_form(\n'''
+          new = '''        action_labels = (\n            await _async_action_labels(\n                self.hass\n            )\n        )\n\n        # The Tuya Developer Platform flow is retained only for\n        # backward compatibility with entries that already use it.\n        # New QR/manual installations must never expose Client ID,\n        # Client Secret, Data Center or IoT Core setup as a standard path.\n        has_legacy_cloud = (\n            not self.config_entry.data.get(\n                CONF_NO_CLOUD,\n                True,\n            )\n            or bool(\n                self.config_entry.data.get(\n                    CONF_CLIENT_ID\n                )\n            )\n            or bool(\n                self.config_entry.data.get(\n                    CONF_CLIENT_SECRET\n                )\n            )\n        )\n\n        if not has_legacy_cloud:\n            action_labels.pop(\n                CONF_SETUP_CLOUD,\n                None,\n            )\n\n        return self.async_show_form(\n'''
+          # Only replace within the OptionsFlow async_step_init occurrence.
+          class_pos = text.index('class LocalTuyaOptionsFlowHandler')
+          pos = text.find(old, class_pos)
+          if pos < 0:
+              raise SystemExit('Options action-label block not found')
+          text = text[:pos] + text[pos:].replace(old, new, 1)
+          path.write_text(text)
+          Path('.github/workflows/temp-hide-legacy-cloud.yml').unlink()
+          PY
+      - name: Commit UX compatibility filter
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/localtuya/config_flow.py .github/workflows/temp-hide-legacy-cloud.yml
+          git commit -m "Hide legacy Developer Platform setup from standard onboarding"
+          git push origin HEAD:feature/qr-onboarding
