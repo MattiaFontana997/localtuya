@@ -1,0 +1,26 @@
+name: Inspect fan direction patch anchors
+
+on:
+  push:
+    paths:
+      - .github/workflows/inspect-fan-direction-patch.yml
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+      - name: Show patch body around failing anchor
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          lines = Path('.github/workflows/patch-fan-direction-values.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(lines) if line.strip() == "python - <<'PY'")
+          end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'PY')
+          body = [line[10:] if line.startswith('          ') else line for line in lines[start + 1:end]]
+          for n, line in enumerate(body, 1):
+              if 55 <= n <= 90:
+                  print(f'{n:03}: {line}')
+          PY
