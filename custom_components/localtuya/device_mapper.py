@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -924,13 +925,7 @@ def _build_climate_candidate(
             4,
         )
 
-        # Current LocalTuya climate config flow supports
-        # these standard HA increments.
-        if real_step in {
-            0.1,
-            0.5,
-            1.0,
-        }:
+        if math.isfinite(real_step) and real_step > 0:
             config[
                 CONF_TEMPERATURE_STEP
             ] = real_step

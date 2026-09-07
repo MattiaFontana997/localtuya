@@ -1,6 +1,7 @@
 """Platform to locally control Tuya-based climate devices."""
 import asyncio
 import logging
+import math
 from functools import partial
 
 import voluptuous as vol
@@ -247,6 +248,21 @@ def _positive_number(value, default):
     except (TypeError, ValueError):
         return default
     return value if value > 0 else default
+
+
+def _positive_temperature_step(value):
+    """Validate a finite, strictly positive target-temperature step."""
+    if isinstance(value, bool):
+        raise vol.Invalid("temperature step must be a positive number")
+    try:
+        value = float(value)
+    except (TypeError, ValueError) as exc:
+        raise vol.Invalid("temperature step must be a positive number") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise vol.Invalid("temperature step must be a positive number")
+    return value
+
+
 DEFAULT_TEMPERATURE_UNIT = TEMPERATURE_CELSIUS
 DEFAULT_PRECISION = PRECISION_TENTHS
 DEFAULT_TEMPERATURE_STEP = PRECISION_HALVES
@@ -260,9 +276,9 @@ def flow_schema(dps):
         vol.Optional(CONF_TARGET_TEMPERATURE_DP): vol.In(dps),
         vol.Optional(CONF_AWAY_TEMPERATURE_DP): vol.In(dps),
         vol.Optional(CONF_CURRENT_TEMPERATURE_DP): vol.In(dps),
-        vol.Optional(CONF_TEMPERATURE_STEP, default=PRECISION_WHOLE): vol.In(
-            [PRECISION_WHOLE, PRECISION_HALVES, PRECISION_TENTHS]
-        ),
+        vol.Optional(
+            CONF_TEMPERATURE_STEP, default=PRECISION_WHOLE
+        ): _positive_temperature_step,
         vol.Optional(CONF_TEMP_MIN, default=DEFAULT_MIN_TEMP): vol.Coerce(float),
         vol.Optional(CONF_TEMP_MAX, default=DEFAULT_MAX_TEMP): vol.Coerce(float),
         vol.Optional(CONF_MAX_TEMP_DP): vol.In(dps),
