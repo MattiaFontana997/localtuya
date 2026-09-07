@@ -1,0 +1,372 @@
+name: Temporary QR onboarding patch
+
+on:
+  push:
+    branches:
+      - feature/qr-onboarding
+    paths:
+      - .github/workflows/temp-qr-onboarding-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/qr-onboarding
+      - name: Wire QR onboarding into config flow and translations
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          path = Path('custom_components/localtuya/config_flow.py')
+          text = path.read_text()
+
+          marker = '''from .mapping_export import (\n    build_mapping_contribution_package,\n)\n'''
+          qr_import = '''from .mapping_export import (\n    build_mapping_contribution_package,\n)\nfrom .qr_onboarding import (\n    CONF_QR_AUTH,\n    QrConfigFlowMixin,\n    QrOptionsFlowMixin,\n)\n'''
+          if 'from .qr_onboarding import (' not in text:
+              if marker not in text:
+                  raise SystemExit('mapping_export import marker not found')
+              text = text.replace(marker, qr_import, 1)
+
+          old_class = 'class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):'
+          new_class = 'class LocaltuyaConfigFlow(QrConfigFlowMixin, config_entries.ConfigFlow, domain=DOMAIN):'
+          if old_class in text:
+              text = text.replace(old_class, new_class, 1)
+
+          old_options = 'class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):'
+          new_options = 'class LocalTuyaOptionsFlowHandler(QrOptionsFlowMixin, config_entries.OptionsFlow):'
+          if old_options in text:
+              text = text.replace(old_options, new_options, 1)
+
+          start = text.index('    async def async_step_user(self, user_input=None):', text.index('class LocaltuyaConfigFlow'))
+          end = text.index('    async def _create_entry(self, user_input):', start)
+          user_method = '''    async def async_step_user(self, user_input=None):\n        """Choose the recommended QR onboarding or advanced manual setup."""\n        return self.async_show_menu(\n            step_id="user",\n            menu_options=[\n                "qr_login",\n                "manual_device",\n            ],\n        )\n\n'''
+          text = text[:start] + user_method + text[end:]
+
+          add_marker = '''    async def async_step_add_device(self, user_input=None):\n        """Handle adding a new device."""\n'''
+          add_replacement = '''    async def async_step_add_device(self, user_input=None):\n        """Handle adding a new device."""\n        if (\n            self.config_entry.data.get(CONF_QR_AUTH)\n            and not getattr(self, "_manual_add_in_progress", False)\n        ):\n            return await self.async_step_add_device_method()\n'''
+          if add_marker not in text:
+              raise SystemExit('async_step_add_device marker not found')
+          text = text.replace(add_marker, add_replacement, 1)
+          path.write_text(text)
+
+          qr_path = Path('custom_components/localtuya/qr_onboarding.py')
+          qr = qr_path.read_text()
+          qr = qr.replace('import voluptuous as vol\n', 'import voluptuous as vol\nimport homeassistant.helpers.config_validation as cv\n', 1)
+          qr = qr.replace('self._force_manual_add = True\n        return await self.async_step_add_device()', 'self._manual_add_in_progress = True\n        return await self.async_step_add_device()', 1)
+          qr = qr.replace('vol.Required("qr_mapping_selection", default=list(options)): vol.In(options)', 'vol.Required("qr_mapping_selection", default=list(options)): cv.multi_select(options)')
+          qr_path.write_text(qr)
+
+          translations = Path('custom_components/localtuya/translations')
+          payloads = {
+              'en': {
+                  'user_title': 'Set up LocalTuya',
+                  'user_desc': 'QR login is recommended. It links Smart Life/Tuya for on-demand provisioning only; normal device control remains local.',
+                  'qr': 'QR login with Smart Life / Tuya',
+                  'qr_desc': 'Recommended — no Tuya Developer Platform, Client ID or Client Secret required.',
+                  'manual': 'Manual device setup',
+                  'manual_desc': 'Advanced — enter Device ID, local_key and LAN details manually.',
+                  'login_title': 'Link Smart Life / Tuya',
+                  'login_desc': 'Enter the User Code shown in the Smart Life or Tuya app account settings.',
+                  'code': 'User Code',
+                  'scan_title': 'Scan with Smart Life / Tuya',
+                  'scan_desc': 'Scan the QR code in the Smart Life or Tuya app, approve the authorization, then continue.',
+                  'choose_title': 'Choose a device',
+                  'choose_desc': 'Select a device to provision locally. Only devices exposing a usable local key are shown.',
+                  'device': 'Tuya device',
+                  'review_title': 'Review suggested mappings',
+                  'review_desc': 'LocalTuya found mappings that need confirmation. High-confidence mappings are already included.',
+                  'mapping': 'Additional mappings',
+                  'manual_title': 'Manual device setup',
+                  'manual_step_desc': 'Advanced setup without linking a Tuya account.',
+                  'add_method_title': 'Add a device',
+                  'add_method_desc': 'Choose how to add the device.',
+                  'qr_add': 'From Smart Life / Tuya',
+                  'qr_add_desc': 'Recommended — refresh the linked account once, then configure the selected device for LAN control.',
+                  'manual_add': 'Manual / LAN setup',
+                  'manual_add_desc': 'Enter Device ID and local_key manually.',
+                  'new_title': 'Choose a new Tuya device',
+                  'new_desc': 'The account was refreshed on demand. Select an unconfigured locally controllable device.',
+                  'err_login': 'Unable to complete QR login. {msg}',
+                  'err_lan': 'The selected device was not found on the Home Assistant LAN. {msg}',
+                  'err_local': 'The selected device does not expose usable local credentials. {msg}',
+                  'err_child': 'Hub child devices are not supported by this QR flow yet. {msg}',
+                  'err_map': 'Select at least one mapping before continuing.',
+                  'abort_none': 'No locally controllable devices with a usable local key were returned by Tuya.',
+                  'abort_new': 'No new locally controllable devices are available on the linked account.',
+                  'abort_cloud': 'The temporary Tuya provisioning session could not be reached. Try again later.',
+                  'abort_reauth': 'The Tuya account authorization expired. Re-link the account with QR login.',
+                  'abort_map': 'No safe automatic mapping was found. Use manual setup for this device.',
+                  'abort_not_linked': 'No Smart Life/Tuya account is linked to this LocalTuya entry.'
+              },
+              'it': {
+                  'user_title': 'Configura LocalTuya',
+                  'user_desc': 'Il login QR è consigliato. Collega Smart Life/Tuya solo per il provisioning su richiesta; il normale controllo dei dispositivi resta locale.',
+                  'qr': 'Login QR con Smart Life / Tuya',
+                  'qr_desc': 'Consigliato — non servono Tuya Developer Platform, Client ID o Client Secret.',
+                  'manual': 'Configurazione manuale dispositivo',
+                  'manual_desc': 'Avanzata — inserisci manualmente Device ID, local_key e dati LAN.',
+                  'login_title': 'Collega Smart Life / Tuya',
+                  'login_desc': 'Inserisci lo User Code mostrato nelle impostazioni account dell’app Smart Life o Tuya.',
+                  'code': 'User Code',
+                  'scan_title': 'Scansiona con Smart Life / Tuya',
+                  'scan_desc': 'Scansiona il QR nell’app Smart Life o Tuya, approva l’autorizzazione e poi continua.',
+                  'choose_title': 'Scegli un dispositivo',
+                  'choose_desc': 'Seleziona un dispositivo da configurare in locale. Sono mostrati solo i dispositivi con una local key utilizzabile.',
+                  'device': 'Dispositivo Tuya',
+                  'review_title': 'Controlla i mapping suggeriti',
+                  'review_desc': 'LocalTuya ha trovato mapping che richiedono conferma. Quelli ad alta affidabilità sono già inclusi.',
+                  'mapping': 'Mapping aggiuntivi',
+                  'manual_title': 'Configurazione manuale dispositivo',
+                  'manual_step_desc': 'Configurazione avanzata senza collegare un account Tuya.',
+                  'add_method_title': 'Aggiungi un dispositivo',
+                  'add_method_desc': 'Scegli come aggiungere il dispositivo.',
+                  'qr_add': 'Da Smart Life / Tuya',
+                  'qr_add_desc': 'Consigliato — aggiorna una volta l’account collegato e configura il dispositivo scelto per il controllo LAN.',
+                  'manual_add': 'Configurazione manuale / LAN',
+                  'manual_add_desc': 'Inserisci manualmente Device ID e local_key.',
+                  'new_title': 'Scegli un nuovo dispositivo Tuya',
+                  'new_desc': 'L’account è stato aggiornato su richiesta. Seleziona un dispositivo locale non ancora configurato.',
+                  'err_login': 'Impossibile completare il login QR. {msg}',
+                  'err_lan': 'Il dispositivo selezionato non è stato trovato nella LAN di Home Assistant. {msg}',
+                  'err_local': 'Il dispositivo selezionato non espone credenziali locali utilizzabili. {msg}',
+                  'err_child': 'I dispositivi figli di un hub non sono ancora supportati da questo flusso QR. {msg}',
+                  'err_map': 'Seleziona almeno un mapping prima di continuare.',
+                  'abort_none': 'Tuya non ha restituito dispositivi controllabili in locale con una local key utilizzabile.',
+                  'abort_new': 'Non ci sono nuovi dispositivi controllabili in locale nell’account collegato.',
+                  'abort_cloud': 'La sessione temporanea Tuya per il provisioning non è raggiungibile. Riprova più tardi.',
+                  'abort_reauth': 'L’autorizzazione dell’account Tuya è scaduta. Ricollega l’account tramite QR.',
+                  'abort_map': 'Non è stato trovato un mapping automatico sicuro. Usa la configurazione manuale per questo dispositivo.',
+                  'abort_not_linked': 'Nessun account Smart Life/Tuya è collegato a questa configurazione LocalTuya.'
+              },
+              'de': {
+                  'user_title': 'LocalTuya einrichten',
+                  'user_desc': 'QR-Anmeldung wird empfohlen. Smart Life/Tuya wird nur für die bedarfsgesteuerte Bereitstellung verknüpft; die normale Gerätesteuerung bleibt lokal.',
+                  'qr': 'QR-Anmeldung mit Smart Life / Tuya',
+                  'qr_desc': 'Empfohlen — keine Tuya Developer Platform, Client-ID oder Client-Secret erforderlich.',
+                  'manual': 'Manuelle Geräteeinrichtung',
+                  'manual_desc': 'Erweitert — Geräte-ID, local_key und LAN-Daten manuell eingeben.',
+                  'login_title': 'Smart Life / Tuya verknüpfen',
+                  'login_desc': 'Gib den User Code aus den Kontoeinstellungen der Smart-Life- oder Tuya-App ein.',
+                  'code': 'User Code',
+                  'scan_title': 'Mit Smart Life / Tuya scannen',
+                  'scan_desc': 'Scanne den QR-Code in der Smart-Life- oder Tuya-App, bestätige die Autorisierung und fahre dann fort.',
+                  'choose_title': 'Gerät auswählen',
+                  'choose_desc': 'Wähle ein Gerät für die lokale Bereitstellung. Angezeigt werden nur Geräte mit nutzbarem local_key.',
+                  'device': 'Tuya-Gerät',
+                  'review_title': 'Vorgeschlagene Zuordnungen prüfen',
+                  'review_desc': 'LocalTuya hat Zuordnungen gefunden, die bestätigt werden müssen. Zuordnungen mit hoher Sicherheit sind bereits enthalten.',
+                  'mapping': 'Zusätzliche Zuordnungen',
+                  'manual_title': 'Manuelle Geräteeinrichtung',
+                  'manual_step_desc': 'Erweiterte Einrichtung ohne Verknüpfung eines Tuya-Kontos.',
+                  'add_method_title': 'Gerät hinzufügen',
+                  'add_method_desc': 'Wähle aus, wie das Gerät hinzugefügt werden soll.',
+                  'qr_add': 'Aus Smart Life / Tuya',
+                  'qr_add_desc': 'Empfohlen — das verknüpfte Konto einmal aktualisieren und das gewählte Gerät für LAN-Steuerung konfigurieren.',
+                  'manual_add': 'Manuelle / LAN-Einrichtung',
+                  'manual_add_desc': 'Geräte-ID und local_key manuell eingeben.',
+                  'new_title': 'Neues Tuya-Gerät auswählen',
+                  'new_desc': 'Das Konto wurde bei Bedarf aktualisiert. Wähle ein noch nicht konfiguriertes lokal steuerbares Gerät.',
+                  'err_login': 'QR-Anmeldung konnte nicht abgeschlossen werden. {msg}',
+                  'err_lan': 'Das ausgewählte Gerät wurde im Home-Assistant-LAN nicht gefunden. {msg}',
+                  'err_local': 'Das ausgewählte Gerät stellt keine nutzbaren lokalen Zugangsdaten bereit. {msg}',
+                  'err_child': 'Hub-Untergeräte werden von diesem QR-Ablauf noch nicht unterstützt. {msg}',
+                  'err_map': 'Wähle mindestens eine Zuordnung aus, bevor du fortfährst.',
+                  'abort_none': 'Tuya hat keine lokal steuerbaren Geräte mit nutzbarem local_key zurückgegeben.',
+                  'abort_new': 'Im verknüpften Konto sind keine neuen lokal steuerbaren Geräte verfügbar.',
+                  'abort_cloud': 'Die temporäre Tuya-Bereitstellungssitzung ist nicht erreichbar. Versuche es später erneut.',
+                  'abort_reauth': 'Die Tuya-Kontoautorisierung ist abgelaufen. Verknüpfe das Konto erneut per QR.',
+                  'abort_map': 'Es wurde keine sichere automatische Zuordnung gefunden. Verwende für dieses Gerät die manuelle Einrichtung.',
+                  'abort_not_linked': 'Mit diesem LocalTuya-Eintrag ist kein Smart-Life/Tuya-Konto verknüpft.'
+              },
+              'pt-BR': {
+                  'user_title': 'Configurar o LocalTuya',
+                  'user_desc': 'O login por QR é recomendado. O Smart Life/Tuya é vinculado apenas para provisionamento sob demanda; o controle normal dos dispositivos continua local.',
+                  'qr': 'Login por QR com Smart Life / Tuya',
+                  'qr_desc': 'Recomendado — não requer Tuya Developer Platform, Client ID ou Client Secret.',
+                  'manual': 'Configuração manual do dispositivo',
+                  'manual_desc': 'Avançada — informe manualmente Device ID, local_key e dados da LAN.',
+                  'login_title': 'Vincular Smart Life / Tuya',
+                  'login_desc': 'Informe o User Code exibido nas configurações da conta no aplicativo Smart Life ou Tuya.',
+                  'code': 'User Code',
+                  'scan_title': 'Escanear com Smart Life / Tuya',
+                  'scan_desc': 'Escaneie o QR no aplicativo Smart Life ou Tuya, aprove a autorização e depois continue.',
+                  'choose_title': 'Escolher um dispositivo',
+                  'choose_desc': 'Selecione um dispositivo para provisionamento local. Apenas dispositivos com local_key utilizável são exibidos.',
+                  'device': 'Dispositivo Tuya',
+                  'review_title': 'Revisar mapeamentos sugeridos',
+                  'review_desc': 'O LocalTuya encontrou mapeamentos que precisam de confirmação. Os de alta confiança já estão incluídos.',
+                  'mapping': 'Mapeamentos adicionais',
+                  'manual_title': 'Configuração manual do dispositivo',
+                  'manual_step_desc': 'Configuração avançada sem vincular uma conta Tuya.',
+                  'add_method_title': 'Adicionar um dispositivo',
+                  'add_method_desc': 'Escolha como adicionar o dispositivo.',
+                  'qr_add': 'Do Smart Life / Tuya',
+                  'qr_add_desc': 'Recomendado — atualize a conta vinculada uma vez e configure o dispositivo escolhido para controle pela LAN.',
+                  'manual_add': 'Configuração manual / LAN',
+                  'manual_add_desc': 'Informe Device ID e local_key manualmente.',
+                  'new_title': 'Escolher um novo dispositivo Tuya',
+                  'new_desc': 'A conta foi atualizada sob demanda. Selecione um dispositivo local ainda não configurado.',
+                  'err_login': 'Não foi possível concluir o login por QR. {msg}',
+                  'err_lan': 'O dispositivo selecionado não foi encontrado na LAN do Home Assistant. {msg}',
+                  'err_local': 'O dispositivo selecionado não fornece credenciais locais utilizáveis. {msg}',
+                  'err_child': 'Dispositivos filhos de hub ainda não são suportados por este fluxo QR. {msg}',
+                  'err_map': 'Selecione pelo menos um mapeamento antes de continuar.',
+                  'abort_none': 'A Tuya não retornou dispositivos controláveis localmente com local_key utilizável.',
+                  'abort_new': 'Não há novos dispositivos controláveis localmente na conta vinculada.',
+                  'abort_cloud': 'A sessão temporária da Tuya para provisionamento não está acessível. Tente novamente mais tarde.',
+                  'abort_reauth': 'A autorização da conta Tuya expirou. Vincule novamente a conta pelo QR.',
+                  'abort_map': 'Nenhum mapeamento automático seguro foi encontrado. Use a configuração manual para este dispositivo.',
+                  'abort_not_linked': 'Nenhuma conta Smart Life/Tuya está vinculada a esta configuração LocalTuya.'
+              },
+              'zh-Hans': {
+                  'user_title': '设置 LocalTuya',
+                  'user_desc': '推荐使用二维码登录。Smart Life/Tuya 仅用于按需配网，设备日常控制仍完全在本地进行。',
+                  'qr': '使用 Smart Life / Tuya 二维码登录',
+                  'qr_desc': '推荐 — 不需要 Tuya Developer Platform、Client ID 或 Client Secret。',
+                  'manual': '手动配置设备',
+                  'manual_desc': '高级 — 手动输入 Device ID、local_key 和局域网信息。',
+                  'login_title': '连接 Smart Life / Tuya',
+                  'login_desc': '输入 Smart Life 或 Tuya 应用账户设置中显示的 User Code。',
+                  'code': 'User Code',
+                  'scan_title': '使用 Smart Life / Tuya 扫描',
+                  'scan_desc': '在 Smart Life 或 Tuya 应用中扫描二维码并批准授权，然后继续。',
+                  'choose_title': '选择设备',
+                  'choose_desc': '选择要在本地配置的设备。仅显示具有可用 local_key 的设备。',
+                  'device': 'Tuya 设备',
+                  'review_title': '检查建议映射',
+                  'review_desc': 'LocalTuya 找到了需要确认的映射。高置信度映射已自动包含。',
+                  'mapping': '其他映射',
+                  'manual_title': '手动配置设备',
+                  'manual_step_desc': '无需连接 Tuya 账户的高级配置。',
+                  'add_method_title': '添加设备',
+                  'add_method_desc': '选择添加设备的方式。',
+                  'qr_add': '从 Smart Life / Tuya 添加',
+                  'qr_add_desc': '推荐 — 按需刷新一次已连接账户，然后将所选设备配置为局域网控制。',
+                  'manual_add': '手动 / 局域网配置',
+                  'manual_add_desc': '手动输入 Device ID 和 local_key。',
+                  'new_title': '选择新的 Tuya 设备',
+                  'new_desc': '账户已按需刷新。请选择尚未配置且可本地控制的设备。',
+                  'err_login': '无法完成二维码登录。{msg}',
+                  'err_lan': '在 Home Assistant 局域网中找不到所选设备。{msg}',
+                  'err_local': '所选设备未提供可用的本地凭据。{msg}',
+                  'err_child': '此二维码流程暂不支持网关子设备。{msg}',
+                  'err_map': '继续前请至少选择一个映射。',
+                  'abort_none': 'Tuya 未返回具有可用 local_key 的本地可控设备。',
+                  'abort_new': '已连接账户中没有新的本地可控设备。',
+                  'abort_cloud': '无法访问用于配网的临时 Tuya 会话。请稍后重试。',
+                  'abort_reauth': 'Tuya 账户授权已过期。请通过二维码重新连接账户。',
+                  'abort_map': '未找到安全的自动映射。请对此设备使用手动配置。',
+                  'abort_not_linked': '此 LocalTuya 配置未连接 Smart Life/Tuya 账户。'
+              },
+          }
+
+          for lang, tr in payloads.items():
+              p = translations / f'{lang}.json'
+              data = json.loads(p.read_text())
+              cfg = data.setdefault('config', {})
+              cfg.setdefault('error', {}).update({
+                  'qr_login_error': tr['err_login'],
+                  'qr_device_not_on_lan': tr['err_lan'],
+                  'qr_device_not_local': tr['err_local'],
+                  'qr_subdevice_not_supported': tr['err_child'],
+                  'qr_mapping_required': tr['err_map'],
+              })
+              cfg.setdefault('abort', {}).update({
+                  'qr_no_local_devices': tr['abort_none'],
+                  'qr_cloud_unavailable': tr['abort_cloud'],
+                  'qr_reauth_required': tr['abort_reauth'],
+                  'qr_mapping_not_found': tr['abort_map'],
+              })
+              steps = cfg.setdefault('step', {})
+              steps['user'] = {
+                  'title': tr['user_title'],
+                  'description': tr['user_desc'],
+                  'menu_options': {
+                      'qr_login': tr['qr'],
+                      'manual_device': tr['manual'],
+                  },
+                  'menu_option_descriptions': {
+                      'qr_login': tr['qr_desc'],
+                      'manual_device': tr['manual_desc'],
+                  },
+              }
+              steps['qr_login'] = {
+                  'title': tr['login_title'],
+                  'description': tr['login_desc'],
+                  'data': {'user_code': tr['code']},
+              }
+              steps['qr_scan'] = {
+                  'title': tr['scan_title'],
+                  'description': tr['scan_desc'],
+                  'data': {'QR': 'QR'},
+              }
+              steps['qr_choose_device'] = {
+                  'title': tr['choose_title'],
+                  'description': tr['choose_desc'],
+                  'data': {'device_id': tr['device']},
+              }
+              steps['qr_mapping_review'] = {
+                  'title': tr['review_title'],
+                  'description': tr['review_desc'],
+                  'data': {'qr_mapping_selection': tr['mapping']},
+              }
+              steps['manual_device'] = {
+                  'title': tr['manual_title'],
+                  'description': tr['manual_step_desc'],
+                  'data': steps.get('configure_device', {}).get('data', {}),
+              }
+
+              opts = data.setdefault('options', {})
+              opts.setdefault('error', {}).update({
+                  'qr_device_not_on_lan': tr['err_lan'],
+                  'qr_device_not_local': tr['err_local'],
+                  'qr_subdevice_not_supported': tr['err_child'],
+                  'qr_mapping_required': tr['err_map'],
+              })
+              opts.setdefault('abort', {}).update({
+                  'qr_not_linked': tr['abort_not_linked'],
+                  'qr_no_new_local_devices': tr['abort_new'],
+                  'qr_cloud_unavailable': tr['abort_cloud'],
+                  'qr_reauth_required': tr['abort_reauth'],
+                  'qr_mapping_not_found': tr['abort_map'],
+              })
+              osteps = opts.setdefault('step', {})
+              osteps['add_device_method'] = {
+                  'title': tr['add_method_title'],
+                  'description': tr['add_method_desc'],
+                  'menu_options': {
+                      'qr_add_device': tr['qr_add'],
+                      'manual_add_device': tr['manual_add'],
+                  },
+                  'menu_option_descriptions': {
+                      'qr_add_device': tr['qr_add_desc'],
+                      'manual_add_device': tr['manual_add_desc'],
+                  },
+              }
+              osteps['qr_add_device'] = {
+                  'title': tr['new_title'],
+                  'description': tr['new_desc'],
+                  'data': {'device_id': tr['device']},
+              }
+              osteps['qr_add_mapping_review'] = {
+                  'title': tr['review_title'],
+                  'description': tr['review_desc'],
+                  'data': {'qr_mapping_selection': tr['mapping']},
+              }
+              p.write_text(json.dumps(data, ensure_ascii=False, indent=4) + '\n')
+
+          Path('.github/workflows/temp-qr-onboarding-patch.yml').unlink()
+          PY
+      - name: Commit QR onboarding wiring
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/localtuya/config_flow.py custom_components/localtuya/qr_onboarding.py custom_components/localtuya/translations .github/workflows/temp-qr-onboarding-patch.yml
+          git commit -m "Wire QR onboarding into Home Assistant flows"
+          git push origin HEAD:feature/qr-onboarding
