@@ -33,25 +33,15 @@ jobs:
               path.write_text(text.replace(old, new, 1))
 
           mapper = Path("custom_components/localtuya/device_mapper.py")
-          old_import = (
-              "    CONF_COLOR,\n"
-              "    CONF_COLOR_MODE,\n"
-              "    CONF_COMMANDS_SET,\n"
+          replace_once(
+              mapper,
+              "    CONF_COLOR,\n    CONF_COLOR_MODE,\n    CONF_COMMANDS_SET,\n",
+              "    CONF_COLOR,\n    CONF_COLOR_MODE,\n    CONF_COLOR_TEMP_LOWER,\n    CONF_COLOR_TEMP_STEP,\n    CONF_COLOR_TEMP_UPPER,\n    CONF_COMMANDS_SET,\n",
           )
-          new_import = (
-              "    CONF_COLOR,\n"
-              "    CONF_COLOR_MODE,\n"
-              "    CONF_COLOR_TEMP_LOWER,\n"
-              "    CONF_COLOR_TEMP_STEP,\n"
-              "    CONF_COLOR_TEMP_UPPER,\n"
-              "    CONF_COMMANDS_SET,\n"
-          )
-          replace_once(mapper, old_import, new_import)
 
           old_block = (
               "    if color_temp is not None:\n"
-              "        temperature_range = _integer_range(color_temp)\n"
-              "\n"
+              "        temperature_range = _integer_range(color_temp)\n\n"
               "        # Current LocalTuya light code uses brightness_upper as the\n"
               "        # raw color-temperature maximum. Auto-map temperature only\n"
               "        # where the metadata confirms the ranges are compatible.\n"
@@ -59,14 +49,12 @@ jobs:
               "            brightness_range[1]\n"
               "            if brightness_range is not None\n"
               "            else 1000\n"
-              "        )\n"
-              "\n"
+              "        )\n\n"
               "        temperature_max = (\n"
               "            temperature_range[1]\n"
               "            if temperature_range is not None\n"
               "            else brightness_max\n"
-              "        )\n"
-              "\n"
+              "        )\n\n"
               "        if temperature_max == brightness_max:\n"
               "            config[CONF_COLOR_TEMP] = color_temp.id\n"
               "            matched_codes.append(color_temp.code)\n"
@@ -74,13 +62,11 @@ jobs:
           new_block = (
               "    if color_temp is not None:\n"
               "        config[CONF_COLOR_TEMP] = color_temp.id\n"
-              "        matched_codes.append(color_temp.code)\n"
-              "\n"
+              "        matched_codes.append(color_temp.code)\n\n"
               "        temperature_range = _integer_range(color_temp)\n"
               "        if temperature_range is not None:\n"
               "            config[CONF_COLOR_TEMP_LOWER] = temperature_range[0]\n"
-              "            config[CONF_COLOR_TEMP_UPPER] = temperature_range[1]\n"
-              "\n"
+              "            config[CONF_COLOR_TEMP_UPPER] = temperature_range[1]\n\n"
               "        temperature_step = _numeric_value(color_temp, \"step\")\n"
               "        if temperature_step is not None:\n"
               "            temperature_step = int(temperature_step)\n"
@@ -92,23 +78,18 @@ jobs:
           light = Path("custom_components/localtuya/light.py")
           old_endpoint = (
               "        raw_value = min(max(raw_value, raw_lower), raw_upper)\n"
-              "\n"
               "        if self._color_temp_reverse:\n"
-              "            raw_value = raw_lower + raw_upper - raw_value\n"
-              "\n"
+              "            raw_value = raw_lower + raw_upper - raw_value\n\n"
               "        ratio = (raw_value - raw_lower) / (raw_upper - raw_lower)\n"
           )
           new_endpoint = (
               "        raw_value = min(max(raw_value, raw_lower), raw_upper)\n"
-              "\n"
               "        if self._color_temp_reverse:\n"
-              "            raw_value = raw_lower + raw_upper - raw_value\n"
-              "\n"
+              "            raw_value = raw_lower + raw_upper - raw_value\n\n"
               "        if raw_value <= raw_lower:\n"
               "            return self._min_kelvin\n"
               "        if raw_value >= raw_upper:\n"
-              "            return self._max_kelvin\n"
-              "\n"
+              "            return self._max_kelvin\n\n"
               "        ratio = (raw_value - raw_lower) / (raw_upper - raw_lower)\n"
           )
           replace_once(light, old_endpoint, new_endpoint)
