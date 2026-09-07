@@ -27,6 +27,7 @@ from .fan_mapping import (
     coerce_fan_raw,
     fan_oscillation_from_raw,
     fan_oscillation_to_raw,
+    validate_fan_direction_values,
     fan_speed_from_raw,
     fan_speed_to_raw,
     validate_fan_oscillation_mapping,
@@ -36,6 +37,7 @@ from .const import (
     CONF_FAN_DIRECTION,
     CONF_FAN_DIRECTION_FWD,
     CONF_FAN_DIRECTION_REV,
+    CONF_FAN_DIRECTION_VALUES,
     CONF_FAN_DPS_TYPE,
     CONF_FAN_ORDERED_LIST,
     CONF_FAN_OSCILLATING_CONTROL,
@@ -144,6 +146,15 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
         self._oscillating_off = self._config.get(
             CONF_FAN_OSCILLATING_OFF, False
         )
+        self._direction_values = (
+            validate_fan_direction_values(
+                self._config.get(CONF_FAN_DIRECTION_VALUES)
+            )
+            or {}
+        )
+        self._direction_raw_to_name = {
+            raw: name for name, raw in self._direction_values.items()
+        }
 
         speed_min = int(
             self._config.get(
@@ -447,7 +458,12 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
         if not self.has_config(CONF_FAN_DIRECTION):
             return
 
-        if direction == DIRECTION_FORWARD:
+        if self._direction_values:
+            value = self._direction_values.get(direction)
+            if value is None:
+                self.warning("Unsupported fan direction %r", direction)
+                return
+        elif direction == DIRECTION_FORWARD:
             value = self._config.get(
                 CONF_FAN_DIRECTION_FWD,
                 DIRECTION_FORWARD,
@@ -519,7 +535,9 @@ class LocaltuyaFan(LocalTuyaEntity, FanEntity):
         if self.has_config(CONF_FAN_DIRECTION):
             value = self.dps_conf(CONF_FAN_DIRECTION)
 
-            if value == self._config.get(
+            if self._direction_raw_to_name:
+                self._attr_current_direction = self._direction_raw_to_name.get(value)
+            elif value == self._config.get(
                 CONF_FAN_DIRECTION_FWD,
                 DIRECTION_FORWARD,
             ):

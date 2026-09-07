@@ -25,6 +25,7 @@ from .advanced_mapping import (
 )
 from .const import (
     CONF_EXTRA_STATE_ATTRIBUTES_DPS,
+    CONF_FAN_DIRECTION_VALUES,
     CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS,
     CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS,
     CONF_SENSOR_UNIX_TIMESTAMP,
@@ -245,12 +246,13 @@ def _validate_entity(entity):
         key in config
         for key in (
             "fan_speed_mapping", "fan_oscillating_mapping", "fan_preset_raw_type",
-            "fan_preset_default", "fan_no_switch",
+            "fan_preset_default", "fan_no_switch", CONF_FAN_DIRECTION_VALUES,
         )
     ):
         from .fan_mapping import (
             RAW_TYPES as FAN_RAW_TYPES,
             coerce_fan_raw,
+            validate_fan_direction_values,
             validate_fan_oscillation_mapping,
             validate_fan_speed_mapping,
         )
@@ -297,6 +299,11 @@ def _validate_entity(entity):
             values = config.get("fan_preset_values")
             if not isinstance(default, str) or not isinstance(values, dict) or default not in values:
                 return None
+        if CONF_FAN_DIRECTION_VALUES in config:
+            values = validate_fan_direction_values(config[CONF_FAN_DIRECTION_VALUES])
+            if values is None or "fan_direction" not in config:
+                return None
+            config[CONF_FAN_DIRECTION_VALUES] = values
         if "fan_no_switch" in config:
             if config["fan_no_switch"] is not True or "fan_speed_control" not in config:
                 return None

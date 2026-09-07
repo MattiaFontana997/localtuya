@@ -47,6 +47,27 @@ def _raw_key(value: Any, raw_type: str) -> tuple[str, Any]:
         return raw_type, object()
 
 
+def validate_fan_direction_values(value):
+    """Validate a bounded exact friendly -> raw string direction map."""
+    if not isinstance(value, dict) or not 2 <= len(value) <= 16:
+        return None
+    result = {}
+    raw_seen = set()
+    for raw_name, raw_value in value.items():
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            return None
+        if not isinstance(raw_value, str) or not raw_value:
+            return None
+        name = raw_name.strip()
+        if name in result or raw_value in raw_seen:
+            return None
+        result[name] = raw_value
+        raw_seen.add(raw_value)
+    if not {"forward", "reverse"}.issubset(result):
+        return None
+    return result
+
+
 def validate_fan_speed_mapping(value: Any) -> dict[str, Any] | None:
     """Validate exact enumerated fan speed percentages."""
     if (
