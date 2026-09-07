@@ -972,63 +972,90 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         )
 
     def _raw_color_temp_to_kelvin(self, value) -> int | None:
-    """Convert a Tuya color-temperature DP to Kelvin."""
-    if value is None or isinstance(value, bool):
-        return None
-    discrete = getattr(self, "_color_temp_values", [])
-    if discrete:
+        """Convert a Tuya color-temperature DP to Kelvin."""
+        if value is None or isinstance(value, bool):
+            return None
+
+        discrete = getattr(self, "_color_temp_values", [])
+        if discrete:
+            try:
+                raw_value = int(value)
+            except (TypeError, ValueError):
+                return None
+            for kelvin, configured_raw in discrete:
+                if raw_value == configured_raw:
+                    return kelvin
+            return None
+
         try:
-            raw_value = int(value)
+            raw_value = float(value)
         except (TypeError, ValueError):
             return None
-        for kelvin, configured_raw in discrete:
-            if raw_value == configured_raw:
-                return kelvin
-        return None
-    try:
-        raw_value = float(value)
-    except (TypeError, ValueError):
-        return None
-    raw_lower = getattr(self, "_raw_color_temp_lower", 0)
-    raw_upper = getattr(self, "_raw_color_temp_upper", getattr(self, "_raw_color_temp_max", getattr(self, "_upper_brightness", DEFAULT_UPPER_BRIGHTNESS)))
-    if raw_upper <= raw_lower:
-        return None
-    raw_value = min(max(raw_value, raw_lower), raw_upper)
-    if self._color_temp_reverse:
-        raw_value = raw_lower + raw_upper - raw_value
-    ratio = (raw_value - raw_lower) / (raw_upper - raw_lower)
-    mired = self._max_mired - ((self._max_mired - self._min_mired) * ratio)
-    kelvin = color_util.color_temperature_mired_to_kelvin(mired)
-    return min(max(kelvin, self._min_kelvin), self._max_kelvin)
 
-def _kelvin_to_raw_color_temp(self, kelvin) -> int:
-    """Convert a Kelvin color temperature to Tuya DP format."""
-    kelvin = min(max(int(kelvin), self._min_kelvin), self._max_kelvin)
-    discrete = getattr(self, "_color_temp_values", [])
-    if discrete:
-        best_raw = discrete[0][1]
-        best_distance = abs(discrete[0][0] - kelvin)
-        for configured_kelvin, raw_value in discrete[1:]:
-            distance = abs(configured_kelvin - kelvin)
-            if distance < best_distance:
-                best_raw = raw_value
-                best_distance = distance
-        return best_raw
-    raw_lower = getattr(self, "_raw_color_temp_lower", 0)
-    raw_upper = getattr(self, "_raw_color_temp_upper", getattr(self, "_raw_color_temp_max", getattr(self, "_upper_brightness", DEFAULT_UPPER_BRIGHTNESS)))
-    if raw_upper <= raw_lower:
-        return round(raw_lower)
-    mired = color_util.color_temperature_kelvin_to_mired(kelvin)
-    ratio = (self._max_mired - mired) / (self._max_mired - self._min_mired)
-    raw_value = round(raw_lower + ratio * (raw_upper - raw_lower))
-    raw_value = min(max(raw_value, raw_lower), raw_upper)
-    if self._color_temp_reverse:
-        raw_value = raw_lower + raw_upper - raw_value
-    step = getattr(self, "_color_temp_step", 1)
-    if step != 1:
-        raw_value = raw_lower + step * round(float(raw_value - raw_lower) / step)
+        raw_lower = getattr(self, "_raw_color_temp_lower", 0)
+        raw_upper = getattr(
+            self,
+            "_raw_color_temp_upper",
+            getattr(
+                self,
+                "_raw_color_temp_max",
+                getattr(self, "_upper_brightness", DEFAULT_UPPER_BRIGHTNESS),
+            ),
+        )
+        if raw_upper <= raw_lower:
+            return None
+
         raw_value = min(max(raw_value, raw_lower), raw_upper)
-    return round(raw_value)
+        if self._color_temp_reverse:
+            raw_value = raw_lower + raw_upper - raw_value
+
+        ratio = (raw_value - raw_lower) / (raw_upper - raw_lower)
+        mired = self._max_mired - ((self._max_mired - self._min_mired) * ratio)
+        kelvin = color_util.color_temperature_mired_to_kelvin(mired)
+        return min(max(kelvin, self._min_kelvin), self._max_kelvin)
+
+    def _kelvin_to_raw_color_temp(self, kelvin) -> int:
+        """Convert a Kelvin color temperature to Tuya DP format."""
+        kelvin = min(max(int(kelvin), self._min_kelvin), self._max_kelvin)
+
+        discrete = getattr(self, "_color_temp_values", [])
+        if discrete:
+            best_raw = discrete[0][1]
+            best_distance = abs(discrete[0][0] - kelvin)
+            for configured_kelvin, raw_value in discrete[1:]:
+                distance = abs(configured_kelvin - kelvin)
+                if distance < best_distance:
+                    best_raw = raw_value
+                    best_distance = distance
+            return best_raw
+
+        raw_lower = getattr(self, "_raw_color_temp_lower", 0)
+        raw_upper = getattr(
+            self,
+            "_raw_color_temp_upper",
+            getattr(
+                self,
+                "_raw_color_temp_max",
+                getattr(self, "_upper_brightness", DEFAULT_UPPER_BRIGHTNESS),
+            ),
+        )
+        if raw_upper <= raw_lower:
+            return round(raw_lower)
+
+        mired = color_util.color_temperature_kelvin_to_mired(kelvin)
+        ratio = (self._max_mired - mired) / (self._max_mired - self._min_mired)
+        raw_value = round(raw_lower + ratio * (raw_upper - raw_lower))
+        raw_value = min(max(raw_value, raw_lower), raw_upper)
+
+        if self._color_temp_reverse:
+            raw_value = raw_lower + raw_upper - raw_value
+
+        step = getattr(self, "_color_temp_step", 1)
+        if step != 1:
+            raw_value = raw_lower + step * round(float(raw_value - raw_lower) / step)
+            raw_value = min(max(raw_value, raw_lower), raw_upper)
+
+        return round(raw_value)
 
     def _decode_color(self, raw_color):
         """Decode a Tuya HSV/RGB+HSV color payload."""
