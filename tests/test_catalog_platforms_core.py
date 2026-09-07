@@ -89,6 +89,7 @@ class CorePlatformRuntimeTests(unittest.IsolatedAsyncioTestCase):
         valve._position_min = 20.0
         valve._position_max = 80.0
         valve._position_inverted = False
+        valve._position_step = 1.0
         valve._open_value = True
         valve._closed_value = False
         valve._switch_on = True

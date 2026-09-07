@@ -40,6 +40,7 @@ from custom_components.localtuya.const import (
     CONF_WATER_HEATER_POWER_OFF,
     CONF_WATER_HEATER_POWER_ON,
     CONF_WATER_HEATER_TARGET_TEMPERATURE_DP,
+    CONF_WATER_HEATER_TARGET_READONLY,
     CONF_WATER_HEATER_TEMPERATURE_SCALING,
 )
 from custom_components.localtuya.device_catalog import validate_catalog
@@ -122,6 +123,21 @@ class BatchBPlatformRuntimeTests(unittest.IsolatedAsyncioTestCase):
         heater._device.set_dp.reset_mock()
         await heater.async_turn_on()
         heater._device.set_dp.assert_awaited_once_with("on", 1)
+
+    async def test_water_heater_readonly_target_is_never_written(self):
+        config = {
+            "id": 3,
+            CONF_WATER_HEATER_TARGET_TEMPERATURE_DP: 3,
+            CONF_WATER_HEATER_TARGET_READONLY: True,
+        }
+        heater = _entity(LocaltuyaWaterHeater, config, {3: 50})
+        heater._scaling = 1.0
+        heater._target_readonly = True
+        heater._mode_values = {}
+        heater._away_mode = "away"
+        with self.assertRaises(NotImplementedError):
+            await heater.async_set_temperature(**{ATTR_TEMPERATURE: 60})
+        heater._device.set_dp.assert_not_awaited()
 
     async def test_siren_uses_exact_catalog_values(self):
         config = {

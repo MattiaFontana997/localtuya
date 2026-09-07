@@ -284,14 +284,32 @@ class ConfigFlowMapperTests(
 
         self.assertEqual(
             result["type"],
-            FlowResultType.EXTERNAL_STEP,
+            FlowResultType.MENU,
         )
         self.assertEqual(
             result["step_id"],
-            "prepare_contribution_result",
+            "community_contribution_actions",
         )
         self.assertEqual(
-            result["url"],
+            result["menu_options"],
+            ["submit_to_community_catalog"],
+        )
+
+        external = (
+            await flow
+            .async_step_submit_to_community_catalog()
+        )
+
+        self.assertEqual(
+            external["type"],
+            FlowResultType.EXTERNAL_STEP,
+        )
+        self.assertEqual(
+            external["step_id"],
+            "submit_to_community_catalog",
+        )
+        self.assertEqual(
+            external["url"],
             submission_url,
         )
 

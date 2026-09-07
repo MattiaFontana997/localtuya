@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -23,7 +24,14 @@ from .const import (
     CONF_BRIGHTNESS_LOWER,
     CONF_BRIGHTNESS_UPPER,
     CONF_COLOR,
+    CONF_COLOR_BRIGHTNESS_LOWER,
+    CONF_COLOR_BRIGHTNESS_UPPER,
+    CONF_COLOR_JSON_ENCODING,
     CONF_COLOR_MODE,
+    CONF_COLOR_SATURATION_UPPER,
+    CONF_COLOR_TEMP_LOWER,
+    CONF_COLOR_TEMP_STEP,
+    CONF_COLOR_TEMP_UPPER,
     CONF_COMMANDS_SET,
     CONF_CURRENT_POSITION_DP,
     CONF_CURRENT_TEMPERATURE_DP,
@@ -158,6 +166,11 @@ _LIGHT_COLOR_CODES = (
     "colour_data_v2",
     "color_data_v2",
 )
+
+_LIGHT_JSON_V2_COLOR_CODES = {
+    "colour_data_v2",
+    "color_data_v2",
+}
 
 _THERMOSTAT_CATEGORIES = {
     "wk",
@@ -693,26 +706,19 @@ def _build_light_candidate(
             )
 
     if color_temp is not None:
+        config[CONF_COLOR_TEMP] = color_temp.id
+        matched_codes.append(color_temp.code)
+
         temperature_range = _integer_range(color_temp)
+        if temperature_range is not None:
+            config[CONF_COLOR_TEMP_LOWER] = temperature_range[0]
+            config[CONF_COLOR_TEMP_UPPER] = temperature_range[1]
 
-        # Current LocalTuya light code uses brightness_upper as the
-        # raw color-temperature maximum. Auto-map temperature only
-        # where the metadata confirms the ranges are compatible.
-        brightness_max = (
-            brightness_range[1]
-            if brightness_range is not None
-            else 1000
-        )
-
-        temperature_max = (
-            temperature_range[1]
-            if temperature_range is not None
-            else brightness_max
-        )
-
-        if temperature_max == brightness_max:
-            config[CONF_COLOR_TEMP] = color_temp.id
-            matched_codes.append(color_temp.code)
+        temperature_step = _numeric_value(color_temp, "step")
+        if temperature_step is not None:
+            temperature_step = int(temperature_step)
+            if 1 <= temperature_step <= 10000:
+                config[CONF_COLOR_TEMP_STEP] = temperature_step
 
     if work_mode is not None:
         modes = work_mode.values.get("range", [])
@@ -727,12 +733,20 @@ def _build_light_candidate(
             config[CONF_COLOR_MODE] = work_mode.id
             matched_codes.append(work_mode.code)
 
-    if (
-        color is not None
-        and color.type_name in ("", "string", "raw")
-    ):
-        config[CONF_COLOR] = color.id
-        matched_codes.append(color.code)
+    if color is not None:
+        if color.type_name in ("", "string", "raw"):
+            config[CONF_COLOR] = color.id
+            matched_codes.append(color.code)
+        elif (
+            color.type_name == "json"
+            and color.code in _LIGHT_JSON_V2_COLOR_CODES
+        ):
+            config[CONF_COLOR] = color.id
+            config[CONF_COLOR_JSON_ENCODING] = True
+            config[CONF_COLOR_SATURATION_UPPER] = 1000
+            config[CONF_COLOR_BRIGHTNESS_LOWER] = 0
+            config[CONF_COLOR_BRIGHTNESS_UPPER] = 1000
+            matched_codes.append(color.code)
 
     referenced_dps = [power.id]
 
@@ -928,13 +942,7 @@ def _build_climate_candidate(
             4,
         )
 
-        # Current LocalTuya climate config flow supports
-        # these standard HA increments.
-        if real_step in {
-            0.1,
-            0.5,
-            1.0,
-        }:
+        if math.isfinite(real_step) and real_step > 0:
             config[
                 CONF_TEMPERATURE_STEP
             ] = real_step

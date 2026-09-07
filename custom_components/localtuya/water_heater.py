@@ -28,6 +28,7 @@ from .const import (
     CONF_WATER_HEATER_POWER_OFF,
     CONF_WATER_HEATER_POWER_ON,
     CONF_WATER_HEATER_TARGET_TEMPERATURE_DP,
+    CONF_WATER_HEATER_TARGET_READONLY,
     CONF_WATER_HEATER_TEMPERATURE_MAX,
     CONF_WATER_HEATER_TEMPERATURE_MIN,
     CONF_WATER_HEATER_TEMPERATURE_SCALING,
@@ -104,11 +105,12 @@ class LocaltuyaWaterHeater(LocalTuyaEntity, WaterHeaterEntity):
         self._away_off = self._config.get(CONF_WATER_HEATER_AWAY_OFF, False)
         self._away_mode = str(self._config.get(CONF_WATER_HEATER_AWAY_MODE, "away"))
         self._default_mode = self._config.get(CONF_WATER_HEATER_DEFAULT_MODE)
+        self._target_readonly = bool(self._config.get(CONF_WATER_HEATER_TARGET_READONLY, False))
 
         features = WaterHeaterEntityFeature(0)
         if self.has_config(CONF_WATER_HEATER_POWER_DP):
             features |= WaterHeaterEntityFeature.ON_OFF
-        if self.has_config(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP):
+        if self.has_config(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP) and not self._target_readonly:
             features |= WaterHeaterEntityFeature.TARGET_TEMPERATURE
         if self.has_config(CONF_WATER_HEATER_MODE_DP) and self._mode_values:
             features |= WaterHeaterEntityFeature.OPERATION_MODE
@@ -149,22 +151,41 @@ class LocaltuyaWaterHeater(LocalTuyaEntity, WaterHeaterEntity):
 
     @property
     def target_temperature_step(self):
-        """Return target temperature step."""
+        """Return target temperature step for the active mapping."""
+        dp_id = self._config.get(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP)
+        metadata = self.mapped_numeric_metadata(dp_id) if dp_id is not None else {}
+        step = metadata.get("step")
+        if isinstance(step, (int, float)) and not isinstance(step, bool) and step > 0:
+            return float(step) * self._scaling
         return self._temp_step
 
     @property
     def min_temp(self):
-        """Return minimum target temperature."""
+        """Return minimum target temperature for the active mapping."""
         dp_id = self._config.get(CONF_WATER_HEATER_MIN_TEMPERATURE_DP)
         value = _scaled(self.dps(dp_id), self._scaling) if dp_id is not None else None
-        return value if value is not None else self._temp_min
+        if value is not None:
+            return value
+        target_dp = self._config.get(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP)
+        metadata = self.mapped_numeric_metadata(target_dp) if target_dp is not None else {}
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "min" in value_range:
+            return float(value_range["min"]) * self._scaling
+        return self._temp_min
 
     @property
     def max_temp(self):
-        """Return maximum target temperature."""
+        """Return maximum target temperature for the active mapping."""
         dp_id = self._config.get(CONF_WATER_HEATER_MAX_TEMPERATURE_DP)
         value = _scaled(self.dps(dp_id), self._scaling) if dp_id is not None else None
-        return value if value is not None else self._temp_max
+        if value is not None:
+            return value
+        target_dp = self._config.get(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP)
+        metadata = self.mapped_numeric_metadata(target_dp) if target_dp is not None else {}
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "max" in value_range:
+            return float(value_range["max"]) * self._scaling
+        return self._temp_max
 
     @property
     def current_operation(self):
@@ -211,26 +232,36 @@ class LocaltuyaWaterHeater(LocalTuyaEntity, WaterHeaterEntity):
         if kwargs.get(ATTR_OPERATION_MODE) is not None:
             await self.async_set_operation_mode(kwargs[ATTR_OPERATION_MODE])
         if kwargs.get(ATTR_TEMPERATURE) is not None:
+            if getattr(self, "_target_readonly", False):
+                raise NotImplementedError()
             dp_id = self._config.get(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP)
             if dp_id is None:
                 raise NotImplementedError()
-            await self._device.set_dp(
-                _unscaled(kwargs[ATTR_TEMPERATURE], self._scaling),
-                dp_id,
-            )
+            raw_value = _unscaled(kwargs[ATTR_TEMPERATURE], self._scaling)
+            if self.has_advanced_mapping(dp_id):
+                await self.set_mapped_dp(raw_value, dp_id)
+            else:
+                await self._device.set_dp(raw_value, dp_id)
 
     async def async_set_operation_mode(self, operation_mode):
         """Set the exact catalog-provided raw operation mode."""
         dp_id = self._config.get(CONF_WATER_HEATER_MODE_DP)
         if dp_id is None or operation_mode not in self._mode_values:
             raise NotImplementedError()
-        await self._device.set_dp(self._mode_values[operation_mode], dp_id)
+        raw_value = self._mode_values[operation_mode]
+        if self.has_advanced_mapping(dp_id):
+            await self.set_mapped_dp(raw_value, dp_id)
+        else:
+            await self._device.set_dp(raw_value, dp_id)
 
     async def async_turn_away_mode_on(self):
         """Enable away mode."""
         away_dp = self._config.get(CONF_WATER_HEATER_AWAY_DP)
         if away_dp is not None:
-            await self._device.set_dp(self._away_on, away_dp)
+            if self.has_advanced_mapping(away_dp):
+                await self.set_mapped_dp(self._away_on, away_dp)
+            else:
+                await self._device.set_dp(self._away_on, away_dp)
             return
         if self._away_mode in self._mode_values:
             await self.async_set_operation_mode(self._away_mode)
@@ -241,7 +272,10 @@ class LocaltuyaWaterHeater(LocalTuyaEntity, WaterHeaterEntity):
         """Disable away mode."""
         away_dp = self._config.get(CONF_WATER_HEATER_AWAY_DP)
         if away_dp is not None:
-            await self._device.set_dp(self._away_off, away_dp)
+            if self.has_advanced_mapping(away_dp):
+                await self.set_mapped_dp(self._away_off, away_dp)
+            else:
+                await self._device.set_dp(self._away_off, away_dp)
             return
         candidates = [mode for mode in self._mode_values if mode != self._away_mode]
         mode = self._default_mode if self._default_mode in candidates else (candidates[0] if candidates else None)

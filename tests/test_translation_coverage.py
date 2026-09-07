@@ -90,6 +90,19 @@ class TranslationCoverageTests(
             cls.english
         )
 
+    def test_custom_integration_translation_layout(
+        self,
+    ):
+        """Custom integrations must ship English in translations/en.json only."""
+        self.assertTrue(
+            (TRANSLATIONS / "en.json").is_file(),
+            "translations/en.json is required for Home Assistant custom integrations",
+        )
+        self.assertFalse(
+            (ROOT / "strings.json").exists(),
+            "Custom integrations must not ship strings.json; use translations/en.json",
+        )
+
     def test_supported_languages_have_all_keys(
         self,
     ):

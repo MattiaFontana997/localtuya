@@ -3,11 +3,14 @@
 import unittest
 
 from custom_components.localtuya.advanced_mapping import (
+    advanced_mapping_by_dp_references,
     advanced_mapping_dp_references,
     map_value_from_dps,
     map_value_to_dps,
     prune_advanced_mapping,
+    prune_advanced_mapping_by_dp,
     validate_advanced_mapping,
+    validate_advanced_mapping_by_dp,
 )
 
 
@@ -83,6 +86,97 @@ class AdvancedMappingTests(unittest.TestCase):
     def test_executable_or_unknown_keys_are_rejected(self):
         self.assertIsNone(validate_advanced_mapping([{"template": "{{ evil }}"}]))
         self.assertIsNone(validate_advanced_mapping([{"value_redirect_dp": "not-a-dp"}]))
+
+    def test_per_dp_mapping_tracks_mapped_and_cross_dp_references(self):
+        mappings = validate_advanced_mapping_by_dp({
+            "1": [{
+                "dps_val": True,
+                "constraint_dp": 4,
+                "conditions": [
+                    {"dps_val": "manual", "value": "heat"},
+                    {"dps_val": "auto", "value": "auto"},
+                ],
+            }],
+            "16": [{"constraint_dp": 23, "conditions": [{"dps_val": "f", "value_redirect_dp": 17}]}],
+        })
+        self.assertIsNotNone(mappings)
+        self.assertEqual(advanced_mapping_by_dp_references(mappings), {1, 4, 16, 17, 23})
+
+    def test_per_dp_mapping_prunes_missing_optional_redirect(self):
+        mappings = {"16": [{"constraint_dp": 23, "conditions": [{"dps_val": "f", "value_redirect_dp": 17}]}]}
+        self.assertIsNotNone(prune_advanced_mapping_by_dp(mappings, {17}, {16, 23}))
+        self.assertIsNotNone(prune_advanced_mapping_by_dp(mappings, {17}, {16, 17, 23}))
+
+    def test_per_dp_mapping_rejects_invalid_dp_keys(self):
+        self.assertIsNone(validate_advanced_mapping_by_dp({"not-a-dp": [{"scale": 10}]}))
+
+    def test_ordered_bitmask_mapping_matches_tuya_local_semantics(self):
+        rules = validate_advanced_mapping([
+            {"dps_val": 0, "value": "ok", "bitmask": True},
+            {"dps_val": 1, "value": "fault_a", "bitmask": True},
+            {"dps_val": 2, "value": "fault_b", "bitmask": True},
+            {"dps_val": 4, "value": "fault_c", "bitmask": True},
+        ])
+        self.assertIsNotNone(rules)
+        self.assertEqual(map_value_from_dps(0, rules, {})[0], "ok")
+        self.assertEqual(map_value_from_dps(1, rules, {})[0], "fault_a")
+        self.assertEqual(map_value_from_dps(3, rules, {})[0], "fault_a")
+        self.assertEqual(map_value_from_dps(6, rules, {})[0], "fault_b")
+        self.assertEqual(map_value_from_dps(8, rules, {})[0], 8)
+
+    def test_bitfield_constraint_condition_requires_full_mask_containment(self):
+        rules = validate_advanced_mapping([
+            {
+                "dps_val": 0,
+                "value": True,
+                "bitmask": True,
+                "constraint_dp": 115,
+                "conditions": [
+                    {"dps_val": 0, "value": False, "bitmask": True},
+                    {"dps_val": 4, "value": False, "bitmask": True},
+                ],
+            },
+            {"value": True},
+        ])
+        self.assertIsNotNone(rules)
+        self.assertEqual(map_value_from_dps(0, rules, {"115": 0})[0], False)
+        self.assertEqual(map_value_from_dps(0, rules, {"115": 4})[0], False)
+        self.assertEqual(map_value_from_dps(0, rules, {"115": 5})[0], False)
+        self.assertEqual(map_value_from_dps(0, rules, {"115": 2})[0], True)
+
+    def test_bitfield_condition_last_match_wins_like_tuya_local(self):
+        rules = validate_advanced_mapping([
+            {
+                "dps_val": 1,
+                "value": "base",
+                "constraint_dp": 2,
+                "conditions": [
+                    {"dps_val": 1, "value": "bit1", "bitmask": True},
+                    {"dps_val": 3, "value": "bits13", "bitmask": True},
+                ],
+            }
+        ])
+        self.assertIsNotNone(rules)
+        self.assertEqual(map_value_from_dps(1, rules, {"2": 3})[0], "bits13")
+        self.assertEqual(map_value_from_dps(1, rules, {"2": 7})[0], "bits13")
+
+    def test_bitmask_condition_rejects_non_integer_or_negative_masks(self):
+        self.assertIsNone(validate_advanced_mapping([{
+            "constraint_dp": 2,
+            "conditions": [{"dps_val": "4", "bitmask": True}],
+        }]))
+        self.assertIsNone(validate_advanced_mapping([{
+            "constraint_dp": 2,
+            "conditions": [{"dps_val": -4, "bitmask": True}],
+        }]))
+
+    def test_bitmask_mapping_rejects_non_integer_or_negative_masks(self):
+        self.assertIsNone(validate_advanced_mapping([
+            {"dps_val": "1", "value": "bad", "bitmask": True}
+        ]))
+        self.assertIsNone(validate_advanced_mapping([
+            {"dps_val": -1, "value": "bad", "bitmask": True}
+        ]))
 
 
 if __name__ == "__main__":

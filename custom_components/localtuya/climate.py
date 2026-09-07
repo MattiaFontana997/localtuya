@@ -1,6 +1,7 @@
 """Platform to locally control Tuya-based climate devices."""
 import asyncio
 import logging
+import math
 from functools import partial
 
 import voluptuous as vol
@@ -58,6 +59,8 @@ from .const import (
     CONF_HVAC_MODE_VALUES,
     CONF_MAX_TEMP_DP,
     CONF_MIN_TEMP_DP,
+    CONF_MAX_TEMP_PRECISION,
+    CONF_MIN_TEMP_PRECISION,
     CONF_PRECISION,
     CONF_PRESET_DP,
     CONF_PRESET_SET,
@@ -245,6 +248,21 @@ def _positive_number(value, default):
     except (TypeError, ValueError):
         return default
     return value if value > 0 else default
+
+
+def _positive_temperature_step(value):
+    """Validate a finite, strictly positive target-temperature step."""
+    if isinstance(value, bool):
+        raise vol.Invalid("temperature step must be a positive number")
+    try:
+        value = float(value)
+    except (TypeError, ValueError) as exc:
+        raise vol.Invalid("temperature step must be a positive number") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise vol.Invalid("temperature step must be a positive number")
+    return value
+
+
 DEFAULT_TEMPERATURE_UNIT = TEMPERATURE_CELSIUS
 DEFAULT_PRECISION = PRECISION_TENTHS
 DEFAULT_TEMPERATURE_STEP = PRECISION_HALVES
@@ -258,9 +276,9 @@ def flow_schema(dps):
         vol.Optional(CONF_TARGET_TEMPERATURE_DP): vol.In(dps),
         vol.Optional(CONF_AWAY_TEMPERATURE_DP): vol.In(dps),
         vol.Optional(CONF_CURRENT_TEMPERATURE_DP): vol.In(dps),
-        vol.Optional(CONF_TEMPERATURE_STEP, default=PRECISION_WHOLE): vol.In(
-            [PRECISION_WHOLE, PRECISION_HALVES, PRECISION_TENTHS]
-        ),
+        vol.Optional(
+            CONF_TEMPERATURE_STEP, default=PRECISION_WHOLE
+        ): _positive_temperature_step,
         vol.Optional(CONF_TEMP_MIN, default=DEFAULT_MIN_TEMP): vol.Coerce(float),
         vol.Optional(CONF_TEMP_MAX, default=DEFAULT_MAX_TEMP): vol.Coerce(float),
         vol.Optional(CONF_MAX_TEMP_DP): vol.In(dps),
@@ -335,6 +353,12 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
         )
         self._current_humidity_precision = _positive_number(
             self._config.get(CONF_CURRENT_HUMIDITY_PRECISION), 1.0
+        )
+        self._min_temperature_precision = _positive_number(
+            self._config.get(CONF_MIN_TEMP_PRECISION), 1.0
+        )
+        self._max_temperature_precision = _positive_number(
+            self._config.get(CONF_MAX_TEMP_PRECISION), 1.0
         )
         self._conf_hvac_mode_dp = self._config.get(CONF_HVAC_MODE_DP)
         self._conf_hvac_mode_set = _catalog_value_map(
@@ -533,15 +557,31 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
 
     @property
     def min_humidity(self):
+        dp = self._config.get(CONF_TARGET_HUMIDITY_DP)
+        metadata = self.mapped_numeric_metadata(dp) if dp is not None else {}
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "min" in value_range:
+            return float(value_range["min"]) * self._target_humidity_precision
         return self._config.get(CONF_HUMIDITY_MIN, DEFAULT_MIN_HUMIDITY)
 
     @property
     def max_humidity(self):
+        dp = self._config.get(CONF_TARGET_HUMIDITY_DP)
+        metadata = self.mapped_numeric_metadata(dp) if dp is not None else {}
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "max" in value_range:
+            return float(value_range["max"]) * self._target_humidity_precision
         return self._config.get(CONF_HUMIDITY_MAX, DEFAULT_MAX_HUMIDITY)
 
     @property
     def target_temperature_step(self):
-        """Return the supported step of target temperature."""
+        """Return the supported step of the active target-temperature mapping."""
+        target_dp = self._active_target_temperature_dp()
+        if target_dp is not None:
+            metadata = self.mapped_numeric_metadata(target_dp)
+            step = metadata.get("step")
+            if isinstance(step, (int, float)) and not isinstance(step, bool) and step > 0:
+                return float(step) * self._target_precision
         return self._config.get(CONF_TEMPERATURE_STEP, DEFAULT_TEMPERATURE_STEP)
 
     @property
@@ -624,14 +664,20 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             states[high_dp] = round(float(high) / self._target_high_precision)
 
         if states:
-            await self._device.set_dps(states)
+            if any(self.has_advanced_mapping(dp) for dp in states):
+                await self.set_mapped_dps(states)
+            else:
+                await self._device.set_dps(states)
 
     async def async_set_humidity(self, humidity: int) -> None:
         dp = self._config.get(CONF_TARGET_HUMIDITY_DP)
         if dp is None:
             return
-        raw = round(float(humidity) / self._target_humidity_precision)
-        await self._device.set_dp(raw, dp)
+        if self.has_advanced_mapping(dp):
+            await self.set_mapped_dp(humidity, dp)
+        else:
+            raw = round(float(humidity) / self._target_humidity_precision)
+            await self._device.set_dp(raw, dp)
 
     async def async_set_fan_mode(self, fan_mode):
         """Set a new fan mode."""
@@ -643,18 +689,21 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             self.warning("Unsupported fan mode %r", fan_mode)
             return
 
-        await self._device.set_dp(
-            self._conf_hvac_fan_mode_set[fan_mode],
-            self._conf_hvac_fan_mode_dp,
-        )
+        raw = self._conf_hvac_fan_mode_set[fan_mode]
+        if self.has_advanced_mapping(self._conf_hvac_fan_mode_dp):
+            await self.set_mapped_dp(raw, self._conf_hvac_fan_mode_dp)
+        else:
+            await self._device.set_dp(raw, self._conf_hvac_fan_mode_dp)
 
     async def async_set_hvac_mode(self, hvac_mode):
         """Set a new HVAC mode."""
         if hvac_mode == HVACMode.OFF:
             if self._conf_hvac_mode_dp is not None and HVACMode.OFF in self._conf_hvac_mode_set:
-                await self._device.set_dp(
-                    self._conf_hvac_mode_set[HVACMode.OFF], self._conf_hvac_mode_dp
-                )
+                raw = self._conf_hvac_mode_set[HVACMode.OFF]
+                if self.has_advanced_mapping(self._conf_hvac_mode_dp):
+                    await self.set_mapped_dp(raw, self._conf_hvac_mode_dp)
+                else:
+                    await self._device.set_dp(raw, self._conf_hvac_mode_dp)
             else:
                 await self._device.set_dp(False, self._dp_id)
             return
@@ -676,10 +725,11 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             # Some thermostats need a small pause after power-on.
             await asyncio.sleep(MODE_WAIT)
 
-        await self._device.set_dp(
-            self._conf_hvac_mode_set[hvac_mode],
-            self._conf_hvac_mode_dp,
-        )
+        raw = self._conf_hvac_mode_set[hvac_mode]
+        if self.has_advanced_mapping(self._conf_hvac_mode_dp):
+            await self.set_mapped_dp(raw, self._conf_hvac_mode_dp)
+        else:
+            await self._device.set_dp(raw, self._conf_hvac_mode_dp)
 
     async def async_set_swing_mode(self, swing_mode):
         """Set a new swing mode."""
@@ -691,10 +741,11 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             self.warning("Unsupported swing mode %r", swing_mode)
             return
 
-        await self._device.set_dp(
-            self._conf_hvac_swing_mode_set[swing_mode],
-            self._conf_hvac_swing_mode_dp,
-        )
+        raw = self._conf_hvac_swing_mode_set[swing_mode]
+        if self.has_advanced_mapping(self._conf_hvac_swing_mode_dp):
+            await self.set_mapped_dp(raw, self._conf_hvac_swing_mode_dp)
+        else:
+            await self._device.set_dp(raw, self._conf_hvac_swing_mode_dp)
 
     async def async_set_swing_horizontal_mode(self, swing_mode):
         if self._conf_hvac_swing_horizontal_mode_dp is None:
@@ -702,10 +753,11 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
         if swing_mode not in self._conf_hvac_swing_horizontal_mode_set:
             self.warning("Unsupported horizontal swing mode %r", swing_mode)
             return
-        await self._device.set_dp(
-            self._conf_hvac_swing_horizontal_mode_set[swing_mode],
-            self._conf_hvac_swing_horizontal_mode_dp,
-        )
+        raw = self._conf_hvac_swing_horizontal_mode_set[swing_mode]
+        if self.has_advanced_mapping(self._conf_hvac_swing_horizontal_mode_dp):
+            await self.set_mapped_dp(raw, self._conf_hvac_swing_horizontal_mode_dp)
+        else:
+            await self._device.set_dp(raw, self._conf_hvac_swing_horizontal_mode_dp)
 
     async def async_turn_on(self) -> None:
         """Turn the entity on without losing an enum HVAC mode."""
@@ -727,10 +779,10 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
     async def async_set_preset_mode(self, preset_mode):
         """Set a new preset mode."""
         if preset_mode == PRESET_ECO and self._conf_eco_dp is not None:
-            await self._device.set_dp(
-                self._conf_eco_value,
-                self._conf_eco_dp,
-            )
+            if self.has_advanced_mapping(self._conf_eco_dp):
+                await self.set_mapped_dp(self._conf_eco_value, self._conf_eco_dp)
+            else:
+                await self._device.set_dp(self._conf_eco_value, self._conf_eco_dp)
             return
 
         if (
@@ -740,29 +792,38 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             self.warning("Unsupported preset mode %r", preset_mode)
             return
 
-        await self._device.set_dp(
-            self._conf_preset_set[preset_mode],
-            self._conf_preset_dp,
-        )
+        raw = self._conf_preset_set[preset_mode]
+        if self.has_advanced_mapping(self._conf_preset_dp):
+            await self.set_mapped_dp(raw, self._conf_preset_dp)
+        else:
+            await self._device.set_dp(raw, self._conf_preset_dp)
 
     @property
     def min_temp(self):
-        """Return the minimum target temperature."""
+        """Return the minimum target temperature for the active mapping."""
         if self.has_config(CONF_MIN_TEMP_DP):
             value = self.dps_conf(CONF_MIN_TEMP_DP)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
-                return value
-
+                return value * self._min_temperature_precision
+        target_dp = self._active_target_temperature_dp()
+        metadata = self.mapped_numeric_metadata(target_dp) if target_dp is not None else {}
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "min" in value_range:
+            return float(value_range["min"]) * self._target_precision
         return self._config.get(CONF_TEMP_MIN, DEFAULT_MIN_TEMP)
 
     @property
     def max_temp(self):
-        """Return the maximum target temperature."""
+        """Return the maximum target temperature for the active mapping."""
         if self.has_config(CONF_MAX_TEMP_DP):
             value = self.dps_conf(CONF_MAX_TEMP_DP)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
-                return value
-
+                return value * self._max_temperature_precision
+        target_dp = self._active_target_temperature_dp()
+        metadata = self.mapped_numeric_metadata(target_dp) if target_dp is not None else {}
+        value_range = metadata.get("range")
+        if isinstance(value_range, dict) and "max" in value_range:
+            return float(value_range["max"]) * self._target_precision
         return self._config.get(CONF_TEMP_MAX, DEFAULT_MAX_TEMP)
 
     def status_updated(self):

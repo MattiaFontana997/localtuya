@@ -15,11 +15,29 @@ from homeassistant.helpers.storage import Store
 
 from .advanced_mapping import (
     CONF_ADVANCED_MAPPING,
+    CONF_ADVANCED_MAPPING_BY_DP,
+    advanced_mapping_by_dp_references,
     advanced_mapping_dp_references,
     prune_advanced_mapping,
+    prune_advanced_mapping_by_dp,
     validate_advanced_mapping,
+    validate_advanced_mapping_by_dp,
 )
-from .const import CONF_EXTRA_STATE_ATTRIBUTES_DPS, PLATFORMS
+from .const import (
+    CONF_BRIGHTNESS_POWER_OFF_VALUE,
+    CONF_EXTRA_STATE_ATTRIBUTES_DPS,
+    CONF_FAN_DIRECTION_VALUES,
+    CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS,
+    CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS,
+    CONF_SENSOR_UNIX_TIMESTAMP,
+    CONF_SWITCH_ICON_OFF,
+    CONF_SWITCH_ICON_ON,
+    CONF_SWITCH_MASK,
+    CONF_SWITCH_MASK_ENDIANNESS,
+    CONF_SWITCH_OFF_VALUE,
+    CONF_SWITCH_ON_VALUE,
+    PLATFORMS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 CATALOG_SCHEMA_VERSION = 2
@@ -117,9 +135,9 @@ def _is_dp_reference_key(key):
 
 def _config_dp_references(config):
     result = set()
-    extra = config.get(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
-    if isinstance(extra, dict):
-        for value in extra.values():
+    non_persistent = config.get("non_persistent_dps")
+    if isinstance(non_persistent, list):
+        for value in non_persistent:
             if isinstance(value, bool):
                 continue
             try:
@@ -128,6 +146,25 @@ def _config_dp_references(config):
                 continue
             if 0 < dp_id <= MAX_DP_ID:
                 result.add(dp_id)
+    for extra_key in (
+        CONF_EXTRA_STATE_ATTRIBUTES_DPS,
+        CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS,
+    ):
+        extra = config.get(extra_key)
+        if isinstance(extra, dict):
+            for value in extra.values():
+                if isinstance(value, bool):
+                    continue
+                try:
+                    dp_id = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if 0 < dp_id <= MAX_DP_ID:
+                    result.add(dp_id)
+    scoped = config.get(CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS)
+    if isinstance(scoped, dict):
+        for rules in scoped.values():
+            result.update(advanced_mapping_dp_references(rules))
     for key, value in config.items():
         if not _is_dp_reference_key(str(key)) or isinstance(value, bool):
             continue
@@ -138,6 +175,7 @@ def _config_dp_references(config):
         if 0 < dp_id <= MAX_DP_ID:
             result.add(dp_id)
     result.update(advanced_mapping_dp_references(config.get(CONF_ADVANCED_MAPPING)))
+    result.update(advanced_mapping_by_dp_references(config.get(CONF_ADVANCED_MAPPING_BY_DP)))
     return result
 
 
@@ -205,11 +243,181 @@ def _validate_entity(entity):
     if not isinstance(config, dict) or not _json_structure_safe(config) or _contains_forbidden_keys(config):
         return None
     config = copy.deepcopy(config)
+    if platform == "fan" and any(
+        key in config
+        for key in (
+            "fan_speed_mapping", "fan_oscillating_mapping", "fan_preset_raw_type",
+            "fan_preset_default", "fan_no_switch", CONF_FAN_DIRECTION_VALUES,
+        )
+    ):
+        from .fan_mapping import (
+            RAW_TYPES as FAN_RAW_TYPES,
+            coerce_fan_raw,
+            validate_fan_direction_values,
+            validate_fan_oscillation_mapping,
+            validate_fan_speed_mapping,
+        )
+
+        if "fan_speed_mapping" in config:
+            mapping = validate_fan_speed_mapping(config["fan_speed_mapping"])
+            if mapping is None or "fan_speed_control" not in config:
+                return None
+            config["fan_speed_mapping"] = mapping
+        if "fan_oscillating_mapping" in config:
+            mapping = validate_fan_oscillation_mapping(config["fan_oscillating_mapping"])
+            if mapping is None or "fan_oscillating_control" not in config:
+                return None
+            config["fan_oscillating_mapping"] = mapping
+        if "fan_preset_raw_type" in config:
+            raw_type = config["fan_preset_raw_type"]
+            values = config.get("fan_preset_values")
+            if (
+                raw_type not in FAN_RAW_TYPES
+                or "fan_preset_dp" not in config
+                or not isinstance(values, dict)
+                or not values
+                or len(values) > 32
+            ):
+                return None
+            normalized_values = {}
+            seen_raw = []
+            for name, raw in values.items():
+                if not isinstance(name, str) or not name.strip():
+                    return None
+                try:
+                    raw = coerce_fan_raw(raw, raw_type)
+                except ValueError:
+                    return None
+                name = name.strip()
+                if name in normalized_values or any(raw == previous for previous in seen_raw):
+                    return None
+                normalized_values[name] = raw
+                seen_raw.append(raw)
+            config["fan_preset_values"] = normalized_values
+
+        if "fan_preset_default" in config:
+            default = config["fan_preset_default"]
+            values = config.get("fan_preset_values")
+            if not isinstance(default, str) or not isinstance(values, dict) or default not in values:
+                return None
+        if CONF_FAN_DIRECTION_VALUES in config:
+            values = validate_fan_direction_values(config[CONF_FAN_DIRECTION_VALUES])
+            if values is None or "fan_direction" not in config:
+                return None
+            config[CONF_FAN_DIRECTION_VALUES] = values
+        if "fan_no_switch" in config:
+            if config["fan_no_switch"] is not True or "fan_speed_control" not in config:
+                return None
+            if config.get("id") != config.get("fan_speed_control"):
+                return None
+
+    if CONF_BRIGHTNESS_POWER_OFF_VALUE in config:
+        off_value = config[CONF_BRIGHTNESS_POWER_OFF_VALUE]
+        lower = config.get("brightness_lower")
+        upper = config.get("brightness_upper")
+        if (
+            platform != "light"
+            or config.get("brightness_as_power") is not True
+            or config.get("id") != config.get("brightness")
+            or "brightness_values" in config
+            or isinstance(off_value, bool)
+            or not isinstance(off_value, int)
+            or isinstance(lower, bool)
+            or isinstance(upper, bool)
+            or not isinstance(lower, int)
+            or not isinstance(upper, int)
+            or lower < 0
+            or upper <= lower
+            or lower <= off_value <= upper
+        ):
+            return None
+
+    if "sensor_value_mapping" in config:
+        from .sensor_mapping import validate_sensor_value_mapping
+
+        mapping = validate_sensor_value_mapping(config["sensor_value_mapping"])
+        if platform != "sensor" or mapping is None or any(
+            key in config for key in ("scaling", CONF_ADVANCED_MAPPING, CONF_ADVANCED_MAPPING_BY_DP)
+        ):
+            return None
+        config["sensor_value_mapping"] = mapping
+    unix_timestamp = config.get(CONF_SENSOR_UNIX_TIMESTAMP)
+    if unix_timestamp is not None:
+        if (
+            unix_timestamp is not True
+            or platform != "sensor"
+            or config.get("device_class") != "timestamp"
+            or any(
+                key in config
+                for key in (
+                    "scaling",
+                    "sensor_value_mapping",
+                    "unit_of_measurement",
+                    "state_class",
+                    CONF_ADVANCED_MAPPING,
+                    CONF_ADVANCED_MAPPING_BY_DP,
+                )
+            )
+        ):
+            return None
+    switch_mask = config.get(CONF_SWITCH_MASK)
+    switch_special_keys = {
+        CONF_SWITCH_ON_VALUE, CONF_SWITCH_OFF_VALUE, CONF_SWITCH_ICON_ON,
+        CONF_SWITCH_ICON_OFF, CONF_SWITCH_MASK, CONF_SWITCH_MASK_ENDIANNESS,
+    }
+    if any(key in config for key in switch_special_keys):
+        if platform != "switch":
+            return None
+        has_values = CONF_SWITCH_ON_VALUE in config or CONF_SWITCH_OFF_VALUE in config
+        if has_values:
+            if CONF_SWITCH_ON_VALUE not in config or CONF_SWITCH_OFF_VALUE not in config or switch_mask is not None:
+                return None
+            on_value, off_value = config[CONF_SWITCH_ON_VALUE], config[CONF_SWITCH_OFF_VALUE]
+            if not isinstance(on_value, (str, int, bool)) or not isinstance(off_value, (str, int, bool)):
+                return None
+            if on_value == off_value and type(on_value) is type(off_value):
+                return None
+        if switch_mask is not None:
+            if not isinstance(switch_mask, str) or not switch_mask or len(switch_mask) % 2 or len(switch_mask) > 32:
+                return None
+            try:
+                mask_value = int(switch_mask, 16)
+            except ValueError:
+                return None
+            if mask_value <= 0 or mask_value & (mask_value - 1):
+                return None
+            if config.get(CONF_SWITCH_MASK_ENDIANNESS, "big") not in {"big", "little"}:
+                return None
+        elif CONF_SWITCH_MASK_ENDIANNESS in config:
+            return None
+        for key in (CONF_SWITCH_ICON_ON, CONF_SWITCH_ICON_OFF):
+            value = config.get(key)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                return None
+
+    enabled_default = config.get("entity_registry_enabled_default")
+    if enabled_default is not None and not isinstance(enabled_default, bool):
+        return None
+    non_persistent = config.get("non_persistent_dps")
+    if non_persistent is not None:
+        normalized_non_persistent = _normalize_dps(non_persistent)
+        if (
+            normalized_non_persistent is None
+            or not normalized_non_persistent
+            or len(normalized_non_persistent) > 32
+        ):
+            return None
+        config["non_persistent_dps"] = normalized_non_persistent
     if CONF_ADVANCED_MAPPING in config:
         advanced = validate_advanced_mapping(config[CONF_ADVANCED_MAPPING])
         if advanced is None:
             return None
         config[CONF_ADVANCED_MAPPING] = advanced
+    if CONF_ADVANCED_MAPPING_BY_DP in config:
+        advanced_by_dp = validate_advanced_mapping_by_dp(config[CONF_ADVANCED_MAPPING_BY_DP])
+        if advanced_by_dp is None:
+            return None
+        config[CONF_ADVANCED_MAPPING_BY_DP] = advanced_by_dp
     raw_overrides = entity.get("override_keys", [])
     if not isinstance(raw_overrides, list):
         return None
@@ -242,6 +450,52 @@ def _validate_entity(entity):
                 return None
             normalized[name] = dp_id
         config[CONF_EXTRA_STATE_ATTRIBUTES_DPS] = normalized
+    mapped_extra = config.get(CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS)
+    if mapped_extra is not None:
+        if not isinstance(mapped_extra, dict) or not mapped_extra or len(mapped_extra) > 32:
+            return None
+        normalized_mapped = {}
+        for raw_name, raw_dp in mapped_extra.items():
+            if not isinstance(raw_name, str):
+                return None
+            name = raw_name.strip()
+            if not name or name in {"state", "raw_state"} or name in normalized_mapped or isinstance(raw_dp, bool):
+                return None
+            try:
+                dp_id = int(raw_dp)
+            except (TypeError, ValueError):
+                return None
+            if dp_id <= 0 or dp_id > MAX_DP_ID:
+                return None
+            normalized_mapped[name] = dp_id
+        config[CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS] = normalized_mapped
+
+    scoped_mappings = config.get(CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS)
+    if scoped_mappings is not None:
+        if (
+            not isinstance(scoped_mappings, dict)
+            or not scoped_mappings
+            or len(scoped_mappings) > 32
+            or not isinstance(config.get(CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS), dict)
+        ):
+            return None
+        normalized_scoped = {}
+        for raw_name, raw_rules in scoped_mappings.items():
+            if not isinstance(raw_name, str):
+                return None
+            name = raw_name.strip()
+            if (
+                not name
+                or name in normalized_scoped
+                or name not in config[CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS]
+            ):
+                return None
+            rules = validate_advanced_mapping(raw_rules)
+            if rules is None:
+                return None
+            normalized_scoped[name] = rules
+        config[CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS] = normalized_scoped
+
     if config.get("platform") is not None and config.get("platform") != platform:
         return None
     if isinstance(config.get("id"), bool):
@@ -377,6 +631,15 @@ def _adapt_entity_for_available_dps(entity, optional_dps, available_dps):
             removed.add(CONF_ADVANCED_MAPPING)
         else:
             config[CONF_ADVANCED_MAPPING] = advanced
+    if CONF_ADVANCED_MAPPING_BY_DP in config:
+        advanced_by_dp = prune_advanced_mapping_by_dp(
+            config[CONF_ADVANCED_MAPPING_BY_DP], optional_dps, available_dps
+        )
+        if advanced_by_dp is None:
+            config.pop(CONF_ADVANCED_MAPPING_BY_DP, None)
+            removed.add(CONF_ADVANCED_MAPPING_BY_DP)
+        else:
+            config[CONF_ADVANCED_MAPPING_BY_DP] = advanced_by_dp
     for key, value in list(config.items()):
         if key in {"id", "platform"} or not _is_dp_reference_key(str(key)) or isinstance(value, bool):
             continue
@@ -388,8 +651,10 @@ def _adapt_entity_for_available_dps(entity, optional_dps, available_dps):
             del config[key]
             removed.add(key)
     dependent = {
-        "effect": ("effect_values",), "fan_preset_dp": ("fan_preset_values",),
-        "fan_oscillating_control": ("fan_oscillating_on", "fan_oscillating_off"),
+        "effect": ("effect_values",),
+        "fan_speed_control": ("fan_speed_mapping", "fan_speed_ordered_list", "fan_dps_type", "fan_speed_min", "fan_speed_max"),
+        "fan_preset_dp": ("fan_preset_values", "fan_preset_raw_type"),
+        "fan_oscillating_control": ("fan_oscillating_on", "fan_oscillating_off", "fan_oscillating_mapping"),
         "hvac_mode_dp": ("hvac_mode_values",), "hvac_action_dp": ("hvac_action_values",),
         "hvac_fan_mode_dp": ("hvac_fan_mode_values",), "hvac_swing_mode_dp": ("hvac_swing_mode_values",),
         "hvac_swing_horizontal_mode_dp": ("hvac_swing_horizontal_mode_values",), "preset_dp": ("preset_values",),

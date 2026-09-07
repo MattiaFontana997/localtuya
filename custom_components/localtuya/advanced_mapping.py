@@ -6,10 +6,12 @@ from numbers import Number
 from typing import Any
 
 CONF_ADVANCED_MAPPING = "advanced_mapping"
+CONF_ADVANCED_MAPPING_BY_DP = "advanced_mapping_by_dp"
 _MAX_RULES = 64
+_MAX_MAPPING_DPS = 32
 _MAX_CONDITIONS = 16
-_RULE_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "constraint_dp", "conditions", "value_redirect_dp", "hidden", "invalid", "default"}
-_CONDITION_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "value_redirect_dp", "hidden", "invalid"}
+_RULE_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "constraint_dp", "conditions", "value_redirect_dp", "hidden", "invalid", "default", "bitmask"}
+_CONDITION_KEYS = {"dps_val", "value", "scale", "invert", "step", "range", "target_range", "value_redirect_dp", "hidden", "invalid", "bitmask"}
 
 
 def _valid_scalar(value: Any) -> bool:
@@ -58,11 +60,19 @@ def _normalize_rule(raw: Any, *, condition: bool = False) -> dict[str, Any] | No
             if not isinstance(value, Number) or isinstance(value, bool) or float(value) <= 0:
                 return None
             result[key] = float(value)
-    for key in ("invert", "hidden", "invalid", "default"):
+    for key in ("invert", "hidden", "invalid", "default", "bitmask"):
         if key in raw:
             if not isinstance(raw[key], bool):
                 return None
             result[key] = raw[key]
+    if result.get("bitmask"):
+        expected = result.get("dps_val")
+        if (
+            isinstance(expected, bool)
+            or not isinstance(expected, int)
+            or expected < 0
+        ):
+            return None
     for key in ("range", "target_range"):
         if key in raw:
             normalized = _normalize_range(raw[key])
@@ -100,6 +110,50 @@ def validate_advanced_mapping(value: Any) -> list[dict[str, Any]] | None:
             return None
         result.append(rule)
     return result
+
+
+def validate_advanced_mapping_by_dp(value: Any) -> dict[str, list[dict[str, Any]]] | None:
+    """Validate a bounded DP -> declarative mapping table."""
+    if not isinstance(value, dict) or not value or len(value) > _MAX_MAPPING_DPS:
+        return None
+    result: dict[str, list[dict[str, Any]]] = {}
+    for raw_dp, raw_rules in value.items():
+        dp_id = _normalize_dp(raw_dp)
+        rules = validate_advanced_mapping(raw_rules)
+        key = str(dp_id) if dp_id is not None else None
+        if key is None or rules is None or key in result:
+            return None
+        result[key] = rules
+    return result
+
+
+def advanced_mapping_by_dp_references(value: Any) -> set[int]:
+    """Return both mapped DPS and cross-DP references from a mapping table."""
+    mappings = validate_advanced_mapping_by_dp(value)
+    if mappings is None:
+        return set()
+    result = {int(dp_id) for dp_id in mappings}
+    for rules in mappings.values():
+        result.update(advanced_mapping_dp_references(rules))
+    return result
+
+
+def prune_advanced_mapping_by_dp(
+    value: Any, optional_dps: set[int], available_dps: set[int]
+) -> dict[str, list[dict[str, Any]]] | None:
+    """Prune mappings whose mapped or referenced optional DPS are absent."""
+    mappings = validate_advanced_mapping_by_dp(value)
+    if mappings is None:
+        return None
+    result: dict[str, list[dict[str, Any]]] = {}
+    for raw_dp, rules in mappings.items():
+        dp_id = int(raw_dp)
+        if dp_id in optional_dps and dp_id not in available_dps:
+            continue
+        pruned = prune_advanced_mapping(rules, optional_dps, available_dps)
+        if pruned is not None:
+            result[raw_dp] = pruned
+    return result or None
 
 
 def advanced_mapping_dp_references(value: Any) -> set[int]:
@@ -145,15 +199,46 @@ def _matches(expected: Any, actual: Any) -> bool:
     return expected == actual or str(expected) == str(actual)
 
 
+def _condition_matches_raw(condition: dict[str, Any], actual: Any) -> bool:
+    """Match one condition, including Tuya Local constraint-bitfield semantics."""
+    expected = condition.get("dps_val")
+    if condition.get("bitmask", False):
+        if _matches(expected, actual):
+            return True
+        try:
+            expected_int = int(expected)
+            actual_int = int(actual)
+        except (TypeError, ValueError):
+            return False
+        if expected_int == 0:
+            return False
+        return (actual_int & expected_int) == expected_int
+    return _matches(expected, actual)
+
+
 def _active_condition(rule: dict[str, Any], status: dict[str, Any]) -> dict[str, Any] | None:
     constraint_dp = rule.get("constraint_dp")
     if constraint_dp is None:
         return None
     current = status.get(str(constraint_dp))
+    active = None
     for condition in rule.get("conditions", []):
-        if _matches(condition.get("dps_val"), current):
-            return condition
-    return None
+        if _condition_matches_raw(condition, current):
+            active = condition
+    return active
+
+
+def _rule_matches_raw(rule: dict[str, Any], actual: Any) -> bool:
+    """Match one ordered rule, including Tuya Local bitfield semantics."""
+    expected = rule.get("dps_val")
+    if rule.get("bitmask", False):
+        if expected == 0:
+            return str(actual) == str(expected)
+        try:
+            return (int(actual) & int(expected)) != 0
+        except (TypeError, ValueError):
+            return False
+    return _matches(expected, actual)
 
 
 def _find_rule_for_raw(rules: list[dict[str, Any]], raw: Any) -> dict[str, Any] | None:
@@ -161,7 +246,7 @@ def _find_rule_for_raw(rules: list[dict[str, Any]], raw: Any) -> dict[str, Any] 
     for rule in rules:
         if "dps_val" not in rule:
             default = rule
-        elif _matches(rule["dps_val"], raw):
+        elif _rule_matches_raw(rule, raw):
             return rule
     return default
 
@@ -195,23 +280,51 @@ def _transform_numeric(value: Any, rule: dict[str, Any], *, reverse: bool) -> An
     source_range = rule.get("range")
     target_range = rule.get("target_range")
     if reverse:
-        if target_range and source_range:
-            result = source_range["min"] + ((result - target_range["min"]) * (source_range["max"] - source_range["min"]) / (target_range["max"] - target_range["min"]))
+        # Tuya Local write order is scale -> target_range -> invert -> step.
         if "scale" in rule:
             result *= float(rule["scale"])
+        if target_range and source_range:
+            result = source_range["min"] + ((result - target_range["min"]) * (source_range["max"] - source_range["min"]) / (target_range["max"] - target_range["min"]))
         if rule.get("invert") and source_range:
             result = source_range["min"] + source_range["max"] - result
         if "step" in rule:
             step = float(rule["step"])
             result = step * round(result / step)
     else:
+        # Tuya Local read order is invert -> target_range -> scale.
         if rule.get("invert") and source_range:
             result = source_range["min"] + source_range["max"] - result
-        if "scale" in rule:
-            result /= float(rule["scale"])
         if target_range and source_range:
             result = target_range["min"] + ((result - source_range["min"]) * (target_range["max"] - target_range["min"]) / (source_range["max"] - source_range["min"]))
+        if "scale" in rule:
+            result /= float(rule["scale"])
     return int(result) if result.is_integer() else result
+
+
+def effective_mapping_metadata(
+    raw: Any, rules: list[dict[str, Any]], status: dict[str, Any]
+) -> dict[str, Any]:
+    """Return bounded numeric metadata for the currently active mapping."""
+    rule = _find_rule_for_raw(rules, raw)
+    if rule is None:
+        return {}
+    active = _active_condition(rule, status)
+    effective = dict(rule)
+    if active:
+        effective.update({key: value for key, value in active.items() if key != "dps_val"})
+    return {
+        key: effective[key]
+        for key in ("range", "target_range", "step", "scale")
+        if key in effective
+    }
+
+
+def _condition_for_requested_value(rule: dict[str, Any], value: Any) -> dict[str, Any] | None:
+    """Match Tuya Local's write-time condition selection semantics."""
+    for condition in rule.get("conditions", []):
+        if "value" in condition and _matches(condition["value"], value):
+            return condition
+    return None
 
 
 def map_value_from_dps(raw: Any, rules: list[dict[str, Any]], status: dict[str, Any]) -> tuple[Any, int | None]:
@@ -228,19 +341,54 @@ def map_value_from_dps(raw: Any, rules: list[dict[str, Any]], status: dict[str, 
     return value, effective.get("value_redirect_dp")
 
 
-def map_value_to_dps(value: Any, rules: list[dict[str, Any]], status: dict[str, Any], primary_dp: int) -> dict[int, Any]:
+def map_value_to_dps(
+    value: Any,
+    rules: list[dict[str, Any]],
+    status: dict[str, Any],
+    primary_dp: int,
+    mapping_by_dp: dict[str, list[dict[str, Any]]] | None = None,
+    _seen: set[int] | None = None,
+) -> dict[int, Any]:
     rule = _find_rule_for_value(rules, value)
     if rule is None:
         return {primary_dp: value}
-    active = _active_condition(rule, status)
+    active = _condition_for_requested_value(rule, value) or _active_condition(rule, status)
     effective = dict(rule)
     if active:
         effective.update({key: item for key, item in active.items() if key != "dps_val"})
     if effective.get("invalid", False):
         raise ValueError("Value is invalid for the active advanced mapping")
+
+    redirect_dp = effective.get("value_redirect_dp")
+    if redirect_dp is not None:
+        target_dp = int(redirect_dp)
+        seen = set() if _seen is None else set(_seen)
+        if target_dp == int(primary_dp) or target_dp in seen:
+            raise ValueError("Advanced mapping redirect cycle")
+        target_rules = (
+            mapping_by_dp.get(str(target_dp))
+            if isinstance(mapping_by_dp, dict)
+            else None
+        )
+        if target_rules:
+            return map_value_to_dps(
+                value,
+                target_rules,
+                status,
+                target_dp,
+                mapping_by_dp,
+                seen | {int(primary_dp)},
+            )
+        return {target_dp: value}
+
     result = _transform_numeric(effective.get("dps_val", value), effective, reverse=True)
-    target_dp = int(effective.get("value_redirect_dp", primary_dp))
-    writes = {target_dp: result}
+    active_range = effective.get("range")
+    if active_range is not None and isinstance(result, (int, float)) and not isinstance(result, bool):
+        minimum = float(active_range["min"])
+        maximum = float(active_range["max"])
+        if float(result) < minimum or float(result) > maximum:
+            raise ValueError("Value is outside the active advanced mapping range")
+    writes = {int(primary_dp): result}
     constraint_dp = rule.get("constraint_dp")
     if constraint_dp is not None:
         for condition in rule.get("conditions", []):

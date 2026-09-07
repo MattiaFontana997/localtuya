@@ -10,6 +10,7 @@ from datetime import timedelta
 from homeassistant.const import (
     CONF_DEVICE_ID, CONF_DEVICES, CONF_ENTITIES, CONF_FRIENDLY_NAME, CONF_HOST,
     CONF_ID, CONF_PLATFORM, CONF_SCAN_INTERVAL, STATE_UNKNOWN,
+    UnitOfArea, UnitOfDensity, UnitOfTemperature,
 )
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -20,25 +21,77 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from . import pytuya
 from .advanced_mapping import (
     CONF_ADVANCED_MAPPING,
+    CONF_ADVANCED_MAPPING_BY_DP,
+    advanced_mapping_by_dp_references,
     advanced_mapping_dp_references,
+    effective_mapping_metadata,
     map_value_from_dps,
     map_value_to_dps,
     validate_advanced_mapping,
+    validate_advanced_mapping_by_dp,
 )
 from .const import (
     ATTR_STATE, ATTR_UPDATED_AT, CONF_DEFAULT_VALUE, CONF_ENABLE_DEBUG,
-    CONF_EXTRA_STATE_ATTRIBUTES_DPS, CONF_LOCAL_KEY, CONF_MODEL,
-    CONF_PASSIVE_ENTITY, CONF_PROTOCOL_VERSION, CONF_RESET_DPIDS,
+    CONF_EXTRA_STATE_ATTRIBUTES_DPS, CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS,
+    CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS,
+    CONF_LOCAL_KEY, CONF_MODEL, CONF_PASSIVE_ENTITY, CONF_PROTOCOL_VERSION, CONF_RESET_DPIDS,
     CONF_RESTORE_ON_RECONNECT, DATA_CLOUD, DOMAIN, TUYA_DEVICES,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+_TUYA_ASCII_UNIT_MAP = {
+    "C": UnitOfTemperature.CELSIUS,
+    "F": UnitOfTemperature.FAHRENHEIT,
+    "ugm3": UnitOfDensity.MICROGRAMS_PER_CUBIC_METER,
+    "m2": UnitOfArea.SQUARE_METERS,
+}
+
+
+def tuya_unit_from_ascii(unit):
+    """Translate the exact ASCII unit aliases used by pinned Tuya Local."""
+    return _TUYA_ASCII_UNIT_MAP.get(unit, unit)
 MAX_EXTRA_STATE_ATTRIBUTES = 32
+MAX_NON_PERSISTENT_DPS = 32
+CONF_ENTITY_REGISTRY_ENABLED_DEFAULT = "entity_registry_enabled_default"
+CONF_NON_PERSISTENT_DPS = "non_persistent_dps"
 
 
-def get_extra_state_attribute_dps(config):
-    """Return validated catalog-provided raw DPS state attributes."""
-    configured = config.get(CONF_EXTRA_STATE_ATTRIBUTES_DPS)
+def get_non_persistent_dps(config):
+    """Return validated catalog-provided DPS that must not remain cached."""
+    configured = config.get(CONF_NON_PERSISTENT_DPS)
+    if not isinstance(configured, list) or not configured:
+        return set()
+    result = set()
+    for raw_dp in configured:
+        if isinstance(raw_dp, bool):
+            continue
+        try:
+            dp_id = int(raw_dp)
+        except (TypeError, ValueError):
+            continue
+        if 0 < dp_id <= 65535:
+            result.add(dp_id)
+        if len(result) >= MAX_NON_PERSISTENT_DPS:
+            break
+    return result
+
+
+def prune_missing_non_persistent_dps(cached_status, incoming_status, dp_ids):
+    """Drop transient DPS that were not present in the latest device update."""
+    if not isinstance(cached_status, dict) or not isinstance(incoming_status, dict):
+        return
+    incoming_keys = {str(key) for key in incoming_status}
+    for dp_id in dp_ids:
+        key = str(dp_id)
+        if key not in incoming_keys:
+            cached_status.pop(key, None)
+            cached_status.pop(dp_id, None)
+
+
+def _get_state_attribute_dps(config, key):
+    """Return validated catalog-provided DPS state attributes for one key."""
+    configured = config.get(key)
     if not isinstance(configured, dict):
         return {}
     result = {}
@@ -55,6 +108,37 @@ def get_extra_state_attribute_dps(config):
         if dp_id <= 0 or dp_id > 65535:
             continue
         result[name] = dp_id
+        if len(result) >= MAX_EXTRA_STATE_ATTRIBUTES:
+            break
+    return result
+
+
+def get_extra_state_attribute_dps(config):
+    """Return validated catalog-provided raw DPS state attributes."""
+    return _get_state_attribute_dps(config, CONF_EXTRA_STATE_ATTRIBUTES_DPS)
+
+
+def get_mapped_extra_state_attribute_dps(config):
+    """Return validated catalog DPS attributes that must use declarative mapping."""
+    return _get_state_attribute_dps(config, CONF_MAPPED_EXTRA_STATE_ATTRIBUTES_DPS)
+
+
+def get_mapped_extra_state_attribute_mappings(config):
+    """Return validated attribute-name -> declarative mapping rules."""
+    configured = config.get(CONF_MAPPED_EXTRA_STATE_ATTRIBUTE_MAPPINGS)
+    if not isinstance(configured, dict) or not configured:
+        return {}
+    result = {}
+    for raw_name, raw_rules in configured.items():
+        if not isinstance(raw_name, str):
+            continue
+        name = raw_name.strip()
+        if not name or name in result:
+            continue
+        rules = validate_advanced_mapping(raw_rules)
+        if rules is None:
+            continue
+        result[name] = rules
         if len(result) >= MAX_EXTRA_STATE_ATTRIBUTES:
             break
     return result
@@ -77,7 +161,14 @@ async def async_setup_entry(domain, entity_class, flow_schema, hass, config_entr
                     device.dps_to_request[dp_id] = None
             for dp_id in get_extra_state_attribute_dps(entity_config).values():
                 device.dps_to_request[dp_id] = None
+            for dp_id in get_mapped_extra_state_attribute_dps(entity_config).values():
+                device.dps_to_request[dp_id] = None
+            for rules in get_mapped_extra_state_attribute_mappings(entity_config).values():
+                for dp_id in advanced_mapping_dp_references(rules):
+                    device.dps_to_request[dp_id] = None
             for dp_id in advanced_mapping_dp_references(entity_config.get(CONF_ADVANCED_MAPPING)):
+                device.dps_to_request[dp_id] = None
+            for dp_id in advanced_mapping_by_dp_references(entity_config.get(CONF_ADVANCED_MAPPING_BY_DP)):
                 device.dps_to_request[dp_id] = None
             entity = entity_class(device, dev_entry, entity_config[CONF_ID])
             device_entities.append(entity)
@@ -128,6 +219,7 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self._disconnect_task = None
         self._unsub_interval = None
         self._entities = []
+        self._non_persistent_dps = set()
         self._local_key = self._dev_config_entry[CONF_LOCAL_KEY]
         self._default_reset_dpids = None
         if CONF_RESET_DPIDS in self._dev_config_entry:
@@ -135,7 +227,10 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self.set_logger(_LOGGER, self._dev_config_entry[CONF_DEVICE_ID])
         for entity in self._dev_config_entry[CONF_ENTITIES]:
             self.dps_to_request[entity[CONF_ID]] = None
+            self._non_persistent_dps.update(get_non_persistent_dps(entity))
             for dp_id in advanced_mapping_dp_references(entity.get(CONF_ADVANCED_MAPPING)):
+                self.dps_to_request[dp_id] = None
+            for dp_id in advanced_mapping_by_dp_references(entity.get(CONF_ADVANCED_MAPPING_BY_DP)):
                 self.dps_to_request[dp_id] = None
 
     def add_entities(self, entities):
@@ -339,6 +434,9 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
 
     @callback
     def status_updated(self, status):
+        prune_missing_non_persistent_dps(
+            self._status, status, self._non_persistent_dps
+        )
         self._status.update(status)
         self._dispatch_status()
 
@@ -381,12 +479,20 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         self._device = device
         self._dev_config_entry = config_entry
         self._config = get_entity_config(config_entry, dp_id)
+        enabled_default = self._config.get(CONF_ENTITY_REGISTRY_ENABLED_DEFAULT)
+        if isinstance(enabled_default, bool):
+            self._attr_entity_registry_enabled_default = enabled_default
         self._dp_id = dp_id
         self._status = {}
         self._state = None
         self._last_state = None
         self._extra_state_attribute_dps = get_extra_state_attribute_dps(self._config)
+        self._mapped_extra_state_attribute_dps = get_mapped_extra_state_attribute_dps(self._config)
+        self._mapped_extra_state_attribute_mappings = get_mapped_extra_state_attribute_mappings(self._config)
         self._advanced_mapping = validate_advanced_mapping(self._config.get(CONF_ADVANCED_MAPPING)) or []
+        self._advanced_mapping_by_dp = (
+            validate_advanced_mapping_by_dp(self._config.get(CONF_ADVANCED_MAPPING_BY_DP)) or {}
+        )
         self._default_value = self._config.get(CONF_DEFAULT_VALUE)
         self._is_passive_entity = self._config.get(CONF_PASSIVE_ENTITY) or False
         self._restore_on_reconnect = self._config.get(CONF_RESTORE_ON_RECONNECT) or False
@@ -424,6 +530,16 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
             dp_key = str(dp_id)
             if dp_key in self._status:
                 attributes[name] = self._status[dp_key]
+        for name, dp_id in getattr(self, "_mapped_extra_state_attribute_dps", {}).items():
+            dp_key = str(dp_id)
+            if dp_key in self._status:
+                rules = getattr(self, "_mapped_extra_state_attribute_mappings", {}).get(name)
+                if rules:
+                    attributes[name] = map_value_from_dps(
+                        self.raw_dps(dp_id), rules, self._status
+                    )[0]
+                else:
+                    attributes[name] = self.dps(dp_id)
         self.debug("Entity %s - Additional attributes: %s", self.name, attributes)
         return attributes
 
@@ -466,17 +582,52 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
             self.warning("Entity %s is requesting unknown DPS index %s", self.entity_id, dp_index)
         return value
 
-    def dps(self, dp_index):
-        """Return a DP value, applying the entity mapping to its primary DP."""
+    def _mapping_for_dp(self, dp_index):
+        """Return a validated mapping for one DP, preserving legacy primary rules."""
+        if dp_index is None or isinstance(dp_index, bool):
+            return []
+        try:
+            dp_id = int(dp_index)
+        except (TypeError, ValueError):
+            return []
+        by_dp = getattr(self, "_advanced_mapping_by_dp", {})
+        mapped = by_dp.get(str(dp_id)) if isinstance(by_dp, dict) else None
+        if mapped:
+            return mapped
+        legacy = getattr(self, "_advanced_mapping", [])
+        return legacy if dp_id == int(self._dp_id) else []
+
+    def has_advanced_mapping(self, dp_index=None):
+        """Return whether one logical DP has a declarative catalog mapping."""
+        dp_index = self._dp_id if dp_index is None else dp_index
+        return bool(self._mapping_for_dp(dp_index))
+
+    def mapped_numeric_metadata(self, dp_index=None):
+        """Return active declarative range/step metadata for one logical DP."""
+        dp_index = self._dp_id if dp_index is None else dp_index
+        rules = self._mapping_for_dp(dp_index)
+        if not rules:
+            return {}
+        raw = self.raw_dps(dp_index)
+        return effective_mapping_metadata(raw, rules, self._status)
+
+    def _mapped_dps_value(self, dp_index, seen):
         value = self.raw_dps(dp_index)
-        if value is None or not self._advanced_mapping or int(dp_index) != int(self._dp_id):
+        rules = self._mapping_for_dp(dp_index)
+        if value is None or not rules:
             return value
-        mapped, redirect_dp = map_value_from_dps(value, self._advanced_mapping, self._status)
+        dp_id = int(dp_index)
+        if dp_id in seen:
+            self.warning("Advanced mapping redirect cycle at DPS %s", dp_id)
+            return value
+        mapped, redirect_dp = map_value_from_dps(value, rules, self._status)
         if redirect_dp is not None:
-            redirected = self.raw_dps(redirect_dp)
-            if redirected is not None:
-                return redirected
+            return self._mapped_dps_value(redirect_dp, seen | {dp_id})
         return mapped
+
+    def dps(self, dp_index):
+        """Return a DP value after any declarative per-DP mapping."""
+        return self._mapped_dps_value(dp_index, set())
 
     def dps_conf(self, conf_item):
         dp_index = self._config.get(conf_item)
@@ -485,17 +636,47 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         return self.dps(dp_index)
 
     async def set_mapped_dp(self, state, dp_index=None):
-        """Write an HA value using the entity's advanced multi-DP mapping."""
+        """Write an HA value using the mapping attached to its logical DP."""
         dp_index = self._dp_id if dp_index is None else dp_index
-        if not self._advanced_mapping or int(dp_index) != int(self._dp_id):
+        rules = self._mapping_for_dp(dp_index)
+        if not rules:
             await self._device.set_dp(state, dp_index)
             return
-        states = map_value_to_dps(state, self._advanced_mapping, self._status, int(self._dp_id))
+        states = map_value_to_dps(
+            state, rules, self._status, int(dp_index),
+            getattr(self, "_advanced_mapping_by_dp", {}),
+        )
         if len(states) == 1:
             target_dp, raw_value = next(iter(states.items()))
             await self._device.set_dp(raw_value, target_dp)
         else:
             await self._device.set_dps(states)
+
+    async def set_mapped_dps(self, states):
+        """Map several logical DPS and send one conflict-free grouped write."""
+        writes = {}
+        for raw_dp, state in states.items():
+            dp_id = int(raw_dp)
+            rules = self._mapping_for_dp(dp_id)
+            mapped = (
+                map_value_to_dps(
+                    state, rules, self._status, dp_id,
+                    getattr(self, "_advanced_mapping_by_dp", {}),
+                )
+                if rules else {dp_id: state}
+            )
+            for target_dp, raw_value in mapped.items():
+                target_dp = int(target_dp)
+                if target_dp in writes and writes[target_dp] != raw_value:
+                    raise ValueError(f"Conflicting advanced mapping writes for DP {target_dp}")
+                writes[target_dp] = raw_value
+        if not writes:
+            return
+        if len(writes) == 1:
+            target_dp, raw_value = next(iter(writes.items()))
+            await self._device.set_dp(raw_value, target_dp)
+        else:
+            await self._device.set_dps(writes)
 
     def status_updated(self):
         state = self.dps(self._dp_id)

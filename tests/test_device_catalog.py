@@ -3,6 +3,7 @@
 import unittest
 
 from custom_components.localtuya.device_catalog import (
+    _validate_entity,
     match_catalog_mapping,
     validate_catalog,
 )
@@ -262,6 +263,52 @@ class TestDeviceCatalog(unittest.TestCase):
         )
 
 
+    def test_per_dp_advanced_mapping_requires_all_declared_dps(self):
+        payload = {
+            "schema_version": 3,
+            "mappings": [{
+                "id": "advanced-by-dp",
+                "match": {
+                    "product_ids": [],
+                    "required_dps": [1, 4],
+                    "optional_dps": [],
+                    "fingerprint": {"mode": "exact_dps"},
+                },
+                "confidence": "experimental",
+                "entities": [{
+                    "platform": "climate",
+                    "config": {
+                        "id": 1,
+                        "platform": "climate",
+                        "advanced_mapping_by_dp": {
+                            "1": [{"dps_val": True, "constraint_dp": 4, "conditions": [{"dps_val": "manual", "value": "heat"}]}]
+                        },
+                    },
+                }],
+            }],
+        }
+        self.assertEqual(len(validate_catalog(payload)["mappings"]), 1)
+        payload["mappings"][0]["match"]["required_dps"] = [1]
+        self.assertEqual(validate_catalog(payload)["mappings"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BrightnessPowerOffCatalogTests(unittest.TestCase):
+    def test_exact_out_of_range_brightness_off_value_is_accepted(self):
+        entity = {"platform": "light", "config": {
+            "platform": "light", "id": 102, "brightness": 102,
+            "brightness_as_power": True, "brightness_lower": 1,
+            "brightness_upper": 3, "brightness_power_off_value": 0,
+        }}
+        self.assertIsNotNone(_validate_entity(entity))
+
+    def test_in_range_brightness_off_value_is_rejected(self):
+        entity = {"platform": "light", "config": {
+            "platform": "light", "id": 102, "brightness": 102,
+            "brightness_as_power": True, "brightness_lower": 1,
+            "brightness_upper": 3, "brightness_power_off_value": 1,
+        }}
+        self.assertIsNone(_validate_entity(entity))
