@@ -77,6 +77,11 @@ from .mapping_review import (
 from .mapping_export import (
     build_mapping_contribution_package,
 )
+from .qr_onboarding import (
+    CONF_QR_AUTH,
+    QrConfigFlowMixin,
+    QrOptionsFlowMixin,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -964,7 +969,7 @@ async def attempt_cloud_connection(hass, user_input):
     return cloud_api, {}
 
 
-class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class LocaltuyaConfigFlow(QrConfigFlowMixin, config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for LocalTuya integration."""
 
     VERSION = ENTRIES_VERSION
@@ -980,30 +985,13 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize a new LocaltuyaConfigFlow."""
 
     async def async_step_user(self, user_input=None):
-        """Handle the initial step."""
-        errors = {}
-        placeholders = {}
-        if user_input is not None:
-            if user_input.get(CONF_NO_CLOUD):
-                for i in [CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_USER_ID]:
-                    user_input[i] = ""
-                return await self._create_entry(user_input)
-
-            cloud_api, res = await attempt_cloud_connection(self.hass, user_input)
-
-            if not res:
-                return await self._create_entry(user_input)
-            errors["base"] = res["reason"]
-            placeholders = {"msg": res["msg"]}
-
-        defaults = {}
-        defaults.update(user_input or {})
-
-        return self.async_show_form(
+        """Choose the recommended QR onboarding or advanced manual setup."""
+        return self.async_show_menu(
             step_id="user",
-            data_schema=schema_defaults(CLOUD_SETUP_SCHEMA, **defaults),
-            errors=errors,
-            description_placeholders=placeholders,
+            menu_options=[
+                "qr_login",
+                "manual_device",
+            ],
         )
 
     async def _create_entry(self, user_input):
@@ -1026,7 +1014,7 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
+class LocalTuyaOptionsFlowHandler(QrOptionsFlowMixin, config_entries.OptionsFlow):
     """Handle options flow for LocalTuya integration."""
 
     def __init__(self, config_entry):
@@ -1933,6 +1921,11 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_add_device(self, user_input=None):
         """Handle adding a new device."""
+        if (
+            self.config_entry.data.get(CONF_QR_AUTH)
+            and not getattr(self, "_manual_add_in_progress", False)
+        ):
+            return await self.async_step_add_device_method()
         # Use cache if available or fallback to manual discovery
         self.editing_device = False
         self.selected_device = None

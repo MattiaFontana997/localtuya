@@ -2,7 +2,11 @@
     "config": {
         "abort": {
             "already_configured": "设备已经配置。",
-            "device_updated": "设备配置已更新！"
+            "device_updated": "设备配置已更新！",
+            "qr_no_local_devices": "Tuya 未返回具有可用 local_key 的本地可控设备。",
+            "qr_cloud_unavailable": "无法访问用于配网的临时 Tuya 会话。请稍后重试。",
+            "qr_reauth_required": "Tuya 账户授权已过期。请通过二维码重新连接账户。",
+            "qr_mapping_not_found": "未找到安全的自动映射。请对此设备使用手动配置。"
         },
         "error": {
             "authentication_failed": "身份验证失败。\n{msg}",
@@ -13,20 +17,58 @@
             "entity_already_configured": "具有此 ID 的实体已经配置。",
             "address_in_use": "用于设备发现的地址已被占用。请确保没有其他应用正在使用该地址（TCP 端口 6668）。",
             "discovery_failed": "设备发现过程中发生错误。请查看日志了解详细信息。",
-            "empty_dps": "已成功连接到设备，但未发现任何数据点。请重试。如果问题仍然存在，请创建新的 Issue 并附上调试日志。"
+            "empty_dps": "已成功连接到设备，但未发现任何数据点。请重试。如果问题仍然存在，请创建新的 Issue 并附上调试日志。",
+            "qr_login_error": "无法完成二维码登录。{msg}",
+            "qr_device_not_on_lan": "在 Home Assistant 局域网中找不到所选设备。{msg}",
+            "qr_device_not_local": "所选设备未提供可用的本地凭据。{msg}",
+            "qr_subdevice_not_supported": "此二维码流程暂不支持网关子设备。{msg}",
+            "qr_mapping_required": "继续前请至少选择一个映射。"
         },
         "step": {
             "user": {
-                "title": "云 API 账户配置",
-                "description": "请输入 Tuya 云 API 的账户凭据。",
-                "data": {
-                    "region": "API 服务器区域",
-                    "client_id": "Client ID",
-                    "client_secret": "客户端密钥",
-                    "user_id": "User ID",
-                    "user_name": "用户名",
-                    "no_cloud": "不配置云 API 账户"
+                "title": "设置 LocalTuya",
+                "description": "推荐使用二维码登录。Smart Life/Tuya 仅用于按需配网，设备日常控制仍完全在本地进行。",
+                "menu_options": {
+                    "qr_login": "使用 Smart Life / Tuya 二维码登录",
+                    "manual_device": "手动配置设备"
+                },
+                "menu_option_descriptions": {
+                    "qr_login": "推荐 — 不需要 Tuya Developer Platform、Client ID 或 Client Secret。",
+                    "manual_device": "高级 — 手动输入 Device ID、local_key 和局域网信息。"
                 }
+            },
+            "qr_login": {
+                "title": "连接 Smart Life / Tuya",
+                "description": "输入 Smart Life 或 Tuya 应用账户设置中显示的 User Code。",
+                "data": {
+                    "user_code": "User Code"
+                }
+            },
+            "qr_scan": {
+                "title": "使用 Smart Life / Tuya 扫描",
+                "description": "在 Smart Life 或 Tuya 应用中扫描二维码并批准授权，然后继续。",
+                "data": {
+                    "QR": "QR"
+                }
+            },
+            "qr_choose_device": {
+                "title": "选择设备",
+                "description": "选择要在本地配置的设备。仅显示具有可用 local_key 的设备。",
+                "data": {
+                    "device_id": "Tuya 设备"
+                }
+            },
+            "qr_mapping_review": {
+                "title": "检查建议映射",
+                "description": "LocalTuya 找到了需要确认的映射。高置信度映射已自动包含。",
+                "data": {
+                    "qr_mapping_selection": "其他映射"
+                }
+            },
+            "manual_device": {
+                "title": "手动配置设备",
+                "description": "无需连接 Tuya 账户的高级配置。",
+                "data": {}
             }
         }
     },
@@ -34,7 +76,12 @@
         "abort": {
             "already_configured": "设备已经配置。",
             "device_success": "设备 {dev_name} 已成功完成操作：{action}。",
-            "no_entities": "不能删除设备的全部实体。\n如果要删除设备，请在“设备”菜单中打开该设备，点击“设备信息”区域中的三个点，然后选择“删除”。"
+            "no_entities": "不能删除设备的全部实体。\n如果要删除设备，请在“设备”菜单中打开该设备，点击“设备信息”区域中的三个点，然后选择“删除”。",
+            "qr_not_linked": "此 LocalTuya 配置未连接 Smart Life/Tuya 账户。",
+            "qr_no_new_local_devices": "已连接账户中没有新的本地可控设备。",
+            "qr_cloud_unavailable": "无法访问用于配网的临时 Tuya 会话。请稍后重试。",
+            "qr_reauth_required": "Tuya 账户授权已过期。请通过二维码重新连接账户。",
+            "qr_mapping_not_found": "未找到安全的自动映射。请对此设备使用手动配置。"
         },
         "error": {
             "authentication_failed": "身份验证失败。\n{msg}",
@@ -47,7 +94,11 @@
             "discovery_failed": "设备发现过程中发生错误。请查看日志了解详细信息。",
             "empty_dps": "已成功连接到设备，但未发现任何数据点。请重试。如果问题仍然存在，请创建新的 Issue 并附上调试日志。",
             "contribution_not_available": "此设备没有足够的安全映射数据来准备社区贡献。",
-            "contribution_confirmation_required": "继续之前，请确认你已检查贡献数据。"
+            "contribution_confirmation_required": "继续之前，请确认你已检查贡献数据。",
+            "qr_device_not_on_lan": "在 Home Assistant 局域网中找不到所选设备。{msg}",
+            "qr_device_not_local": "所选设备未提供可用的本地凭据。{msg}",
+            "qr_subdevice_not_supported": "此二维码流程暂不支持网关子设备。{msg}",
+            "qr_mapping_required": "继续前请至少选择一个映射。"
         },
         "step": {
             "yaml_import": {
@@ -266,6 +317,32 @@
                 },
                 "menu_option_descriptions": {
                     "submit_to_community_catalog": "GitHub ↗ 打开已预填的目录提交页面。"
+                }
+            },
+            "add_device_method": {
+                "title": "添加设备",
+                "description": "选择添加设备的方式。",
+                "menu_options": {
+                    "qr_add_device": "从 Smart Life / Tuya 添加",
+                    "manual_add_device": "手动 / 局域网配置"
+                },
+                "menu_option_descriptions": {
+                    "qr_add_device": "推荐 — 按需刷新一次已连接账户，然后将所选设备配置为局域网控制。",
+                    "manual_add_device": "手动输入 Device ID 和 local_key。"
+                }
+            },
+            "qr_add_device": {
+                "title": "选择新的 Tuya 设备",
+                "description": "账户已按需刷新。请选择尚未配置且可本地控制的设备。",
+                "data": {
+                    "device_id": "Tuya 设备"
+                }
+            },
+            "qr_add_mapping_review": {
+                "title": "检查建议映射",
+                "description": "LocalTuya 找到了需要确认的映射。高置信度映射已自动包含。",
+                "data": {
+                    "qr_mapping_selection": "其他映射"
                 }
             }
         }

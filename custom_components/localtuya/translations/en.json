@@ -2,7 +2,11 @@
     "config": {
         "abort": {
             "already_configured": "Device has already been configured.",
-            "device_updated": "Device configuration has been updated!"
+            "device_updated": "Device configuration has been updated!",
+            "qr_no_local_devices": "No locally controllable devices with a usable local key were returned by Tuya.",
+            "qr_cloud_unavailable": "The temporary Tuya provisioning session could not be reached. Try again later.",
+            "qr_reauth_required": "The Tuya account authorization expired. Re-link the account with QR login.",
+            "qr_mapping_not_found": "No safe automatic mapping was found. Use manual setup for this device."
         },
         "error": {
             "authentication_failed": "Failed to authenticate.\n{msg}",
@@ -13,20 +17,58 @@
             "entity_already_configured": "Entity with this ID has already been configured.",
             "address_in_use": "Address used for discovery is already in use. Make sure no other application is using it (TCP port 6668).",
             "discovery_failed": "Something failed when discovering devices. See log for details.",
-            "empty_dps": "Connection to device succeeded but no datapoints found, please try again. Create a new issue and include debug logs if problem persists."
+            "empty_dps": "Connection to device succeeded but no datapoints found, please try again. Create a new issue and include debug logs if problem persists.",
+            "qr_login_error": "Unable to complete QR login. {msg}",
+            "qr_device_not_on_lan": "The selected device was not found on the Home Assistant LAN. {msg}",
+            "qr_device_not_local": "The selected device does not expose usable local credentials. {msg}",
+            "qr_subdevice_not_supported": "Hub child devices are not supported by this QR flow yet. {msg}",
+            "qr_mapping_required": "Select at least one mapping before continuing."
         },
         "step": {
             "user": {
-                "title": "Cloud API account configuration",
-                "description": "Input the credentials for Tuya Cloud API.",
-                "data": {
-                    "region": "API server region",
-                    "client_id": "Client ID",
-                    "client_secret": "Secret",
-                    "user_id": "User ID",
-                    "user_name": "Username",
-                    "no_cloud": "Do not configure a Cloud API account"
+                "title": "Set up LocalTuya",
+                "description": "QR login is recommended. It links Smart Life/Tuya for on-demand provisioning only; normal device control remains local.",
+                "menu_options": {
+                    "qr_login": "QR login with Smart Life / Tuya",
+                    "manual_device": "Manual device setup"
+                },
+                "menu_option_descriptions": {
+                    "qr_login": "Recommended — no Tuya Developer Platform, Client ID or Client Secret required.",
+                    "manual_device": "Advanced — enter Device ID, local_key and LAN details manually."
                 }
+            },
+            "qr_login": {
+                "title": "Link Smart Life / Tuya",
+                "description": "Enter the User Code shown in the Smart Life or Tuya app account settings.",
+                "data": {
+                    "user_code": "User Code"
+                }
+            },
+            "qr_scan": {
+                "title": "Scan with Smart Life / Tuya",
+                "description": "Scan the QR code in the Smart Life or Tuya app, approve the authorization, then continue.",
+                "data": {
+                    "QR": "QR"
+                }
+            },
+            "qr_choose_device": {
+                "title": "Choose a device",
+                "description": "Select a device to provision locally. Only devices exposing a usable local key are shown.",
+                "data": {
+                    "device_id": "Tuya device"
+                }
+            },
+            "qr_mapping_review": {
+                "title": "Review suggested mappings",
+                "description": "LocalTuya found mappings that need confirmation. High-confidence mappings are already included.",
+                "data": {
+                    "qr_mapping_selection": "Additional mappings"
+                }
+            },
+            "manual_device": {
+                "title": "Manual device setup",
+                "description": "Advanced setup without linking a Tuya account.",
+                "data": {}
             }
         }
     },
@@ -34,7 +76,12 @@
         "abort": {
             "already_configured": "Device has already been configured.",
             "device_success": "Device {dev_name} successfully {action}.",
-            "no_entities": "Cannot remove all entities from a device.\nIf you want to delete a device, enter it in the Devices menu, click the 3 dots in the 'Device info' frame, and press the Delete button."
+            "no_entities": "Cannot remove all entities from a device.\nIf you want to delete a device, enter it in the Devices menu, click the 3 dots in the 'Device info' frame, and press the Delete button.",
+            "qr_not_linked": "No Smart Life/Tuya account is linked to this LocalTuya entry.",
+            "qr_no_new_local_devices": "No new locally controllable devices are available on the linked account.",
+            "qr_cloud_unavailable": "The temporary Tuya provisioning session could not be reached. Try again later.",
+            "qr_reauth_required": "The Tuya account authorization expired. Re-link the account with QR login.",
+            "qr_mapping_not_found": "No safe automatic mapping was found. Use manual setup for this device."
         },
         "error": {
             "authentication_failed": "Failed to authenticate.\n{msg}",
@@ -47,7 +94,11 @@
             "discovery_failed": "Something failed when discovering devices. See log for details.",
             "empty_dps": "Connection to device succeeded but no datapoints found, please try again. Create a new issue and include debug logs if problem persists.",
             "contribution_not_available": "This device does not have enough safe mapping data to prepare a community contribution.",
-            "contribution_confirmation_required": "Confirm that you reviewed the contribution data before continuing."
+            "contribution_confirmation_required": "Confirm that you reviewed the contribution data before continuing.",
+            "qr_device_not_on_lan": "The selected device was not found on the Home Assistant LAN. {msg}",
+            "qr_device_not_local": "The selected device does not expose usable local credentials. {msg}",
+            "qr_subdevice_not_supported": "Hub child devices are not supported by this QR flow yet. {msg}",
+            "qr_mapping_required": "Select at least one mapping before continuing."
         },
         "step": {
             "yaml_import": {
@@ -266,6 +317,32 @@
                 },
                 "menu_option_descriptions": {
                     "submit_to_community_catalog": "GitHub ↗ Open the pre-filled catalog submission."
+                }
+            },
+            "add_device_method": {
+                "title": "Add a device",
+                "description": "Choose how to add the device.",
+                "menu_options": {
+                    "qr_add_device": "From Smart Life / Tuya",
+                    "manual_add_device": "Manual / LAN setup"
+                },
+                "menu_option_descriptions": {
+                    "qr_add_device": "Recommended — refresh the linked account once, then configure the selected device for LAN control.",
+                    "manual_add_device": "Enter Device ID and local_key manually."
+                }
+            },
+            "qr_add_device": {
+                "title": "Choose a new Tuya device",
+                "description": "The account was refreshed on demand. Select an unconfigured locally controllable device.",
+                "data": {
+                    "device_id": "Tuya device"
+                }
+            },
+            "qr_add_mapping_review": {
+                "title": "Review suggested mappings",
+                "description": "LocalTuya found mappings that need confirmation. High-confidence mappings are already included.",
+                "data": {
+                    "qr_mapping_selection": "Additional mappings"
                 }
             }
         }

@@ -9,6 +9,7 @@ import logging
 from typing import Any
 
 import voluptuous as vol
+import homeassistant.helpers.config_validation as cv
 from homeassistant.const import (
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
@@ -623,7 +624,7 @@ class QrConfigFlowMixin:
                 return self.async_show_form(
                     step_id="qr_mapping_review",
                     data_schema=vol.Schema(
-                        {vol.Required("qr_mapping_selection", default=list(options)): vol.In(options)}
+                        {vol.Required("qr_mapping_selection", default=list(options)): cv.multi_select(options)}
                     ),
                     errors={"base": "qr_mapping_required"},
                 )
@@ -632,7 +633,7 @@ class QrConfigFlowMixin:
         return self.async_show_form(
             step_id="qr_mapping_review",
             data_schema=vol.Schema(
-                {vol.Required("qr_mapping_selection", default=list(options)): vol.In(options)}
+                {vol.Required("qr_mapping_selection", default=list(options)): cv.multi_select(options)}
             ),
         )
 
@@ -707,7 +708,7 @@ class QrOptionsFlowMixin:
 
     async def async_step_manual_add_device(self, user_input=None):
         """Enter the existing manual/LAN device flow even when QR is linked."""
-        self._force_manual_add = True
+        self._manual_add_in_progress = True
         return await self.async_step_add_device()
 
     async def async_step_qr_add_device(self, user_input=None):
@@ -782,7 +783,7 @@ class QrOptionsFlowMixin:
                 return self.async_show_form(
                     step_id="qr_add_mapping_review",
                     data_schema=vol.Schema(
-                        {vol.Required("qr_mapping_selection", default=list(options)): vol.In(options)}
+                        {vol.Required("qr_mapping_selection", default=list(options)): cv.multi_select(options)}
                     ),
                     errors={"base": "qr_mapping_required"},
                 )
@@ -791,7 +792,7 @@ class QrOptionsFlowMixin:
         return self.async_show_form(
             step_id="qr_add_mapping_review",
             data_schema=vol.Schema(
-                {vol.Required("qr_mapping_selection", default=list(options)): vol.In(options)}
+                {vol.Required("qr_mapping_selection", default=list(options)): cv.multi_select(options)}
             ),
         )
 

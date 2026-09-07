@@ -2,7 +2,11 @@
     "config": {
         "abort": {
             "already_configured": "Das Gerät wurde bereits konfiguriert.",
-            "device_updated": "Die Gerätekonfiguration wurde aktualisiert!"
+            "device_updated": "Die Gerätekonfiguration wurde aktualisiert!",
+            "qr_no_local_devices": "Tuya hat keine lokal steuerbaren Geräte mit nutzbarem local_key zurückgegeben.",
+            "qr_cloud_unavailable": "Die temporäre Tuya-Bereitstellungssitzung ist nicht erreichbar. Versuche es später erneut.",
+            "qr_reauth_required": "Die Tuya-Kontoautorisierung ist abgelaufen. Verknüpfe das Konto erneut per QR.",
+            "qr_mapping_not_found": "Es wurde keine sichere automatische Zuordnung gefunden. Verwende für dieses Gerät die manuelle Einrichtung."
         },
         "error": {
             "authentication_failed": "Authentifizierung fehlgeschlagen.\n{msg}",
@@ -13,20 +17,58 @@
             "entity_already_configured": "Eine Entität mit dieser ID wurde bereits konfiguriert.",
             "address_in_use": "Die für die Erkennung verwendete Adresse wird bereits verwendet. Stelle sicher, dass keine andere Anwendung sie verwendet (TCP-Port 6668).",
             "discovery_failed": "Bei der Geräteerkennung ist ein Fehler aufgetreten. Weitere Einzelheiten findest du im Protokoll.",
-            "empty_dps": "Die Verbindung zum Gerät war erfolgreich, es wurden jedoch keine Datenpunkte gefunden. Versuche es erneut. Erstelle ein neues Issue und füge Debug-Protokolle hinzu, wenn das Problem weiterhin besteht."
+            "empty_dps": "Die Verbindung zum Gerät war erfolgreich, es wurden jedoch keine Datenpunkte gefunden. Versuche es erneut. Erstelle ein neues Issue und füge Debug-Protokolle hinzu, wenn das Problem weiterhin besteht.",
+            "qr_login_error": "QR-Anmeldung konnte nicht abgeschlossen werden. {msg}",
+            "qr_device_not_on_lan": "Das ausgewählte Gerät wurde im Home-Assistant-LAN nicht gefunden. {msg}",
+            "qr_device_not_local": "Das ausgewählte Gerät stellt keine nutzbaren lokalen Zugangsdaten bereit. {msg}",
+            "qr_subdevice_not_supported": "Hub-Untergeräte werden von diesem QR-Ablauf noch nicht unterstützt. {msg}",
+            "qr_mapping_required": "Wähle mindestens eine Zuordnung aus, bevor du fortfährst."
         },
         "step": {
             "user": {
-                "title": "Cloud-API-Konto konfigurieren",
-                "description": "Gib die Zugangsdaten für die Tuya Cloud API ein.",
-                "data": {
-                    "region": "API-Serverregion",
-                    "client_id": "Client ID",
-                    "client_secret": "Client-Secret",
-                    "user_id": "User ID",
-                    "user_name": "Benutzername",
-                    "no_cloud": "Kein Cloud-API-Konto konfigurieren"
+                "title": "LocalTuya einrichten",
+                "description": "QR-Anmeldung wird empfohlen. Smart Life/Tuya wird nur für die bedarfsgesteuerte Bereitstellung verknüpft; die normale Gerätesteuerung bleibt lokal.",
+                "menu_options": {
+                    "qr_login": "QR-Anmeldung mit Smart Life / Tuya",
+                    "manual_device": "Manuelle Geräteeinrichtung"
+                },
+                "menu_option_descriptions": {
+                    "qr_login": "Empfohlen — keine Tuya Developer Platform, Client-ID oder Client-Secret erforderlich.",
+                    "manual_device": "Erweitert — Geräte-ID, local_key und LAN-Daten manuell eingeben."
                 }
+            },
+            "qr_login": {
+                "title": "Smart Life / Tuya verknüpfen",
+                "description": "Gib den User Code aus den Kontoeinstellungen der Smart-Life- oder Tuya-App ein.",
+                "data": {
+                    "user_code": "User Code"
+                }
+            },
+            "qr_scan": {
+                "title": "Mit Smart Life / Tuya scannen",
+                "description": "Scanne den QR-Code in der Smart-Life- oder Tuya-App, bestätige die Autorisierung und fahre dann fort.",
+                "data": {
+                    "QR": "QR"
+                }
+            },
+            "qr_choose_device": {
+                "title": "Gerät auswählen",
+                "description": "Wähle ein Gerät für die lokale Bereitstellung. Angezeigt werden nur Geräte mit nutzbarem local_key.",
+                "data": {
+                    "device_id": "Tuya-Gerät"
+                }
+            },
+            "qr_mapping_review": {
+                "title": "Vorgeschlagene Zuordnungen prüfen",
+                "description": "LocalTuya hat Zuordnungen gefunden, die bestätigt werden müssen. Zuordnungen mit hoher Sicherheit sind bereits enthalten.",
+                "data": {
+                    "qr_mapping_selection": "Zusätzliche Zuordnungen"
+                }
+            },
+            "manual_device": {
+                "title": "Manuelle Geräteeinrichtung",
+                "description": "Erweiterte Einrichtung ohne Verknüpfung eines Tuya-Kontos.",
+                "data": {}
             }
         }
     },
@@ -34,7 +76,12 @@
         "abort": {
             "already_configured": "Das Gerät wurde bereits konfiguriert.",
             "device_success": "Gerät {dev_name}: {action} erfolgreich.",
-            "no_entities": "Es können nicht alle Entitäten eines Geräts entfernt werden.\nWenn du ein Gerät löschen möchtest, öffne es im Menü „Geräte“, klicke im Bereich „Geräteinformationen“ auf die drei Punkte und wähle „Löschen“."
+            "no_entities": "Es können nicht alle Entitäten eines Geräts entfernt werden.\nWenn du ein Gerät löschen möchtest, öffne es im Menü „Geräte“, klicke im Bereich „Geräteinformationen“ auf die drei Punkte und wähle „Löschen“.",
+            "qr_not_linked": "Mit diesem LocalTuya-Eintrag ist kein Smart-Life/Tuya-Konto verknüpft.",
+            "qr_no_new_local_devices": "Im verknüpften Konto sind keine neuen lokal steuerbaren Geräte verfügbar.",
+            "qr_cloud_unavailable": "Die temporäre Tuya-Bereitstellungssitzung ist nicht erreichbar. Versuche es später erneut.",
+            "qr_reauth_required": "Die Tuya-Kontoautorisierung ist abgelaufen. Verknüpfe das Konto erneut per QR.",
+            "qr_mapping_not_found": "Es wurde keine sichere automatische Zuordnung gefunden. Verwende für dieses Gerät die manuelle Einrichtung."
         },
         "error": {
             "authentication_failed": "Authentifizierung fehlgeschlagen.\n{msg}",
@@ -47,7 +94,11 @@
             "discovery_failed": "Bei der Geräteerkennung ist ein Fehler aufgetreten. Weitere Einzelheiten findest du im Protokoll.",
             "empty_dps": "Die Verbindung zum Gerät war erfolgreich, es wurden jedoch keine Datenpunkte gefunden. Versuche es erneut. Erstelle ein neues Issue und füge Debug-Protokolle hinzu, wenn das Problem weiterhin besteht.",
             "contribution_not_available": "Für dieses Gerät sind nicht genügend sichere Mapping-Daten verfügbar, um einen Community-Beitrag vorzubereiten.",
-            "contribution_confirmation_required": "Bestätige vor dem Fortfahren, dass du die Beitragsdaten geprüft hast."
+            "contribution_confirmation_required": "Bestätige vor dem Fortfahren, dass du die Beitragsdaten geprüft hast.",
+            "qr_device_not_on_lan": "Das ausgewählte Gerät wurde im Home-Assistant-LAN nicht gefunden. {msg}",
+            "qr_device_not_local": "Das ausgewählte Gerät stellt keine nutzbaren lokalen Zugangsdaten bereit. {msg}",
+            "qr_subdevice_not_supported": "Hub-Untergeräte werden von diesem QR-Ablauf noch nicht unterstützt. {msg}",
+            "qr_mapping_required": "Wähle mindestens eine Zuordnung aus, bevor du fortfährst."
         },
         "step": {
             "yaml_import": {
@@ -266,6 +317,32 @@
                 },
                 "menu_option_descriptions": {
                     "submit_to_community_catalog": "GitHub ↗ Vorbefüllten Katalogbeitrag öffnen."
+                }
+            },
+            "add_device_method": {
+                "title": "Gerät hinzufügen",
+                "description": "Wähle aus, wie das Gerät hinzugefügt werden soll.",
+                "menu_options": {
+                    "qr_add_device": "Aus Smart Life / Tuya",
+                    "manual_add_device": "Manuelle / LAN-Einrichtung"
+                },
+                "menu_option_descriptions": {
+                    "qr_add_device": "Empfohlen — das verknüpfte Konto einmal aktualisieren und das gewählte Gerät für LAN-Steuerung konfigurieren.",
+                    "manual_add_device": "Geräte-ID und local_key manuell eingeben."
+                }
+            },
+            "qr_add_device": {
+                "title": "Neues Tuya-Gerät auswählen",
+                "description": "Das Konto wurde bei Bedarf aktualisiert. Wähle ein noch nicht konfiguriertes lokal steuerbares Gerät.",
+                "data": {
+                    "device_id": "Tuya-Gerät"
+                }
+            },
+            "qr_add_mapping_review": {
+                "title": "Vorgeschlagene Zuordnungen prüfen",
+                "description": "LocalTuya hat Zuordnungen gefunden, die bestätigt werden müssen. Zuordnungen mit hoher Sicherheit sind bereits enthalten.",
+                "data": {
+                    "qr_mapping_selection": "Zusätzliche Zuordnungen"
                 }
             }
         }
