@@ -1,0 +1,164 @@
+name: Patch 6.5.0 release preparation
+
+on:
+  push:
+    branches:
+      - release-prep/6.5.0
+    paths:
+      - .github/workflows/patch-release-prep-65.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: release-prep/6.5.0
+
+      - name: Apply release preparation fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          root = Path('.')
+
+          # Catalog V3 source compatibility while retaining a deterministic V2
+          # bundled snapshot (only verified product-ID mappings are bundled).
+          sync = root / 'tools/sync_builtin_catalog.py'
+          text = sync.read_text(encoding='utf-8')
+          old = 'SUPPORTED_SCHEMA_VERSIONS = {1, 2}'
+          new = 'SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3}'
+          if old not in text:
+              raise SystemExit('sync schema-version anchor missing')
+          text = text.replace(old, new, 1)
+          text = text.replace(
+              'Normalize a V1/V2 source mapping to the bundled V2 representation.',
+              'Normalize a V1/V2/V3 source mapping to the bundled V2 representation.',
+              1,
+          )
+          sync.write_text(text, encoding='utf-8')
+
+          # Community contribution: preserve JSON review, then expose a real
+          # translated menu CTA whose English label is exactly the requested text.
+          flow = root / 'custom_components/localtuya/config_flow.py'
+          text = flow.read_text(encoding='utf-8')
+          old = '''        if user_input is not None:\n            return self.async_external_step(\n                step_id=(\n                    "prepare_contribution_result"\n                ),\n                url=str(\n                    self.contribution_package[\n                        "new_submission_url"\n                    ]\n                ),\n            )\n\n        submission_json = (\n'''
+          new = '''        if user_input is not None:\n            return await (\n                self.async_step_community_contribution_actions()\n            )\n\n        submission_json = (\n'''
+          if old not in text:
+              raise SystemExit('contribution-result anchor missing')
+          text = text.replace(old, new, 1)
+
+          marker = '''    async def async_step_review_mapping_device(\n'''
+          addition = '''    async def async_step_community_contribution_actions(\n        self,\n        user_input=None,\n    ):\n        """Show explicit community-catalog submission action."""\n        if not isinstance(\n            self.contribution_package,\n            dict,\n        ):\n            return await (\n                self.async_step_prepare_contribution_device()\n            )\n\n        return self.async_show_menu(\n            step_id=(\n                "community_contribution_actions"\n            ),\n            menu_options=[\n                "submit_to_community_catalog",\n            ],\n            description_placeholders={\n                "repository_url": str(\n                    self.contribution_package[\n                        "repository_url"\n                    ]\n                ),\n            },\n        )\n\n    async def async_step_submit_to_community_catalog(\n        self,\n        user_input=None,\n    ):\n        """Open GitHub's pre-filled Community Catalog submission URL."""\n        if not isinstance(\n            self.contribution_package,\n            dict,\n        ):\n            return await (\n                self.async_step_prepare_contribution_device()\n            )\n\n        return self.async_external_step(\n            step_id=(\n                "submit_to_community_catalog"\n            ),\n            url=str(\n                self.contribution_package[\n                    "new_submission_url"\n                ]\n            ),\n        )\n\n\n'''
+          if marker not in text:
+              raise SystemExit('review-mapping marker missing')
+          text = text.replace(marker, addition + marker, 1)
+          flow.write_text(text, encoding='utf-8')
+
+          translations = {
+              'strings.json': {
+                  'title': 'Submit community contribution',
+                  'description': 'Choose the action below to continue with the LocalTuya Community Device Catalog on GitHub: `{repository_url}`.',
+                  'label': 'Submit to Community Catalog',
+                  'option_description': 'GitHub ↗ Open the pre-filled catalog submission.',
+              },
+              'translations/en.json': {
+                  'title': 'Submit community contribution',
+                  'description': 'Choose the action below to continue with the LocalTuya Community Device Catalog on GitHub: `{repository_url}`.',
+                  'label': 'Submit to Community Catalog',
+                  'option_description': 'GitHub ↗ Open the pre-filled catalog submission.',
+              },
+              'translations/it.json': {
+                  'title': 'Invia contributo alla community',
+                  'description': 'Scegli l’azione qui sotto per continuare con il Catalogo dispositivi della community di LocalTuya su GitHub: `{repository_url}`.',
+                  'label': 'Invia al catalogo della community',
+                  'option_description': 'GitHub ↗ Apri l’invio al catalogo già precompilato.',
+              },
+              'translations/de.json': {
+                  'title': 'Community-Beitrag einreichen',
+                  'description': 'Wähle die folgende Aktion, um mit dem LocalTuya Community-Gerätekatalog auf GitHub fortzufahren: `{repository_url}`.',
+                  'label': 'An Community-Katalog senden',
+                  'option_description': 'GitHub ↗ Vorbefüllten Katalogbeitrag öffnen.',
+              },
+              'translations/pt-BR.json': {
+                  'title': 'Enviar contribuição da comunidade',
+                  'description': 'Escolha a ação abaixo para continuar com o Catálogo de Dispositivos da Comunidade LocalTuya no GitHub: `{repository_url}`.',
+                  'label': 'Enviar ao catálogo da comunidade',
+                  'option_description': 'GitHub ↗ Abrir o envio pré-preenchido para o catálogo.',
+              },
+              'translations/zh-Hans.json': {
+                  'title': '提交社区贡献',
+                  'description': '选择下面的操作，在 GitHub 上继续提交到 LocalTuya 社区设备目录：`{repository_url}`。',
+                  'label': '提交到社区目录',
+                  'option_description': 'GitHub ↗ 打开已预填的目录提交页面。',
+              },
+          }
+
+          base = root / 'custom_components/localtuya'
+          for relative, values in translations.items():
+              path = base / relative
+              payload = json.loads(path.read_text(encoding='utf-8'))
+              steps = payload.setdefault('options', {}).setdefault('step', {})
+              steps['community_contribution_actions'] = {
+                  'title': values['title'],
+                  'description': values['description'],
+                  'menu_options': {
+                      'submit_to_community_catalog': values['label'],
+                  },
+                  'menu_option_descriptions': {
+                      'submit_to_community_catalog': values['option_description'],
+                  },
+              }
+              path.write_text(
+                  json.dumps(payload, indent=4, ensure_ascii=False) + '\n',
+                  encoding='utf-8',
+              )
+
+          # Update existing contribution flow regression.
+          test_flow = root / 'tests/test_config_flow_mapper.py'
+          text = test_flow.read_text(encoding='utf-8')
+          old = '''        self.assertEqual(\n            result["type"],\n            FlowResultType.EXTERNAL_STEP,\n        )\n        self.assertEqual(\n            result["step_id"],\n            "prepare_contribution_result",\n        )\n        self.assertEqual(\n            result["url"],\n            submission_url,\n        )\n'''
+          new = '''        self.assertEqual(\n            result["type"],\n            FlowResultType.MENU,\n        )\n        self.assertEqual(\n            result["step_id"],\n            "community_contribution_actions",\n        )\n        self.assertEqual(\n            result["menu_options"],\n            ["submit_to_community_catalog"],\n        )\n\n        external = (\n            await flow\n            .async_step_submit_to_community_catalog()\n        )\n\n        self.assertEqual(\n            external["type"],\n            FlowResultType.EXTERNAL_STEP,\n        )\n        self.assertEqual(\n            external["step_id"],\n            "submit_to_community_catalog",\n        )\n        self.assertEqual(\n            external["url"],\n            submission_url,\n        )\n'''
+          if old not in text:
+              raise SystemExit('config-flow regression anchor missing')
+          test_flow.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          # Add explicit CTA translation regression.
+          test_trans = root / 'tests/test_mapping_translations.py'
+          text = test_trans.read_text(encoding='utf-8')
+          marker = '''\n\nif __name__ == "__main__":\n'''
+          addition = '''\n    def test_community_catalog_cta_translations(self):\n        expected = {\n            "en": "Submit to Community Catalog",\n            "it": "Invia al catalogo della community",\n            "de": "An Community-Katalog senden",\n            "pt-BR": "Enviar ao catálogo da comunidade",\n            "zh-Hans": "提交到社区目录",\n        }\n\n        for language, label in expected.items():\n            payload = json.loads(\n                (TRANSLATIONS_DIR / f"{language}.json").read_text(\n                    encoding="utf-8"\n                )\n            )\n            current = (\n                payload["options"]["step"]\n                ["community_contribution_actions"]\n                ["menu_options"]\n                ["submit_to_community_catalog"]\n            )\n            self.assertEqual(current, label, language)\n\n'''
+          if marker not in text:
+              raise SystemExit('translation-test marker missing')
+          test_trans.write_text(text.replace(marker, addition + marker, 1), encoding='utf-8')
+
+          # Regression for V3 remote catalog -> deterministic V2 bundled snapshot.
+          snapshot_test = root / 'tests/test_catalog_snapshot_tool.py'
+          snapshot_test.write_text('''"""Regression tests for the bundled catalog synchronization tool."""\n\nfrom __future__ import annotations\n\nimport importlib.util\nfrom pathlib import Path\nimport unittest\n\n\nROOT = Path(__file__).resolve().parents[1]\nSPEC = importlib.util.spec_from_file_location(\n    "sync_builtin_catalog",\n    ROOT / "tools" / "sync_builtin_catalog.py",\n)\nassert SPEC is not None and SPEC.loader is not None\nsync_builtin_catalog = importlib.util.module_from_spec(SPEC)\nSPEC.loader.exec_module(sync_builtin_catalog)\n\n\nclass CatalogSnapshotToolTests(unittest.TestCase):\n    """Validate V3 source compatibility for the V2 offline snapshot."""\n\n    def test_v3_source_keeps_verified_product_mapping_only(self):\n        catalog = {\n            "schema_version": 3,\n            "mappings": [\n                {\n                    "id": "verified-product",\n                    "confidence": "verified",\n                    "match": {\n                        "product_ids": ["product-b", "product-a"],\n                        "category": "dj",\n                        "required_dps": [24, 20],\n                        "optional_dps": [23],\n                    },\n                    "entities": [{"platform": "light", "config": {"id": 20}}],\n                },\n                {\n                    "id": "productless-fingerprint",\n                    "confidence": "experimental",\n                    "match": {\n                        "product_ids": [],\n                        "category": "dj",\n                        "required_dps": [20, 21],\n                        "optional_dps": [],\n                        "fingerprint": {"mode": "exact_dps"},\n                    },\n                    "entities": [{"platform": "light", "config": {"id": 20}}],\n                },\n            ],\n        }\n\n        snapshot = sync_builtin_catalog.build_snapshot(catalog)\n\n        self.assertEqual(snapshot["schema_version"], 2)\n        self.assertEqual(len(snapshot["mappings"]), 1)\n        mapping = snapshot["mappings"][0]\n        self.assertEqual(mapping["id"], "verified-product")\n        self.assertEqual(\n            mapping["match"],\n            {\n                "product_ids": ["product-a", "product-b"],\n                "category": "dj",\n                "required_dps": [20, 24],\n                "optional_dps": [23],\n            },\n        )\n\n\nif __name__ == "__main__":\n    unittest.main()\n''', encoding='utf-8')
+          PY
+
+      - name: Validate patched tree
+        run: |
+          python -m compileall custom_components/localtuya tools tests
+          git diff --check
+          python -m pytest -q tests/test_catalog_snapshot_tool.py tests/test_mapping_translations.py tests/test_translation_coverage.py tests/test_config_flow_mapper.py
+          python tools/sync_builtin_catalog.py --check
+
+      - name: Commit release preparation fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tools/sync_builtin_catalog.py custom_components/localtuya/config_flow.py custom_components/localtuya/strings.json custom_components/localtuya/translations tests/test_config_flow_mapper.py tests/test_mapping_translations.py tests/test_catalog_snapshot_tool.py
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+            exit 0
+          fi
+          git commit -m "Finish 6.5.0 catalog and contribution UX preparation"
+          git push origin HEAD:release-prep/6.5.0
