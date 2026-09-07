@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 import voluptuous as vol
@@ -22,8 +22,12 @@ class LegacyCloudVisibilityTests(unittest.IsolatedAsyncioTestCase):
     """Developer Platform setup must not appear in the new standard UX."""
 
     async def _schema_for(self, data):
-        flow = LocalTuyaOptionsFlowHandler(SimpleNamespace(data=data))
-        flow.hass = SimpleNamespace()
+        entry = SimpleNamespace(data=data)
+        flow = LocalTuyaOptionsFlowHandler(entry)
+        config_entries = SimpleNamespace(
+            async_get_known_entry=MagicMock(return_value=entry)
+        )
+        flow.hass = SimpleNamespace(config_entries=config_entries)
         labels = {
             CONF_ADD_DEVICE: "Add a new device",
             CONF_SETUP_CLOUD: "Reconfigure Cloud API account",
