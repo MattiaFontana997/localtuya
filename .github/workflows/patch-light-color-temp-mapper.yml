@@ -1,0 +1,101 @@
+name: Patch light color temperature mapper
+
+on:
+  push:
+    branches:
+      - compat/light-color-temp-raw-range
+    paths:
+      - .github/workflows/patch-light-color-temp-mapper.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: compat/light-color-temp-raw-range
+          fetch-depth: 0
+
+      - name: Extend generic light mapper
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("custom_components/localtuya/device_mapper.py")
+          text = path.read_text()
+
+          old_import = '''    CONF_COLOR,
+    CONF_COLOR_MODE,
+    CONF_COMMANDS_SET,
+'''
+          new_import = '''    CONF_COLOR,
+    CONF_COLOR_MODE,
+    CONF_COLOR_TEMP_LOWER,
+    CONF_COLOR_TEMP_STEP,
+    CONF_COLOR_TEMP_UPPER,
+    CONF_COMMANDS_SET,
+'''
+          if text.count(old_import) != 1:
+              raise SystemExit(f"import anchor count: {text.count(old_import)}")
+          text = text.replace(old_import, new_import, 1)
+
+          old_block = '''    if color_temp is not None:
+        temperature_range = _integer_range(color_temp)
+
+        # Current LocalTuya light code uses brightness_upper as the
+        # raw color-temperature maximum. Auto-map temperature only
+        # where the metadata confirms the ranges are compatible.
+        brightness_max = (
+            brightness_range[1]
+            if brightness_range is not None
+            else 1000
+        )
+
+        temperature_max = (
+            temperature_range[1]
+            if temperature_range is not None
+            else brightness_max
+        )
+
+        if temperature_max == brightness_max:
+            config[CONF_COLOR_TEMP] = color_temp.id
+            matched_codes.append(color_temp.code)
+'''
+          new_block = '''    if color_temp is not None:
+        config[CONF_COLOR_TEMP] = color_temp.id
+        matched_codes.append(color_temp.code)
+
+        temperature_range = _integer_range(color_temp)
+        if temperature_range is not None:
+            config[CONF_COLOR_TEMP_LOWER] = temperature_range[0]
+            config[CONF_COLOR_TEMP_UPPER] = temperature_range[1]
+
+        temperature_step = _numeric_value(color_temp, "step")
+        if temperature_step is not None:
+            temperature_step = int(temperature_step)
+            if 1 <= temperature_step <= 10000:
+                config[CONF_COLOR_TEMP_STEP] = temperature_step
+'''
+          if text.count(old_block) != 1:
+              raise SystemExit(f"color temp block anchor count: {text.count(old_block)}")
+          path.write_text(text.replace(old_block, new_block, 1))
+          PY
+
+      - name: Validate syntax
+        shell: bash
+        run: |
+          python -m compileall custom_components/localtuya/device_mapper.py
+          git diff --check
+
+      - name: Commit mapper support
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/device_mapper.py
+          git commit -m "Map independent light color temperature ranges"
+          git push origin HEAD:compat/light-color-temp-raw-range
