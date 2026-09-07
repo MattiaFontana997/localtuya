@@ -16,6 +16,7 @@ from .const import (
     CONF_VALVE_POSITION_INVERTED,
     CONF_VALVE_POSITION_MAX,
     CONF_VALVE_POSITION_MIN,
+    CONF_VALVE_POSITION_STEP,
     CONF_VALVE_SWITCH_DP,
     CONF_VALVE_SWITCH_OFF,
     CONF_VALVE_SWITCH_ON,
@@ -47,13 +48,20 @@ def _position_from_raw(value, minimum, maximum, inverted):
     return max(0, min(100, round(position)))
 
 
-def _position_to_raw(position, minimum, maximum, inverted):
-    """Convert Home Assistant percent to the configured raw valve range."""
+def _position_to_raw(position, minimum, maximum, inverted, step=1.0):
+    """Convert HA percent to raw, applying Tuya Local's write-only step."""
     percent = max(0.0, min(100.0, float(position)))
     if inverted:
         percent = 100.0 - percent
     raw = minimum + (maximum - minimum) * percent / 100.0
-    return int(round(raw)) if float(raw).is_integer() else raw
+    step = float(step)
+    if step <= 0:
+        raise ValueError("Valve position step must be greater than zero")
+    if step != 1.0:
+        raw = step * round(float(raw) / step)
+    if raw < minimum or raw > maximum:
+        raise ValueError("Stepped valve position is outside the configured range")
+    return int(raw) if float(raw).is_integer() else raw
 
 
 class LocaltuyaValve(LocalTuyaEntity, ValveEntity):
@@ -67,6 +75,9 @@ class LocaltuyaValve(LocalTuyaEntity, ValveEntity):
         self._position_min = float(self._config.get(CONF_VALVE_POSITION_MIN, 0))
         self._position_max = float(self._config.get(CONF_VALVE_POSITION_MAX, 100))
         self._position_inverted = bool(self._config.get(CONF_VALVE_POSITION_INVERTED, False))
+        self._position_step = float(self._config.get(CONF_VALVE_POSITION_STEP, 1.0))
+        if self._position_step <= 0:
+            raise ValueError("Valve position step must be greater than zero")
         self._open_value = self._config.get(CONF_VALVE_OPEN_VALUE, True)
         self._closed_value = self._config.get(CONF_VALVE_CLOSED_VALUE, False)
         self._switch_on = self._config.get(CONF_VALVE_SWITCH_ON, True)
@@ -130,6 +141,7 @@ class LocaltuyaValve(LocalTuyaEntity, ValveEntity):
                 self._position_min,
                 self._position_max,
                 self._position_inverted,
+                self._position_step,
             )
             await self._device.set_dp(raw, self._dp_id)
         elif switch_dp is None or self._dp_id != switch_dp:
@@ -147,6 +159,7 @@ class LocaltuyaValve(LocalTuyaEntity, ValveEntity):
                     self._position_min,
                     self._position_max,
                     self._position_inverted,
+                    self._position_step,
                 )
                 if self._position_control
                 else self._closed_value
@@ -162,6 +175,7 @@ class LocaltuyaValve(LocalTuyaEntity, ValveEntity):
             self._position_min,
             self._position_max,
             self._position_inverted,
+            self._position_step,
         )
         switch_dp = self._config.get(CONF_VALVE_SWITCH_DP)
         if switch_dp is not None and position > 0:

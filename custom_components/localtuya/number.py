@@ -4,19 +4,27 @@ import logging
 from functools import partial
 
 import voluptuous as vol
-from homeassistant.components.number import DOMAIN, NumberDeviceClass, NumberEntity
+from homeassistant.components.number import DOMAIN, NumberDeviceClass, NumberEntity, NumberMode
 from homeassistant.const import CONF_DEVICE_CLASS, CONF_UNIT_OF_MEASUREMENT
 
 from .common import LocalTuyaEntity, async_setup_entry
 from .const import (
     CONF_DEFAULT_VALUE, CONF_MAX_VALUE, CONF_MIN_VALUE, CONF_PASSIVE_ENTITY,
-    CONF_RESTORE_ON_RECONNECT, CONF_SCALING, CONF_STEPSIZE_VALUE,
+    CONF_RESTORE_ON_RECONNECT, CONF_SCALING, CONF_STEPSIZE_VALUE, CONF_NUMBER_MODE,
 )
 
 _LOGGER = logging.getLogger(__name__)
 DEFAULT_MIN = 0.0
 DEFAULT_MAX = 100000.0
 DEFAULT_STEP = 1.0
+
+
+def _configured_number_mode(value) -> NumberMode:
+    """Return one validated Home Assistant number display mode."""
+    try:
+        return NumberMode(value) if value is not None else NumberMode.AUTO
+    except (TypeError, ValueError):
+        return NumberMode.AUTO
 
 
 def _scale_number_value(value, scaling: float) -> float:
@@ -36,6 +44,7 @@ def flow_schema(dps):
         vol.Optional(CONF_UNIT_OF_MEASUREMENT): str,
         vol.Optional(CONF_SCALING, default=1.0): vol.All(vol.Coerce(float), vol.Range(min=0.000000001, max=1000000000.0)),
         vol.Optional(CONF_DEVICE_CLASS): vol.In([device_class.value for device_class in NumberDeviceClass]),
+        vol.Optional(CONF_NUMBER_MODE, default=NumberMode.AUTO.value): vol.In([mode.value for mode in NumberMode]),
         vol.Required(CONF_RESTORE_ON_RECONNECT): bool,
         vol.Required(CONF_PASSIVE_ENTITY): bool,
         vol.Optional(CONF_DEFAULT_VALUE): str,
@@ -53,6 +62,7 @@ class LocaltuyaNumber(LocalTuyaEntity, NumberEntity):
         self._attr_native_max_value = float(self._config.get(CONF_MAX_VALUE, DEFAULT_MAX))
         self._attr_native_step = float(self._config.get(CONF_STEPSIZE_VALUE, DEFAULT_STEP))
         self._attr_native_unit_of_measurement = self._config.get(CONF_UNIT_OF_MEASUREMENT)
+        self._attr_mode = _configured_number_mode(self._config.get(CONF_NUMBER_MODE))
         device_class = self._config.get(CONF_DEVICE_CLASS)
         self._attr_device_class = NumberDeviceClass(device_class) if device_class else None
         default_value = self._config.get(CONF_DEFAULT_VALUE)

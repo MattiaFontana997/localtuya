@@ -151,6 +151,7 @@ CONF_FAN_OSCILLATING_OFF = "fan_oscillating_off"
 
 # sensor
 CONF_SCALING = "scaling"
+CONF_NUMBER_MODE = "number_mode"
 CONF_SENSOR_UNIX_TIMESTAMP = "sensor_unix_timestamp"
 
 # binary sensor
@@ -252,6 +253,7 @@ CONF_VALVE_POSITION_CONTROL = "valve_position_control"
 CONF_VALVE_POSITION_MIN = "valve_position_min"
 CONF_VALVE_POSITION_MAX = "valve_position_max"
 CONF_VALVE_POSITION_INVERTED = "valve_position_inverted"
+CONF_VALVE_POSITION_STEP = "valve_position_step"
 CONF_VALVE_OPEN_VALUE = "valve_open_value"
 CONF_VALVE_CLOSED_VALUE = "valve_closed_value"
 CONF_VALVE_SWITCH_ON = "valve_switch_on"
