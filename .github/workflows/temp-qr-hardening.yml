@@ -1,0 +1,150 @@
+name: Temporary QR onboarding hardening
+
+on:
+  push:
+    branches:
+      - feature/qr-onboarding
+    paths:
+      - .github/workflows/temp-qr-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/qr-onboarding
+      - name: Harden QR account lifecycle and translations
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          p = Path('custom_components/localtuya/qr_onboarding.py')
+          s = p.read_text()
+
+          old = '''    async def async_step_add_device_method(self, user_input=None):\n        """Choose linked-account provisioning or the advanced manual path."""\n        return self.async_show_menu(\n            step_id="add_device_method",\n            menu_options=["qr_add_device", "manual_add_device"],\n        )\n'''
+          new = '''    async def async_step_add_device_method(self, user_input=None):\n        """Choose linked-account provisioning or account-management actions."""\n        return self.async_show_menu(\n            step_id="add_device_method",\n            menu_options=[\n                "qr_add_device",\n                "manual_add_device",\n                "qr_relink",\n                "qr_disconnect",\n            ],\n        )\n'''
+          if old not in s:
+              raise SystemExit('add_device_method marker missing')
+          s = s.replace(old, new, 1)
+
+          old_disconnect = '''    async def async_step_qr_disconnect(self, user_input=None):\n        """Forget the Tuya account link while leaving all LAN devices intact."""\n        new_data = copy.deepcopy(dict(self.config_entry.data))\n        new_data[CONF_QR_AUTH] = {}\n        self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)\n        return self.async_create_entry(title="", data={})\n'''
+          new_disconnect = '''    async def async_step_qr_relink(self, user_input=None):\n        """Generate a new QR authorization for an existing LocalTuya entry."""\n        errors = {}\n        placeholders = {}\n        current = self.config_entry.data.get(CONF_QR_AUTH, {})\n        default_code = (\n            current.get(CONF_QR_USER_CODE, "")\n            if isinstance(current, dict)\n            else ""\n        )\n        if user_input is not None:\n            self._qr_cloud = QrCloudClient(self.hass)\n            token = await self._qr_cloud.async_generate_qr(\n                user_input[CONF_QR_USER_CODE]\n            )\n            if token:\n                self._qr_token = token\n                return await self.async_step_qr_relink_scan()\n            errors["base"] = "qr_login_error"\n            placeholders = self._qr_cloud.last_error\n\n        return self.async_show_form(\n            step_id="qr_relink",\n            data_schema=vol.Schema(\n                {\n                    vol.Required(\n                        CONF_QR_USER_CODE,\n                        default=default_code,\n                    ): str\n                }\n            ),\n            errors=errors,\n            description_placeholders=placeholders,\n        )\n\n    async def async_step_qr_relink_scan(self, user_input=None):\n        """Complete a replacement QR authorization and persist it."""\n        cloud = getattr(self, "_qr_cloud", None)\n        token = getattr(self, "_qr_token", None)\n        if cloud is None or not token:\n            return await self.async_step_qr_relink()\n\n        if user_input is None:\n            return self.async_show_form(\n                step_id="qr_relink_scan",\n                data_schema=vol.Schema(\n                    {\n                        vol.Optional("QR"): QrCodeSelector(\n                            config=QrCodeSelectorConfig(\n                                data=f"tuyaSmart--qrLogin?token={token}",\n                                scale=5,\n                                error_correction_level=(\n                                    QrErrorCorrectionLevel.QUARTILE\n                                ),\n                            )\n                        )\n                    }\n                ),\n            )\n\n        if not await cloud.async_login():\n            return self.async_show_form(\n                step_id="qr_relink_scan",\n                data_schema=vol.Schema(\n                    {\n                        vol.Optional("QR"): QrCodeSelector(\n                            config=QrCodeSelectorConfig(\n                                data=f"tuyaSmart--qrLogin?token={token}",\n                                scale=5,\n                                error_correction_level=(\n                                    QrErrorCorrectionLevel.QUARTILE\n                                ),\n                            )\n                        )\n                    }\n                ),\n                errors={"base": "qr_login_error"},\n                description_placeholders=cloud.last_error,\n            )\n\n        self._persist_qr_auth(cloud.auth)\n        return self.async_create_entry(title="", data={})\n\n    async def async_step_qr_disconnect(self, user_input=None):\n        """Forget the Tuya account link while leaving all LAN devices intact."""\n        if user_input is not None and user_input.get("confirm", False):\n            new_data = copy.deepcopy(dict(self.config_entry.data))\n            new_data[CONF_QR_AUTH] = {}\n            self.hass.config_entries.async_update_entry(\n                self.config_entry,\n                data=new_data,\n            )\n            return self.async_create_entry(title="", data={})\n\n        return self.async_show_form(\n            step_id="qr_disconnect",\n            data_schema=vol.Schema(\n                {vol.Required("confirm", default=False): bool}\n            ),\n        )\n'''
+          if old_disconnect not in s:
+              raise SystemExit('disconnect marker missing')
+          s = s.replace(old_disconnect, new_disconnect, 1)
+          p.write_text(s)
+
+          translations = Path('custom_components/localtuya/translations')
+          values = {
+              'en': {
+                  'code': 'User Code', 'qr_label': 'QR code',
+                  'relink': 'Re-link Smart Life / Tuya account',
+                  'relink_desc': 'Use a new QR authorization if the saved Tuya session has expired or been revoked.',
+                  'disconnect': 'Disconnect Smart Life / Tuya account',
+                  'disconnect_desc': 'Forget cloud authorization. Already configured devices continue to work over LAN.',
+                  'relink_title': 'Re-link Smart Life / Tuya',
+                  'relink_step': 'Enter the User Code to create a new renewable provisioning authorization.',
+                  'disconnect_title': 'Disconnect Tuya account',
+                  'disconnect_step': 'This removes only the saved Tuya account authorization. Configured devices and their local keys remain untouched.',
+                  'confirm': 'Disconnect account',
+              },
+              'it': {
+                  'code': 'Codice utente', 'qr_label': 'Codice QR',
+                  'relink': 'Ricollega account Smart Life / Tuya',
+                  'relink_desc': 'Usa una nuova autorizzazione QR se la sessione Tuya salvata è scaduta o è stata revocata.',
+                  'disconnect': 'Disconnetti account Smart Life / Tuya',
+                  'disconnect_desc': 'Dimentica l’autorizzazione cloud. I dispositivi già configurati continuano a funzionare in LAN.',
+                  'relink_title': 'Ricollega Smart Life / Tuya',
+                  'relink_step': 'Inserisci il Codice utente per creare una nuova autorizzazione rinnovabile per il provisioning.',
+                  'disconnect_title': 'Disconnetti account Tuya',
+                  'disconnect_step': 'Rimuove solo l’autorizzazione Tuya salvata. I dispositivi configurati e le relative local key restano invariati.',
+                  'confirm': 'Disconnetti account',
+              },
+              'de': {
+                  'code': 'Benutzercode', 'qr_label': 'QR-Code',
+                  'relink': 'Smart-Life/Tuya-Konto erneut verknüpfen',
+                  'relink_desc': 'Neue QR-Autorisierung verwenden, wenn die gespeicherte Tuya-Sitzung abgelaufen oder widerrufen wurde.',
+                  'disconnect': 'Smart-Life/Tuya-Konto trennen',
+                  'disconnect_desc': 'Cloud-Autorisierung vergessen. Bereits konfigurierte Geräte funktionieren weiter über LAN.',
+                  'relink_title': 'Smart Life / Tuya erneut verknüpfen',
+                  'relink_step': 'Benutzercode eingeben, um eine neue erneuerbare Autorisierung für die Bereitstellung zu erstellen.',
+                  'disconnect_title': 'Tuya-Konto trennen',
+                  'disconnect_step': 'Nur die gespeicherte Tuya-Autorisierung wird entfernt. Konfigurierte Geräte und lokale Schlüssel bleiben erhalten.',
+                  'confirm': 'Konto trennen',
+              },
+              'pt-BR': {
+                  'code': 'Código do usuário', 'qr_label': 'Código QR',
+                  'relink': 'Vincular novamente a conta Smart Life / Tuya',
+                  'relink_desc': 'Use uma nova autorização QR se a sessão Tuya salva tiver expirado ou sido revogada.',
+                  'disconnect': 'Desconectar conta Smart Life / Tuya',
+                  'disconnect_desc': 'Esquece a autorização na nuvem. Dispositivos já configurados continuam funcionando pela LAN.',
+                  'relink_title': 'Vincular Smart Life / Tuya novamente',
+                  'relink_step': 'Informe o Código do usuário para criar uma nova autorização renovável de provisionamento.',
+                  'disconnect_title': 'Desconectar conta Tuya',
+                  'disconnect_step': 'Remove apenas a autorização Tuya salva. Os dispositivos configurados e suas chaves locais permanecem intactos.',
+                  'confirm': 'Desconectar conta',
+              },
+              'zh-Hans': {
+                  'code': '用户代码', 'qr_label': '二维码',
+                  'relink': '重新连接 Smart Life / Tuya 账户',
+                  'relink_desc': '如果保存的 Tuya 会话已过期或被撤销，请使用新的二维码授权。',
+                  'disconnect': '断开 Smart Life / Tuya 账户',
+                  'disconnect_desc': '清除云端授权。已配置的设备仍会继续通过局域网工作。',
+                  'relink_title': '重新连接 Smart Life / Tuya',
+                  'relink_step': '输入用户代码以创建新的可续期配网授权。',
+                  'disconnect_title': '断开 Tuya 账户',
+                  'disconnect_step': '仅删除保存的 Tuya 授权。已配置设备及其本地密钥不会被更改。',
+                  'confirm': '断开账户',
+              },
+          }
+
+          for lang, tr in values.items():
+              fp = translations / f'{lang}.json'
+              data = json.loads(fp.read_text())
+              cfg_steps = data['config']['step']
+              cfg_steps['qr_login']['data']['user_code'] = tr['code']
+              cfg_steps['qr_scan']['data']['QR'] = tr['qr_label']
+              # Reuse the already translated manual device fields from Options.
+              cfg_steps['manual_device']['data'] = dict(
+                  data['options']['step']['configure_device']['data']
+              )
+
+              opt_steps = data['options']['step']
+              menu = opt_steps['add_device_method']
+              menu['menu_options']['qr_relink'] = tr['relink']
+              menu['menu_options']['qr_disconnect'] = tr['disconnect']
+              menu['menu_option_descriptions']['qr_relink'] = tr['relink_desc']
+              menu['menu_option_descriptions']['qr_disconnect'] = tr['disconnect_desc']
+              opt_steps['qr_relink'] = {
+                  'title': tr['relink_title'],
+                  'description': tr['relink_step'],
+                  'data': {'user_code': tr['code']},
+              }
+              opt_steps['qr_relink_scan'] = {
+                  'title': tr['relink_title'],
+                  'description': data['config']['step']['qr_scan']['description'],
+                  'data': {'QR': tr['qr_label']},
+              }
+              opt_steps['qr_disconnect'] = {
+                  'title': tr['disconnect_title'],
+                  'description': tr['disconnect_step'],
+                  'data': {'confirm': tr['confirm']},
+              }
+              # QR login errors are also used by the options re-link flow.
+              data['options']['error']['qr_login_error'] = data['config']['error']['qr_login_error']
+              fp.write_text(json.dumps(data, ensure_ascii=False, indent=4) + '\n')
+
+          Path('.github/workflows/temp-qr-hardening.yml').unlink()
+          PY
+      - name: Commit hardening
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/localtuya/qr_onboarding.py custom_components/localtuya/translations .github/workflows/temp-qr-hardening.yml
+          git commit -m "Harden QR onboarding account lifecycle"
+          git push origin HEAD:feature/qr-onboarding
