@@ -1,0 +1,37 @@
+name: Run brightness off-value patch v5
+
+on:
+  push:
+    paths:
+      - .github/workflows/run-brightness-power-off-value-v5.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Apply reviewed patch script
+        run: python .github/scripts/patch_brightness_power_off_value.py
+      - name: Syntax check
+        run: python -m py_compile custom_components/localtuya/const.py custom_components/localtuya/light.py custom_components/localtuya/device_catalog.py tests/test_light_residual_runtime.py tests/test_device_catalog.py
+      - name: Install tox
+        run: python -m pip install "tox>=4.20,<5"
+      - name: Run full suite
+        run: python -m tox -e py314
+      - name: Commit runtime support
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add custom_components/localtuya/const.py custom_components/localtuya/light.py custom_components/localtuya/device_catalog.py tests/test_light_residual_runtime.py tests/test_device_catalog.py
+          git diff --cached --check
+          git commit -m "Support out-of-range brightness off values"
+          git push origin HEAD:develop
