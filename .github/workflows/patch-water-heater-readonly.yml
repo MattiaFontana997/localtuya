@@ -44,7 +44,7 @@ jobs:
           assert text.count(old) == 1
           text = text.replace(old, new, 1)
           old = '        if kwargs.get(ATTR_TEMPERATURE) is not None:\n            dp_id = self._config.get(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP)\n'
-          new = '        if kwargs.get(ATTR_TEMPERATURE) is not None:\n            if self._target_readonly:\n                raise NotImplementedError()\n            dp_id = self._config.get(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP)\n'
+          new = '        if kwargs.get(ATTR_TEMPERATURE) is not None:\n            if getattr(self, "_target_readonly", False):\n                raise NotImplementedError()\n            dp_id = self._config.get(CONF_WATER_HEATER_TARGET_TEMPERATURE_DP)\n'
           assert text.count(old) == 1
           text = text.replace(old, new, 1)
           path.write_text(text)
