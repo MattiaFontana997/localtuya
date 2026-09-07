@@ -1398,15 +1398,8 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
             )
 
         if user_input is not None:
-            return self.async_external_step(
-                step_id=(
-                    "prepare_contribution_result"
-                ),
-                url=str(
-                    self.contribution_package[
-                        "new_submission_url"
-                    ]
-                ),
+            return await (
+                self.async_step_community_contribution_actions()
             )
 
         submission_json = (
@@ -1455,6 +1448,60 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                     ),
             },
         )
+
+    async def async_step_community_contribution_actions(
+        self,
+        user_input=None,
+    ):
+        """Show explicit community-catalog submission action."""
+        if not isinstance(
+            self.contribution_package,
+            dict,
+        ):
+            return await (
+                self.async_step_prepare_contribution_device()
+            )
+
+        return self.async_show_menu(
+            step_id=(
+                "community_contribution_actions"
+            ),
+            menu_options=[
+                "submit_to_community_catalog",
+            ],
+            description_placeholders={
+                "repository_url": str(
+                    self.contribution_package[
+                        "repository_url"
+                    ]
+                ),
+            },
+        )
+
+    async def async_step_submit_to_community_catalog(
+        self,
+        user_input=None,
+    ):
+        """Open GitHub's pre-filled Community Catalog submission URL."""
+        if not isinstance(
+            self.contribution_package,
+            dict,
+        ):
+            return await (
+                self.async_step_prepare_contribution_device()
+            )
+
+        return self.async_external_step(
+            step_id=(
+                "submit_to_community_catalog"
+            ),
+            url=str(
+                self.contribution_package[
+                    "new_submission_url"
+                ]
+            ),
+        )
+
 
     async def async_step_review_mapping_device(
         self,
