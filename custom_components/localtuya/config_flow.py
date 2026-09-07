@@ -1059,6 +1059,33 @@ class LocalTuyaOptionsFlowHandler(QrOptionsFlowMixin, config_entries.OptionsFlow
             )
         )
 
+        # The Tuya Developer Platform flow is retained only for
+        # backward compatibility with entries that already use it.
+        # New QR/manual installations must never expose Client ID,
+        # Client Secret, Data Center or IoT Core setup as a standard path.
+        has_legacy_cloud = (
+            not self.config_entry.data.get(
+                CONF_NO_CLOUD,
+                True,
+            )
+            or bool(
+                self.config_entry.data.get(
+                    CONF_CLIENT_ID
+                )
+            )
+            or bool(
+                self.config_entry.data.get(
+                    CONF_CLIENT_SECRET
+                )
+            )
+        )
+
+        if not has_legacy_cloud:
+            action_labels.pop(
+                CONF_SETUP_CLOUD,
+                None,
+            )
+
         return self.async_show_form(
             step_id="init",
             data_schema=_configure_schema(
