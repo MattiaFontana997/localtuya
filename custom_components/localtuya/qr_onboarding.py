@@ -654,36 +654,63 @@ class QrConfigFlowMixin:
 
     async def async_step_manual_device(self, user_input=None):
         """Advanced first-device setup without any Tuya account link."""
-        from .config_flow import DEVICE_SCHEMA, schema_defaults, validate_input, async_get_entity_candidates
+        from .config_flow import (
+            DEVICE_SCHEMA,
+            CannotConnect,
+            EmptyDpsList,
+            InvalidAuth,
+            async_get_entity_candidates,
+            schema_defaults,
+            validate_input,
+        )
 
         errors = {}
         if user_input is not None:
             try:
-                dps_strings, resolved = await validate_input(self.hass, user_input)
+                dps_strings, resolved = await validate_input(
+                    self.hass,
+                    user_input,
+                )
                 device_data = dict(user_input)
                 device_data[CONF_PROTOCOL_VERSION] = resolved
                 device_data[CONF_DPS_STRINGS] = list(dps_strings)
-                discovery = await _async_discovery_snapshot(self.hass)
+
+                try:
+                    discovery = await _async_discovery_snapshot(self.hass)
+                except QrProvisioningError:
+                    # Manual credentials may still be valid even when broadcast
+                    # discovery is unavailable or blocked by the network.
+                    discovery = {}
+
                 candidates = await async_get_entity_candidates(
                     self.hass,
                     device_data,
                     discovery,
                     dps_strings,
                 )
-                device_data[CONF_ENTITIES] = [
-                    copy.deepcopy(candidate.config)
-                    for candidate in candidates
-                    if candidate.confidence == MappingConfidence.HIGH
-                ]
-                if not device_data[CONF_ENTITIES]:
-                    errors["base"] = "qr_mapping_not_found"
-                else:
-                    data = _base_entry_data()
-                    data[CONF_DEVICES][device_data[CONF_DEVICE_ID]] = device_data
-                    return self.async_create_entry(title=DOMAIN, data=data)
-            except Exception as exc:
-                _LOGGER.debug("Manual initial provisioning failed: %s", exc)
+
+                self._manual_device_data = device_data
+                self._manual_dps_strings = list(dps_strings)
+                self._manual_entities = []
+                self._manual_candidates = list(candidates)
+
+                if self._manual_candidates:
+                    return await self.async_step_manual_mapping_review()
+
+                return await self.async_step_manual_pick_entity_type()
+
+            except CannotConnect:
                 errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except EmptyDpsList:
+                errors["base"] = "empty_dps"
+            except Exception as exc:
+                _LOGGER.exception(
+                    "Unexpected manual onboarding failure: %s",
+                    exc,
+                )
+                errors["base"] = "unknown"
 
         defaults = {
             CONF_PROTOCOL_VERSION: "auto",
@@ -694,6 +721,132 @@ class QrConfigFlowMixin:
             data_schema=schema_defaults(DEVICE_SCHEMA, **defaults),
             errors=errors,
         )
+
+    async def async_step_manual_mapping_review(self, user_input=None):
+        """Offer automatic Catalog/mapper suggestions before manual DP setup."""
+        candidates = getattr(self, "_manual_candidates", [])
+        if not candidates:
+            return await self.async_step_manual_pick_entity_type()
+
+        options = _candidate_options(candidates)
+        default_selection = [
+            str(index)
+            for index, candidate in enumerate(candidates)
+            if candidate.confidence == MappingConfidence.HIGH
+        ]
+
+        if user_input is not None:
+            selected = set(
+                user_input.get("manual_mapping_selection", [])
+            )
+            self._manual_entities = [
+                copy.deepcopy(candidate.config)
+                for index, candidate in enumerate(candidates)
+                if str(index) in selected
+            ]
+            return await self.async_step_manual_pick_entity_type()
+
+        return self.async_show_form(
+            step_id="manual_mapping_review",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "manual_mapping_selection",
+                        default=default_selection,
+                    ): cv.multi_select(options)
+                }
+            ),
+        )
+
+    def _manual_available_dps(self) -> list[str]:
+        """Return primary DPS not already used by a manual/automatic entity."""
+        used = {
+            str(entity.get("id"))
+            for entity in getattr(self, "_manual_entities", [])
+            if entity.get("id") is not None
+        }
+        return [
+            value
+            for value in getattr(self, "_manual_dps_strings", [])
+            if str(value).split(" ", 1)[0] not in used
+        ]
+
+    async def async_step_manual_pick_entity_type(self, user_input=None):
+        """Allow advanced users to add entities even without a Catalog match."""
+        from .const import PLATFORMS
+
+        entities = getattr(self, "_manual_entities", [])
+        available = self._manual_available_dps()
+
+        if user_input is not None:
+            if user_input.get("manual_finish", False):
+                if entities:
+                    return self._finish_manual_initial_device()
+            else:
+                self._manual_platform = user_input["manual_platform"]
+                return await self.async_step_manual_configure_entity()
+
+        if not available and entities:
+            return self._finish_manual_initial_device()
+
+        schema = {
+            vol.Required(
+                "manual_platform",
+                default="switch",
+            ): vol.In(PLATFORMS)
+        }
+        if entities:
+            schema[vol.Required("manual_finish", default=True)] = bool
+
+        return self.async_show_form(
+            step_id="manual_pick_entity_type",
+            data_schema=vol.Schema(schema),
+        )
+
+    async def async_step_manual_configure_entity(self, user_input=None):
+        """Configure one entity using the normal LocalTuya platform schema."""
+        from homeassistant.const import CONF_PLATFORM
+        from .config_flow import (
+            platform_schema,
+            schema_defaults,
+            strip_dps_values,
+        )
+
+        available = self._manual_available_dps()
+        if not available:
+            return await self.async_step_manual_pick_entity_type()
+
+        platform = self._manual_platform
+        schema = await platform_schema(
+            self.hass,
+            platform,
+            available,
+        )
+
+        if user_input is not None:
+            entity = strip_dps_values(
+                user_input,
+                available,
+            )
+            entity[CONF_PLATFORM] = platform
+            self._manual_entities.append(entity)
+            return await self.async_step_manual_pick_entity_type()
+
+        return self.async_show_form(
+            step_id="manual_configure_entity",
+            data_schema=schema_defaults(
+                schema,
+                available,
+            ),
+        )
+
+    def _finish_manual_initial_device(self):
+        """Persist a fully manual first device in the local-only root entry."""
+        device_data = copy.deepcopy(self._manual_device_data)
+        device_data[CONF_ENTITIES] = copy.deepcopy(self._manual_entities)
+        data = _base_entry_data()
+        data[CONF_DEVICES][device_data[CONF_DEVICE_ID]] = device_data
+        return self.async_create_entry(title=DOMAIN, data=data)
 
 
 class QrOptionsFlowMixin:
