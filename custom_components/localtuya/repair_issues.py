@@ -7,13 +7,12 @@ import hashlib
 from homeassistant.helpers import issue_registry as ir
 
 from .const import DOMAIN
-from .host_recovery import HostRecoveryOutcome, HostRecoveryResult
 
 _HOST_RECOVERY_ISSUE_PREFIX = "host_recovery_"
 _RECOVERED_OUTCOMES = {
-    HostRecoveryOutcome.UNCHANGED,
-    HostRecoveryOutcome.UPDATED,
-    HostRecoveryOutcome.METADATA_UPDATED,
+    "unchanged",
+    "updated",
+    "metadata_updated",
 }
 
 
@@ -32,26 +31,33 @@ def async_clear_host_recovery_issue(hass, device_id: str) -> None:
     )
 
 
+def _outcome_value(outcome) -> str:
+    """Normalize an enum/string outcome without importing recovery internals."""
+    value = getattr(outcome, "value", outcome)
+    return str(value)
+
+
 def async_sync_host_recovery_issue(
     hass,
     *,
     device_id: str,
     device_name: str | None,
-    result: HostRecoveryResult,
+    outcome,
 ) -> None:
-    """Create or clear a privacy-safe repair issue from a recovery result.
+    """Create or clear a privacy-safe repair issue from a recovery outcome.
 
     Only the user-assigned/friendly device name is shown. The issue ID is a
     one-way digest and the issue stores no Tuya Device ID, local key, IP address,
     QR authorization material, exception message, or raw datapoint value.
     """
     issue_id = host_recovery_issue_id(device_id)
+    normalized = _outcome_value(outcome)
 
-    if result.outcome in _RECOVERED_OUTCOMES:
+    if normalized in _RECOVERED_OUTCOMES:
         ir.async_delete_issue(hass, DOMAIN, issue_id)
         return
 
-    if result.outcome is not HostRecoveryOutcome.VALIDATION_FAILED:
+    if normalized != "validation_failed":
         return
 
     name = str(device_name or "LocalTuya device").strip() or "LocalTuya device"
