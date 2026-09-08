@@ -84,6 +84,15 @@ class HostRecoveryRepairFlow(RepairsFlow):
         """Return privacy-safe translation placeholders."""
         return {"device_name": self._target.device_name}
 
+    def _current_device_data(self) -> dict[str, Any] | None:
+        """Return fresh config-entry data instead of the flow's initial snapshot."""
+        devices = self._target.entry.data.get(CONF_DEVICES, {})
+        if not isinstance(devices, dict):
+            return None
+
+        current = devices.get(self._target.device_id)
+        return current if isinstance(current, dict) else None
+
     def _manual_host_form(
         self,
         *,
@@ -116,8 +125,12 @@ class HostRecoveryRepairFlow(RepairsFlow):
         )
 
     async def _async_validate_current_host(self) -> str | None:
-        """Validate the already configured host and clear the issue on success."""
-        probe_data = copy.deepcopy(self._target.device_data)
+        """Validate the currently configured host and clear the issue on success."""
+        current = self._current_device_data()
+        if current is None:
+            return "device_not_found"
+
+        probe_data = copy.deepcopy(current)
         probe_data[CONF_DEVICE_ID] = self._target.device_id
 
         try:
@@ -145,11 +158,11 @@ class HostRecoveryRepairFlow(RepairsFlow):
         if not candidate_host:
             return "invalid_host"
 
-        configured_host = str(
-            self._target.entry.data.get(CONF_DEVICES, {})
-            .get(self._target.device_id, {})
-            .get(CONF_HOST, "")
-        ).strip()
+        current = self._current_device_data()
+        if current is None:
+            return "device_not_found"
+
+        configured_host = str(current.get(CONF_HOST, "")).strip()
 
         if candidate_host == configured_host:
             return await self._async_validate_current_host()
@@ -208,7 +221,10 @@ class HostRecoveryRepairFlow(RepairsFlow):
 
         error = await self._async_apply_candidate(
             str(host),
-            product_key=candidate.get("productKey"),
+            product_key=(
+                candidate.get("productKey")
+                or candidate.get(CONF_PRODUCT_KEY)
+            ),
         )
         if error is not None:
             return self._manual_host_form(
