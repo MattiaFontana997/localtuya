@@ -45,3 +45,6 @@ Users may explicitly disconnect the linked Tuya account. This deletes the accoun
 ## Backward compatibility
 
 Existing LocalTuya configuration entries and the legacy Tuya Developer Platform cloud client remain readable for compatibility. The new standard onboarding does not expose those credentials as a requirement.
+
+## Existing configuration import
+The third onboarding mode accepts a single device JSON object, a list of devices, a LocalTuya `devices` object, or common Tuya/TinyTuya aliases (`id`, `key`, `ip`, `version`). Imported credentials are validated over LAN before they are saved. Existing entity definitions are preserved; otherwise Catalog/mapper suggestions and the manual fallback are used.

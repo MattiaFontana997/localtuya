@@ -22,7 +22,10 @@
             "qr_device_not_on_lan": "在 Home Assistant 局域网中找不到所选设备。{msg}",
             "qr_device_not_local": "所选设备未提供可用的本地凭据。{msg}",
             "qr_subdevice_not_supported": "此二维码流程暂不支持网关子设备。{msg}",
-            "qr_mapping_required": "继续前请至少选择一个映射。"
+            "qr_mapping_required": "继续前请至少选择一个映射。",
+            "import_invalid": "粘贴的 JSON 不包含受支持的设备配置。",
+            "import_missing_credentials": "导入的设备缺少 Device ID 或 local_key。{msg}",
+            "import_device_not_on_lan": "在 Home Assistant 局域网中未找到导入的设备。{msg}"
         },
         "step": {
             "user": {
@@ -30,11 +33,13 @@
                 "description": "推荐使用二维码登录。Smart Life/Tuya 仅用于按需配网，设备日常控制仍完全在本地进行。",
                 "menu_options": {
                     "qr_login": "使用 Smart Life / Tuya 二维码登录",
-                    "manual_device": "手动配置设备"
+                    "manual_device": "手动配置设备",
+                    "import_existing": "导入现有配置 / local key"
                 },
                 "menu_option_descriptions": {
                     "qr_login": "推荐 — 不需要 Tuya Developer Platform、Client ID 或 Client Secret。",
-                    "manual_device": "高级 — 手动输入 Device ID、local_key 和局域网信息。"
+                    "manual_device": "高级 — 手动输入 Device ID、local_key 和局域网信息。",
+                    "import_existing": "复用现有 LocalTuya/Tuya JSON 配置，或包含 Device ID 和 local_key 的导出数据。"
                 }
             },
             "qr_login": {
@@ -189,6 +194,20 @@
                     "is_passive_entity": "被动实体 - 需要集成发送初始化值",
                     "default_value": "未初始化时的默认值（可选）",
                     "away_temperature_dp": "离家/假期温度 DP"
+                }
+            },
+            "import_existing": {
+                "title": "导入现有配置",
+                "description": "粘贴单个设备 JSON、设备列表，或包含 devices 对象的 LocalTuya 配置。LocalTuya 会在保存前验证凭据和局域网连接。",
+                "data": {
+                    "import_json": "配置 JSON"
+                }
+            },
+            "import_choose_device": {
+                "title": "选择导入的设备",
+                "description": "导入数据中包含多个设备。请选择现在要添加的设备。",
+                "data": {
+                    "import_device_id": "导入的设备"
                 }
             }
         }

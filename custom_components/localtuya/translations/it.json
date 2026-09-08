@@ -22,7 +22,10 @@
             "qr_device_not_on_lan": "Il dispositivo selezionato non è stato trovato nella LAN di Home Assistant. {msg}",
             "qr_device_not_local": "Il dispositivo selezionato non espone credenziali locali utilizzabili. {msg}",
             "qr_subdevice_not_supported": "I dispositivi figli di un hub non sono ancora supportati da questo flusso QR. {msg}",
-            "qr_mapping_required": "Seleziona almeno un mapping prima di continuare."
+            "qr_mapping_required": "Seleziona almeno un mapping prima di continuare.",
+            "import_invalid": "Il JSON incollato non contiene una configurazione dispositivo supportata.",
+            "import_missing_credentials": "Nel dispositivo importato manca Device ID o local_key. {msg}",
+            "import_device_not_on_lan": "Il dispositivo importato non è stato trovato nella LAN di Home Assistant. {msg}"
         },
         "step": {
             "user": {
@@ -30,11 +33,13 @@
                 "description": "Il login QR è consigliato. Collega Smart Life/Tuya solo per il provisioning su richiesta; il normale controllo dei dispositivi resta locale.",
                 "menu_options": {
                     "qr_login": "Login QR con Smart Life / Tuya",
-                    "manual_device": "Configurazione manuale dispositivo"
+                    "manual_device": "Configurazione manuale dispositivo",
+                    "import_existing": "Importa configurazione / local key esistente"
                 },
                 "menu_option_descriptions": {
                     "qr_login": "Consigliato — non servono Tuya Developer Platform, Client ID o Client Secret.",
-                    "manual_device": "Avanzata — inserisci manualmente Device ID, local_key e dati LAN."
+                    "manual_device": "Avanzata — inserisci manualmente Device ID, local_key e dati LAN.",
+                    "import_existing": "Riutilizza una configurazione JSON LocalTuya/Tuya esistente o un export con Device ID e local_key."
                 }
             },
             "qr_login": {
@@ -189,6 +194,20 @@
                     "hvac_swing_mode_set": "Set modalità oscillazione HVAC",
                     "max_temperature_const": "Temperatura massima",
                     "min_temperature_const": "Temperatura minima"
+                }
+            },
+            "import_existing": {
+                "title": "Importa configurazione esistente",
+                "description": "Incolla un dispositivo JSON, una lista di dispositivi o una configurazione LocalTuya contenente l'oggetto devices. LocalTuya verifica credenziali e connessione LAN prima di salvare.",
+                "data": {
+                    "import_json": "Configurazione JSON"
+                }
+            },
+            "import_choose_device": {
+                "title": "Scegli dispositivo importato",
+                "description": "I dati importati contengono più dispositivi. Scegli il dispositivo da aggiungere ora.",
+                "data": {
+                    "import_device_id": "Dispositivo importato"
                 }
             }
         }

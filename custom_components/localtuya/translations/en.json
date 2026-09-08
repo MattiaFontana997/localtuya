@@ -22,7 +22,10 @@
             "qr_device_not_on_lan": "The selected device was not found on the Home Assistant LAN. {msg}",
             "qr_device_not_local": "The selected device does not expose usable local credentials. {msg}",
             "qr_subdevice_not_supported": "Hub child devices are not supported by this QR flow yet. {msg}",
-            "qr_mapping_required": "Select at least one mapping before continuing."
+            "qr_mapping_required": "Select at least one mapping before continuing.",
+            "import_invalid": "The pasted JSON does not contain a supported device configuration.",
+            "import_missing_credentials": "The imported device is missing Device ID or local_key. {msg}",
+            "import_device_not_on_lan": "The imported device was not found on the Home Assistant LAN. {msg}"
         },
         "step": {
             "user": {
@@ -30,11 +33,13 @@
                 "description": "QR login is recommended. It links Smart Life/Tuya for on-demand provisioning only; normal device control remains local.",
                 "menu_options": {
                     "qr_login": "QR login with Smart Life / Tuya",
-                    "manual_device": "Manual device setup"
+                    "manual_device": "Manual device setup",
+                    "import_existing": "Import existing configuration / local key"
                 },
                 "menu_option_descriptions": {
                     "qr_login": "Recommended — no Tuya Developer Platform, Client ID or Client Secret required.",
-                    "manual_device": "Advanced — enter Device ID, local_key and LAN details manually."
+                    "manual_device": "Advanced — enter Device ID, local_key and LAN details manually.",
+                    "import_existing": "Reuse an existing LocalTuya/Tuya JSON configuration or Device ID/local_key export."
                 }
             },
             "qr_login": {
@@ -189,6 +194,20 @@
                     "is_passive_entity": "Passive entity - requires the integration to send an initialization value",
                     "default_value": "Default value when uninitialized (optional)",
                     "away_temperature_dp": "Away/Holiday temperature DP"
+                }
+            },
+            "import_existing": {
+                "title": "Import existing configuration",
+                "description": "Paste a device JSON object, a list of devices, or a LocalTuya configuration containing a devices object. LocalTuya validates the credentials and LAN connection before saving.",
+                "data": {
+                    "import_json": "Configuration JSON"
+                }
+            },
+            "import_choose_device": {
+                "title": "Choose imported device",
+                "description": "The imported data contains multiple devices. Choose the device to add now.",
+                "data": {
+                    "import_device_id": "Imported device"
                 }
             }
         }

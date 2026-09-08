@@ -26,6 +26,8 @@ from homeassistant.helpers.selector import (
     QrCodeSelector,
     QrCodeSelectorConfig,
     QrErrorCorrectionLevel,
+    TextSelector,
+    TextSelectorConfig,
 )
 from tuya_sharing import LoginControl, Manager, SharingTokenListener
 
@@ -52,6 +54,8 @@ CONF_QR_USER_CODE = "user_code"
 CONF_QR_TERMINAL_ID = "terminal_id"
 CONF_QR_ENDPOINT = "endpoint"
 CONF_QR_TOKEN_INFO = "token_info"
+CONF_IMPORT_JSON = "import_json"
+CONF_IMPORT_DEVICE_ID = "import_device_id"
 
 TUYA_CLIENT_ID = "HA_3y9q4ak7g4ephrvke"
 TUYA_SCHEMA = "haauthorize"
@@ -483,8 +487,157 @@ def _base_entry_data(auth: dict[str, Any] | None = None) -> dict[str, Any]:
     }
 
 
+def _normalize_import_device(raw: dict[str, Any], device_id_hint: str | None = None) -> dict[str, Any]:
+    """Normalize supported LocalTuya/Tuya/TinyTuya device export shapes."""
+    if not isinstance(raw, dict):
+        raise ValueError("device must be an object")
+    device_id = str(raw.get(CONF_DEVICE_ID) or raw.get("id") or raw.get("dev_id") or device_id_hint or "").strip()
+    local_key = str(raw.get(CONF_LOCAL_KEY) or raw.get("localKey") or raw.get("key") or "").strip()
+    if not device_id or not local_key:
+        raise QrProvisioningError("import_missing_credentials", "Device ID and local_key are required")
+    host = str(raw.get(CONF_HOST) or raw.get("ip") or "").strip()
+    name = str(raw.get(CONF_FRIENDLY_NAME) or raw.get(CONF_NAME) or raw.get("product_name") or device_id).strip()
+    protocol = str(raw.get(CONF_PROTOCOL_VERSION) or raw.get("version") or raw.get("protocol") or "auto").strip()
+    if protocol not in {"auto", "3.1", "3.2", "3.3", "3.4", "3.5"}:
+        protocol = "auto"
+    result: dict[str, Any] = {
+        CONF_FRIENDLY_NAME: name or device_id,
+        CONF_HOST: host,
+        CONF_DEVICE_ID: device_id,
+        CONF_LOCAL_KEY: local_key,
+        CONF_PROTOCOL_VERSION: protocol,
+        CONF_ENABLE_DEBUG: bool(raw.get(CONF_ENABLE_DEBUG, False)),
+    }
+    product_key = raw.get(CONF_PRODUCT_KEY) or raw.get("productKey") or raw.get("product_id") or raw.get("productId")
+    if product_key:
+        result[CONF_PRODUCT_KEY] = str(product_key)
+    product_id = raw.get("product_id") or raw.get("productId")
+    if product_id:
+        result["product_id"] = str(product_id)
+    for key in ("scan_interval", "manual_dps", "reset_dpids", "model"):
+        if key in raw and raw[key] is not None:
+            result[key] = copy.deepcopy(raw[key])
+    entities = raw.get(CONF_ENTITIES)
+    if isinstance(entities, list):
+        result[CONF_ENTITIES] = [copy.deepcopy(entity) for entity in entities if isinstance(entity, dict)]
+    return result
+
+
+def _parse_import_payload(value: str) -> dict[str, dict[str, Any]]:
+    """Parse one device, a device list, or a LocalTuya root devices object."""
+    try:
+        payload = json.loads(str(value or ""))
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid JSON") from exc
+    records: dict[str, dict[str, Any]] = {}
+    def add(raw: Any, hint: str | None = None) -> None:
+        if not isinstance(raw, dict):
+            return
+        device = _normalize_import_device(raw, hint)
+        records[device[CONF_DEVICE_ID]] = device
+    if isinstance(payload, dict) and isinstance(payload.get(CONF_DEVICES), dict):
+        for device_id, raw in payload[CONF_DEVICES].items():
+            add(raw, str(device_id))
+    elif isinstance(payload, list):
+        for raw in payload:
+            add(raw)
+    elif isinstance(payload, dict):
+        add(payload)
+    else:
+        raise ValueError("unsupported JSON root")
+    if not records:
+        raise ValueError("no devices found")
+    return records
+
+
 class QrConfigFlowMixin:
     """Config-flow steps for recommended QR onboarding and manual fallback."""
+
+    def _import_schema(self):
+        source = getattr(self, "_import_source", "")
+        return vol.Schema({vol.Required(CONF_IMPORT_JSON, default=source): TextSelector(TextSelectorConfig(multiline=True))})
+
+    async def async_step_import_existing(self, user_input=None):
+        """Import existing Device ID/local_key configuration without Tuya login."""
+        errors = {}
+        placeholders = {}
+        if user_input is not None:
+            self._import_source = str(user_input.get(CONF_IMPORT_JSON, ""))
+            try:
+                self._import_devices = _parse_import_payload(self._import_source)
+            except QrProvisioningError as exc:
+                errors["base"] = exc.reason
+                placeholders = {"msg": exc.detail}
+            except ValueError:
+                errors["base"] = "import_invalid"
+            else:
+                if len(self._import_devices) == 1:
+                    return await self._async_start_import_device(next(iter(self._import_devices.values())))
+                return await self.async_step_import_choose_device()
+        return self.async_show_form(step_id="import_existing", data_schema=self._import_schema(), errors=errors, description_placeholders=placeholders)
+
+    async def async_step_import_choose_device(self, user_input=None):
+        devices = getattr(self, "_import_devices", {})
+        if not devices:
+            return await self.async_step_import_existing()
+        labels = {
+            device_id: f"{device.get(CONF_FRIENDLY_NAME) or device_id} ({device.get(CONF_HOST) or 'LAN discovery'})"
+            for device_id, device in devices.items()
+        }
+        if user_input is not None:
+            return await self._async_start_import_device(devices[user_input[CONF_IMPORT_DEVICE_ID]])
+        return self.async_show_form(
+            step_id="import_choose_device",
+            data_schema=vol.Schema({vol.Required(CONF_IMPORT_DEVICE_ID): vol.In(labels)}),
+        )
+
+    async def _async_start_import_device(self, imported: dict[str, Any]):
+        from .config_flow import CannotConnect, EmptyDpsList, InvalidAuth, async_get_entity_candidates, validate_input
+        device_data = copy.deepcopy(imported)
+        device_id = device_data[CONF_DEVICE_ID]
+        try:
+            discovery = {}
+            if not device_data.get(CONF_HOST):
+                discovery = await _async_discovery_snapshot(self.hass)
+                discovered = _find_discovered_device(discovery, device_id)
+                if discovered is None or not discovered.get("ip"):
+                    raise QrProvisioningError("import_device_not_on_lan", "The imported device was not found on the Home Assistant LAN")
+                device_data[CONF_HOST] = discovered["ip"]
+            dps_strings, resolved = await validate_input(self.hass, device_data)
+            device_data[CONF_PROTOCOL_VERSION] = resolved
+            device_data[CONF_DPS_STRINGS] = list(dps_strings)
+            existing_entities = device_data.get(CONF_ENTITIES)
+            self._manual_device_data = device_data
+            self._manual_dps_strings = list(dps_strings)
+            self._manual_entities = copy.deepcopy(existing_entities) if isinstance(existing_entities, list) else []
+            if self._manual_entities:
+                return self._finish_manual_initial_device()
+            if not discovery:
+                try:
+                    discovery = await _async_discovery_snapshot(self.hass)
+                except QrProvisioningError:
+                    discovery = {}
+            self._manual_candidates = list(await async_get_entity_candidates(self.hass, device_data, discovery, dps_strings))
+            if self._manual_candidates:
+                return await self.async_step_manual_mapping_review()
+            return await self.async_step_manual_pick_entity_type()
+        except CannotConnect:
+            error, placeholders = "cannot_connect", {}
+        except InvalidAuth:
+            error, placeholders = "invalid_auth", {}
+        except EmptyDpsList:
+            error, placeholders = "empty_dps", {}
+        except QrProvisioningError as exc:
+            error, placeholders = exc.reason, {"msg": exc.detail}
+        except Exception as exc:
+            _LOGGER.exception("Unexpected imported-device validation failure: %s", exc)
+            error, placeholders = "unknown", {}
+        return self.async_show_form(
+            step_id="import_existing",
+            data_schema=self._import_schema(),
+            errors={"base": error},
+            description_placeholders=placeholders,
+        )
 
     async def async_step_qr_login(self, user_input=None):
         """Collect the Smart Life/Tuya User Code and generate a QR token."""

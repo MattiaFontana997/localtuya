@@ -991,6 +991,7 @@ class LocaltuyaConfigFlow(QrConfigFlowMixin, config_entries.ConfigFlow, domain=D
             menu_options=[
                 "qr_login",
                 "manual_device",
+                "import_existing",
             ],
         )
 

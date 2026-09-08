@@ -22,7 +22,10 @@
             "qr_device_not_on_lan": "Das ausgewählte Gerät wurde im Home-Assistant-LAN nicht gefunden. {msg}",
             "qr_device_not_local": "Das ausgewählte Gerät stellt keine nutzbaren lokalen Zugangsdaten bereit. {msg}",
             "qr_subdevice_not_supported": "Hub-Untergeräte werden von diesem QR-Ablauf noch nicht unterstützt. {msg}",
-            "qr_mapping_required": "Wähle mindestens eine Zuordnung aus, bevor du fortfährst."
+            "qr_mapping_required": "Wähle mindestens eine Zuordnung aus, bevor du fortfährst.",
+            "import_invalid": "Das eingefügte JSON enthält keine unterstützte Gerätekonfiguration.",
+            "import_missing_credentials": "Dem importierten Gerät fehlt Device ID oder local_key. {msg}",
+            "import_device_not_on_lan": "Das importierte Gerät wurde im Home-Assistant-LAN nicht gefunden. {msg}"
         },
         "step": {
             "user": {
@@ -30,11 +33,13 @@
                 "description": "QR-Anmeldung wird empfohlen. Smart Life/Tuya wird nur für die bedarfsgesteuerte Bereitstellung verknüpft; die normale Gerätesteuerung bleibt lokal.",
                 "menu_options": {
                     "qr_login": "QR-Anmeldung mit Smart Life / Tuya",
-                    "manual_device": "Manuelle Geräteeinrichtung"
+                    "manual_device": "Manuelle Geräteeinrichtung",
+                    "import_existing": "Vorhandene Konfiguration / Local Key importieren"
                 },
                 "menu_option_descriptions": {
                     "qr_login": "Empfohlen — keine Tuya Developer Platform, Client-ID oder Client-Secret erforderlich.",
-                    "manual_device": "Erweitert — Geräte-ID, local_key und LAN-Daten manuell eingeben."
+                    "manual_device": "Erweitert — Geräte-ID, local_key und LAN-Daten manuell eingeben.",
+                    "import_existing": "Eine vorhandene LocalTuya/Tuya-JSON-Konfiguration oder einen Export mit Device ID und local_key wiederverwenden."
                 }
             },
             "qr_login": {
@@ -189,6 +194,20 @@
                     "is_passive_entity": "Passive Entität - die Integration muss einen Initialisierungswert senden",
                     "default_value": "Standardwert bei nicht initialisiertem Zustand (optional)",
                     "away_temperature_dp": "Temperatur-DP für Abwesenheit/Urlaub"
+                }
+            },
+            "import_existing": {
+                "title": "Vorhandene Konfiguration importieren",
+                "description": "Füge ein Geräte-JSON, eine Geräteliste oder eine LocalTuya-Konfiguration mit einem devices-Objekt ein. LocalTuya prüft Zugangsdaten und LAN-Verbindung vor dem Speichern.",
+                "data": {
+                    "import_json": "Konfigurations-JSON"
+                }
+            },
+            "import_choose_device": {
+                "title": "Importiertes Gerät auswählen",
+                "description": "Die importierten Daten enthalten mehrere Geräte. Wähle das Gerät aus, das jetzt hinzugefügt werden soll.",
+                "data": {
+                    "import_device_id": "Importiertes Gerät"
                 }
             }
         }

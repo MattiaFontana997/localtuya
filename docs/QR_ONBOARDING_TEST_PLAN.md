@@ -14,3 +14,9 @@ Before merge into `develop`, validate these scenarios on Home Assistant:
 10. Disconnect account and confirm configured LAN devices remain present and operational.
 11. Manual Device ID + local_key setup remains available.
 12. HACS validation, Hassfest, translation coverage and the complete LocalTuya test suite remain green.
+
+## Existing configuration import
+- Import a LocalTuya root `devices` object and confirm Device ID/local_key normalization.
+- Import an `id/key/ip/version` record and confirm alias normalization.
+- Import without an IP and confirm LAN discovery supplies the host before validation.
+- Confirm invalid JSON or missing Device ID/local_key is rejected without logging secrets.
