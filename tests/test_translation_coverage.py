@@ -114,7 +114,11 @@ class TranslationCoverageTests(
 
         self.assertIsInstance(issue, dict)
         self.assertIn("{device_name}", issue["title"])
-        self.assertIn("{device_name}", issue["description"])
+        self.assertNotIn(
+            "description",
+            issue,
+            "Fixable HA issues use fix_flow instead of a top-level description",
+        )
 
         fix_flow = issue.get("fix_flow", {})
         errors = fix_flow.get("error", {})
