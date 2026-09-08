@@ -13,8 +13,11 @@ Make Smart Life / Tuya QR login the recommended onboarding path without requirin
 3. Enter the Smart Life / Tuya **User Code**.
 4. Scan the generated QR code in the mobile app and approve access.
 5. Choose a locally controllable device.
-6. LocalTuya combines temporary cloud metadata with LAN discovery, auto-detects the Tuya LAN protocol, and resolves mappings through the LocalTuya catalog/mapper.
-7. LocalTuya stores the local device configuration and a renewable account link for future provisioning.
+6. LocalTuya first tries Tuya LAN discovery to resolve the device address. If broadcast/multicast discovery cannot determine a usable address, LocalTuya asks for the current IP address or hostname instead of failing the onboarding.
+7. Whether the address came from discovery or manual entry, LocalTuya authenticates directly to that LAN device with the Device ID/local key, auto-detects the Tuya protocol, reads datapoints, and only then resolves mappings through the LocalTuya catalog/mapper.
+8. LocalTuya stores the validated local device configuration and a renewable account link for future provisioning.
+
+The manual address fallback is intentionally not a bypass. A typed IP or hostname is accepted only when the selected Tuya identity and local key can actually communicate with that device over LAN and protocol/datapoint validation succeeds.
 
 ### Existing LocalTuya installation
 
@@ -27,7 +30,7 @@ If the existing entry previously used the Tuya Developer Platform, choosing the 
 1. Open LocalTuya options and choose **Add a new device**.
 2. Choose **From Smart Life / Tuya**.
 3. LocalTuya refreshes the linked Tuya account once, saves any refreshed token, and shows only new locally controllable devices.
-4. Choose the device. LocalTuya performs LAN discovery and mapping as above.
+4. Choose the device. LocalTuya tries LAN discovery first and offers the same validated IP/hostname fallback when discovery is unavailable or blocked.
 
 No new QR scan is required while the saved Tuya authorization remains valid.
 
@@ -39,14 +42,28 @@ Persisted account-link data is limited to the User Code, terminal ID, endpoint, 
 
 Users may explicitly disconnect the linked Tuya account. This deletes the account authorization while keeping already configured device IDs, local keys, IP/protocol settings and mappings intact.
 
+## Address resolution and validation
+
+LocalTuya treats address discovery and device validation as two separate concerns:
+
+- Tuya UDP discovery is the preferred source for the current LAN address because it also confirms the advertised device identity.
+- Failure of UDP broadcast/multicast discovery is recoverable. Networks using VLANs, containers, restrictive access points or unusual multicast handling can still permit direct LAN communication.
+- When discovery cannot provide the address, the user may enter the current IP address or hostname from a router/DHCP list.
+- A manually entered address is never trusted merely because it is syntactically valid or accepts TCP connections. The normal LocalTuya Device ID/local-key authentication, protocol probing and datapoint retrieval must succeed before configuration can continue.
+- Cloud-reported addresses are not used as an authority for local control.
+
 ## Safety rules
 
 - A QR device is not saved unless a usable `local_key` is available.
-- Cloud-reported IP addresses are not trusted for local control; LocalTuya must find the selected device on the Home Assistant LAN.
-- LAN protocol detection must succeed before the device is stored.
+- Automatic discovery is preferred, but its failure alone does not make a device ineligible for local control.
+- Every discovered or manually supplied address must pass direct LAN authentication, protocol detection and datapoint retrieval before the device is stored.
+- A wrong/unreachable address is rejected without saving partial device configuration.
+- An authentication failure is kept distinct from an address/connectivity failure so stale IPs and stale local keys are not conflated.
+- Cloud metadata is enrichment only and is fetched after local validation for the selected address.
 - Product ID and temporary DP metadata may enrich automatic mapping, but observed LAN DPs remain authoritative.
 - Hub child devices are rejected by the initial QR flow until LocalTuya has an explicit, tested child-device transport model.
 - Cloud errors do not affect already configured LAN devices.
+- QR tokens, refresh tokens and local keys must never be included in diagnostic or error logging.
 
 ## Backward compatibility
 
