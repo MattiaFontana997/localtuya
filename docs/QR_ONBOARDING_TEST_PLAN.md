@@ -2,7 +2,7 @@
 
 Before merge into `develop`, validate these scenarios on Home Assistant:
 
-1. Fresh LocalTuya install shows QR login as the recommended path and manual setup as the advanced fallback.
+1. Fresh LocalTuya install shows three onboarding modes: QR login as the recommended path, manual setup as the advanced fallback, and import of an existing configuration/local_key.
 2. Valid Smart Life User Code generates a QR selector.
 3. Scanning/approving the QR returns an account device list without Tuya Developer Platform credentials.
 4. Only devices with usable local credentials are offered.
@@ -13,7 +13,8 @@ Before merge into `develop`, validate these scenarios on Home Assistant:
 9. Re-link account by QR after invalidating the saved authorization.
 10. Disconnect account and confirm configured LAN devices remain present and operational.
 11. Manual Device ID + local_key setup remains available.
-12. HACS validation, Hassfest, translation coverage and the complete LocalTuya test suite remain green.
+12. Import of an existing configuration/local_key validates credentials and LAN connectivity before saving.
+13. HACS validation, Hassfest, translation coverage and the complete LocalTuya test suite remain green.
 
 ## Existing configuration import
 - Import a LocalTuya root `devices` object and confirm Device ID/local_key normalization.
