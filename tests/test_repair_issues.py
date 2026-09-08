@@ -50,7 +50,7 @@ class RepairIssueTests(unittest.TestCase):
 
         self.assertIs(args[0], hass)
         self.assertNotIn(device_id, args[2])
-        self.assertFalse(kwargs["is_fixable"])
+        self.assertTrue(kwargs["is_fixable"])
         self.assertTrue(kwargs["is_persistent"])
         self.assertEqual(kwargs["translation_key"], "host_recovery_failed")
         self.assertEqual(
