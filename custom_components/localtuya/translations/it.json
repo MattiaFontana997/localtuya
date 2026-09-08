@@ -535,6 +535,30 @@
                     "description": "Nuovo valore da impostare."
                 }
             }
+        },
+        "refresh_device_catalog": {
+            "name": "Aggiorna catalogo dispositivi",
+            "description": "Aggiorna il catalogo remoto dei dispositivi della community LocalTuya."
+        },
+        "export_device_mapping": {
+            "name": "Esporta mappatura dispositivo",
+            "description": "Genera una mappatura della community priva di dati sensibili per un dispositivo LocalTuya configurato.",
+            "fields": {
+                "device_id": {
+                    "name": "ID dispositivo",
+                    "description": "ID Tuya del dispositivo da esportare. L'ID non viene mai incluso nella mappatura esportata."
+                }
+            }
+        },
+        "check_device_health": {
+            "name": "Controlla stato dispositivo",
+            "description": "Esegue un controllo limitato e privo di dati sensibili su LAN, protocollo e datapoint di un dispositivo LocalTuya configurato.",
+            "fields": {
+                "device_id": {
+                    "name": "ID dispositivo",
+                    "description": "ID Tuya del dispositivo da controllare. Il report restituito esclude ID dispositivo, local key, indirizzo host, valori grezzi dei datapoint e messaggi delle eccezioni."
+                }
+            }
         }
     },
     "title": "LocalTuya",

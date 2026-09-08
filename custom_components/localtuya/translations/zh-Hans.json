@@ -535,6 +535,30 @@
                     "description": "要设置的新值。"
                 }
             }
+        },
+        "refresh_device_catalog": {
+            "name": "刷新设备目录",
+            "description": "刷新远程 LocalTuya 社区设备目录。"
+        },
+        "export_device_mapping": {
+            "name": "导出设备映射",
+            "description": "为已配置的 LocalTuya 设备生成保护隐私的社区映射。",
+            "fields": {
+                "device_id": {
+                    "name": "设备 ID",
+                    "description": "要导出的 Tuya 设备 ID。设备 ID 本身绝不会包含在导出的映射中。"
+                }
+            }
+        },
+        "check_device_health": {
+            "name": "检查设备健康状态",
+            "description": "对已配置的 LocalTuya 设备执行有时间限制且保护隐私的 LAN、协议和数据点健康检查。",
+            "fields": {
+                "device_id": {
+                    "name": "设备 ID",
+                    "description": "要检查的 Tuya 设备 ID。返回的报告不会包含设备 ID、local key、主机地址、原始数据点值或异常消息。"
+                }
+            }
         }
     },
     "title": "LocalTuya",

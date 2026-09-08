@@ -535,6 +535,30 @@
                     "description": "New value to set"
                 }
             }
+        },
+        "refresh_device_catalog": {
+            "name": "Refresh device catalog",
+            "description": "Refresh the remote LocalTuya community device catalog."
+        },
+        "export_device_mapping": {
+            "name": "Export device mapping",
+            "description": "Generate a privacy-safe community mapping for a configured LocalTuya device.",
+            "fields": {
+                "device_id": {
+                    "name": "Device ID",
+                    "description": "Tuya Device ID to export. The ID itself is never included in the exported mapping."
+                }
+            }
+        },
+        "check_device_health": {
+            "name": "Check device health",
+            "description": "Run a bounded privacy-safe LAN, protocol, and datapoint health check for a configured LocalTuya device.",
+            "fields": {
+                "device_id": {
+                    "name": "Device ID",
+                    "description": "Tuya Device ID to check. The returned report excludes the Device ID, local key, host address, raw datapoint values, and exception messages."
+                }
+            }
         }
     },
     "title": "LocalTuya",

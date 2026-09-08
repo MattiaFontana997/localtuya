@@ -535,6 +535,30 @@
                     "description": "Neuer einzustellender Wert."
                 }
             }
+        },
+        "refresh_device_catalog": {
+            "name": "Gerätekatalog aktualisieren",
+            "description": "Aktualisiert den entfernten LocalTuya-Gerätekatalog der Community."
+        },
+        "export_device_mapping": {
+            "name": "Gerätezuordnung exportieren",
+            "description": "Erstellt eine datenschutzfreundliche Community-Zuordnung für ein konfiguriertes LocalTuya-Gerät.",
+            "fields": {
+                "device_id": {
+                    "name": "Geräte-ID",
+                    "description": "Tuya-Geräte-ID für den Export. Die ID selbst wird niemals in die exportierte Zuordnung aufgenommen."
+                }
+            }
+        },
+        "check_device_health": {
+            "name": "Gerätezustand prüfen",
+            "description": "Führt eine begrenzte, datenschutzfreundliche Prüfung von LAN, Protokoll und Datenpunkten für ein konfiguriertes LocalTuya-Gerät durch.",
+            "fields": {
+                "device_id": {
+                    "name": "Geräte-ID",
+                    "description": "Tuya-Geräte-ID für die Prüfung. Der zurückgegebene Bericht enthält weder Geräte-ID noch Local Key, Hostadresse, Rohwerte der Datenpunkte oder Ausnahmemeldungen."
+                }
+            }
         }
     },
     "title": "LocalTuya",
