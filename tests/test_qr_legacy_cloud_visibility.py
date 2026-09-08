@@ -6,7 +6,11 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
+from homeassistant.const import (
+    CONF_CLIENT_ID,
+    CONF_CLIENT_SECRET,
+    CONF_DEVICES,
+)
 import voluptuous as vol
 
 from custom_components.localtuya.config_flow import (
@@ -16,7 +20,6 @@ from custom_components.localtuya.config_flow import (
 from custom_components.localtuya.const import (
     CONF_ACTION,
     CONF_ADD_DEVICE,
-    CONF_DEVICES,
     CONF_NO_CLOUD,
     CONF_SETUP_CLOUD,
     CONF_USER_ID,
