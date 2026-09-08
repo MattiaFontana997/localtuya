@@ -2,7 +2,11 @@
     "config": {
         "abort": {
             "already_configured": "设备已经配置。",
-            "device_updated": "设备配置已更新！"
+            "device_updated": "设备配置已更新！",
+            "qr_no_local_devices": "Tuya 未返回具有可用 local_key 的本地可控设备。",
+            "qr_cloud_unavailable": "无法访问用于配网的临时 Tuya 会话。请稍后重试。",
+            "qr_reauth_required": "Tuya 账户授权已过期。请通过二维码重新连接账户。",
+            "qr_mapping_not_found": "未找到安全的自动映射。请对此设备使用手动配置。"
         },
         "error": {
             "authentication_failed": "身份验证失败。\n{msg}",
@@ -13,19 +17,197 @@
             "entity_already_configured": "具有此 ID 的实体已经配置。",
             "address_in_use": "用于设备发现的地址已被占用。请确保没有其他应用正在使用该地址（TCP 端口 6668）。",
             "discovery_failed": "设备发现过程中发生错误。请查看日志了解详细信息。",
-            "empty_dps": "已成功连接到设备，但未发现任何数据点。请重试。如果问题仍然存在，请创建新的 Issue 并附上调试日志。"
+            "empty_dps": "已成功连接到设备，但未发现任何数据点。请重试。如果问题仍然存在，请创建新的 Issue 并附上调试日志。",
+            "qr_login_error": "无法完成二维码登录。{msg}",
+            "qr_device_not_on_lan": "在 Home Assistant 局域网中找不到所选设备。{msg}",
+            "qr_device_not_local": "所选设备未提供可用的本地凭据。{msg}",
+            "qr_subdevice_not_supported": "此二维码流程暂不支持网关子设备。{msg}",
+            "qr_mapping_required": "继续前请至少选择一个映射。",
+            "import_invalid": "粘贴的 JSON 不包含受支持的设备配置。",
+            "import_missing_credentials": "导入的设备缺少 Device ID 或 local_key。{msg}",
+            "import_device_not_on_lan": "在 Home Assistant 局域网中未找到导入的设备。{msg}"
         },
         "step": {
             "user": {
-                "title": "云 API 账户配置",
-                "description": "请输入 Tuya 云 API 的账户凭据。",
+                "title": "设置 LocalTuya",
+                "description": "推荐使用二维码登录。Smart Life/Tuya 仅用于按需配网，设备日常控制仍完全在本地进行。",
+                "menu_options": {
+                    "qr_login": "使用 Smart Life / Tuya 二维码登录",
+                    "manual_device": "手动配置设备",
+                    "import_existing": "导入现有配置 / local key"
+                },
+                "menu_option_descriptions": {
+                    "qr_login": "推荐 — 不需要 Tuya Developer Platform、Client ID 或 Client Secret。",
+                    "manual_device": "高级 — 手动输入 Device ID、local_key 和局域网信息。",
+                    "import_existing": "复用现有 LocalTuya/Tuya JSON 配置，或包含 Device ID 和 local_key 的导出数据。"
+                }
+            },
+            "qr_login": {
+                "title": "连接 Smart Life / Tuya",
+                "description": "输入 Smart Life 或 Tuya 应用账户设置中显示的 User Code。",
                 "data": {
-                    "region": "API 服务器区域",
-                    "client_id": "Client ID",
-                    "client_secret": "客户端密钥",
-                    "user_id": "User ID",
-                    "user_name": "用户名",
-                    "no_cloud": "不配置云 API 账户"
+                    "user_code": "用户代码"
+                }
+            },
+            "qr_scan": {
+                "title": "使用 Smart Life / Tuya 扫描",
+                "description": "在 Smart Life 或 Tuya 应用中扫描二维码并批准授权，然后继续。",
+                "data": {
+                    "QR": "二维码"
+                }
+            },
+            "qr_choose_device": {
+                "title": "选择设备",
+                "description": "选择要在本地配置的设备。仅显示具有可用 local_key 的设备。",
+                "data": {
+                    "device_id": "Tuya 设备"
+                }
+            },
+            "qr_mapping_review": {
+                "title": "检查建议映射",
+                "description": "LocalTuya 找到了需要确认的映射。高置信度映射已自动包含。",
+                "data": {
+                    "qr_mapping_selection": "其他映射"
+                }
+            },
+            "manual_device": {
+                "title": "手动配置设备",
+                "description": "无需连接 Tuya 账户的高级配置。",
+                "data": {
+                    "friendly_name": "名称",
+                    "host": "IP 地址 / 主机",
+                    "device_id": "设备 ID",
+                    "local_key": "本地密钥",
+                    "protocol_version": "协议版本",
+                    "enable_debug": "启用此设备的调试",
+                    "scan_interval": "扫描间隔",
+                    "entities": "已配置实体",
+                    "add_entities": "在“编辑设备”模式下添加更多实体",
+                    "manual_dps_strings": "手动添加 DPS，以逗号分隔；仅在自动检测无法工作时使用（可选）",
+                    "reset_dpids": "RESET 命令中发送的 DPID，以逗号分隔（可选，设备开机后不响应状态请求时使用）",
+                    "manual_dps": "手动添加 DPS，以逗号分隔（可选，仅在自动检测失败时使用）",
+                    "enable_add_entities": "添加更多实体"
+                }
+            },
+            "manual_mapping_review": {
+                "title": "检查建议映射",
+                "description": "LocalTuya 找到了需要确认的映射。高置信度映射已自动包含。",
+                "data": {
+                    "manual_mapping_selection": "其他映射"
+                }
+            },
+            "manual_pick_entity_type": {
+                "title": "选择实体类型",
+                "description": "选择要添加的实体类型。",
+                "data": {
+                    "manual_platform": "平台",
+                    "manual_finish": "不添加更多实体"
+                }
+            },
+            "manual_configure_entity": {
+                "title": "配置实体",
+                "description": "请填写类型为 `{platform}` 的 {entity} 的详细信息。除 `ID` 外，所有设置稍后都可以在选项页面中修改。",
+                "data": {
+                    "id": "ID",
+                    "friendly_name": "名称",
+                    "current": "当前值",
+                    "current_consumption": "当前功耗",
+                    "voltage": "电压",
+                    "commands_set": "打开_关闭_停止命令集合",
+                    "positioning_mode": "定位模式",
+                    "current_position_dp": "当前位置（仅用于*位置*模式）",
+                    "set_position_dp": "设置位置（仅用于*位置*模式）",
+                    "position_inverted": "反转 0–100 位置（仅用于*位置*模式）",
+                    "span_time": "完全打开所需时间（秒，仅用于*定时*模式）",
+                    "unit_of_measurement": "计量单位",
+                    "device_class": "设备类别",
+                    "scaling": "缩放系数",
+                    "state_on": "开启值",
+                    "state_off": "关闭值",
+                    "powergo_dp": "功率 DP（通常为 25 或 2）",
+                    "idle_status_value": "空闲状态（以逗号分隔）",
+                    "returning_status_value": "返回状态",
+                    "docked_status_value": "已回充状态（以逗号分隔）",
+                    "fault_dp": "故障 DP（通常为 11）",
+                    "battery_dp": "电池状态 DP（通常为 14）",
+                    "mode_dp": "模式 DP（通常为 27）",
+                    "modes": "模式列表",
+                    "return_mode": "返回基站模式",
+                    "fan_speed_dp": "风扇速度 DP（通常为 30）",
+                    "fan_speeds": "风扇速度列表（以逗号分隔）",
+                    "clean_time_dp": "清洁时间 DP（通常为 33）",
+                    "clean_area_dp": "清洁面积 DP（通常为 32）",
+                    "clean_record_dp": "清洁记录 DP（通常为 34）",
+                    "locate_dp": "定位 DP（通常为 31）",
+                    "paused_state": "暂停状态（pause、paused 等）",
+                    "stop_status": "停止状态",
+                    "brightness": "亮度（仅用于白光）",
+                    "brightness_lower": "亮度下限",
+                    "brightness_upper": "亮度上限",
+                    "color_temp": "色温",
+                    "color_temp_reverse": "反转色温",
+                    "color": "颜色",
+                    "color_mode": "颜色模式",
+                    "color_temp_min_kelvin": "最低色温（K）",
+                    "color_temp_max_kelvin": "最高色温（K）",
+                    "music_mode": "启用音乐模式",
+                    "scene": "场景",
+                    "select_options": "有效选项，使用分号（;）分隔",
+                    "select_options_friendly": "用户友好选项，使用分号（;）分隔",
+                    "fan_speed_control": "风扇速度控制 DP",
+                    "fan_oscillating_control": "风扇摆动控制 DP",
+                    "fan_speed_min": "最低风扇速度",
+                    "fan_speed_max": "最高风扇速度",
+                    "fan_speed_ordered_list": "风扇速度模式列表（覆盖最低/最高速度）",
+                    "fan_direction": "风扇方向 DP",
+                    "fan_direction_forward": "正向 DP 字符串",
+                    "fan_direction_reverse": "反向 DP 字符串",
+                    "fan_dps_type": "DP 值类型",
+                    "current_temperature_dp": "当前温度",
+                    "target_temperature_dp": "目标温度",
+                    "temperature_step": "温度步进（可选）",
+                    "max_temperature_dp": "最高温度 DP（可选）",
+                    "min_temperature_dp": "最低温度 DP（可选）",
+                    "max_temperature_const": "最高温度常量（可选）",
+                    "min_temperature_const": "最低温度常量（可选）",
+                    "precision": "精度（可选，用于 DP 值）",
+                    "target_precision": "目标精度（可选，用于 DP 值）",
+                    "temperature_unit": "温度单位（可选）",
+                    "hvac_mode_dp": "HVAC 模式 DP（可选）",
+                    "hvac_mode_set": "HVAC 模式值集合（可选）",
+                    "hvac_fan_mode_dp": "HVAC 风扇模式 DP（可选）",
+                    "hvac_fan_mode_set": "HVAC 风扇模式值集合（可选）",
+                    "hvac_swing_mode_dp": "HVAC 摆动模式 DP（可选）",
+                    "hvac_swing_mode_set": "HVAC 摆动模式值集合（可选）",
+                    "hvac_action_dp": "当前 HVAC 动作 DP（可选）",
+                    "hvac_action_set": "当前 HVAC 动作值集合（可选）",
+                    "preset_dp": "预设 DP（可选）",
+                    "preset_set": "预设值集合（可选）",
+                    "eco_dp": "节能模式 DP（可选）",
+                    "eco_value": "节能模式值（可选）",
+                    "heuristic_action": "启用启发式动作判断（可选）",
+                    "dps_default_value": "未初始化时的默认值（可选）",
+                    "restore_on_reconnect": "连接中断后恢复 Home Assistant 中最后设置的值",
+                    "min_value": "最小值",
+                    "max_value": "最大值",
+                    "step_size": "最小步进值",
+                    "is_passive_entity": "被动实体 - 需要集成发送初始化值",
+                    "default_value": "未初始化时的默认值（可选）",
+                    "away_temperature_dp": "离家/假期温度 DP"
+                }
+            },
+            "import_existing": {
+                "title": "导入现有配置",
+                "description": "粘贴单个设备 JSON、设备列表，或包含 devices 对象的 LocalTuya 配置。LocalTuya 会在保存前验证凭据和局域网连接。",
+                "data": {
+                    "import_json": "配置 JSON"
+                }
+            },
+            "import_choose_device": {
+                "title": "选择导入的设备",
+                "description": "导入数据中包含多个设备。请选择现在要添加的设备。",
+                "data": {
+                    "import_device_id": "导入的设备"
                 }
             }
         }
@@ -34,7 +216,12 @@
         "abort": {
             "already_configured": "设备已经配置。",
             "device_success": "设备 {dev_name} 已成功完成操作：{action}。",
-            "no_entities": "不能删除设备的全部实体。\n如果要删除设备，请在“设备”菜单中打开该设备，点击“设备信息”区域中的三个点，然后选择“删除”。"
+            "no_entities": "不能删除设备的全部实体。\n如果要删除设备，请在“设备”菜单中打开该设备，点击“设备信息”区域中的三个点，然后选择“删除”。",
+            "qr_not_linked": "此 LocalTuya 配置未连接 Smart Life/Tuya 账户。",
+            "qr_no_new_local_devices": "已连接账户中没有新的本地可控设备。",
+            "qr_cloud_unavailable": "无法访问用于配网的临时 Tuya 会话。请稍后重试。",
+            "qr_reauth_required": "Tuya 账户授权已过期。请通过二维码重新连接账户。",
+            "qr_mapping_not_found": "未找到安全的自动映射。请对此设备使用手动配置。"
         },
         "error": {
             "authentication_failed": "身份验证失败。\n{msg}",
@@ -47,7 +234,12 @@
             "discovery_failed": "设备发现过程中发生错误。请查看日志了解详细信息。",
             "empty_dps": "已成功连接到设备，但未发现任何数据点。请重试。如果问题仍然存在，请创建新的 Issue 并附上调试日志。",
             "contribution_not_available": "此设备没有足够的安全映射数据来准备社区贡献。",
-            "contribution_confirmation_required": "继续之前，请确认你已检查贡献数据。"
+            "contribution_confirmation_required": "继续之前，请确认你已检查贡献数据。",
+            "qr_device_not_on_lan": "在 Home Assistant 局域网中找不到所选设备。{msg}",
+            "qr_device_not_local": "所选设备未提供可用的本地凭据。{msg}",
+            "qr_subdevice_not_supported": "此二维码流程暂不支持网关子设备。{msg}",
+            "qr_mapping_required": "继续前请至少选择一个映射。",
+            "qr_login_error": "无法完成二维码登录。{msg}"
         },
         "step": {
             "yaml_import": {
@@ -267,6 +459,57 @@
                 "menu_option_descriptions": {
                     "submit_to_community_catalog": "GitHub ↗ 打开已预填的目录提交页面。"
                 }
+            },
+            "add_device_method": {
+                "title": "添加设备",
+                "description": "选择添加设备的方式。",
+                "menu_options": {
+                    "qr_add_device": "从 Smart Life / Tuya 添加",
+                    "manual_add_device": "手动 / 局域网配置",
+                    "qr_relink": "重新连接 Smart Life / Tuya 账户",
+                    "qr_disconnect": "断开 Smart Life / Tuya 账户"
+                },
+                "menu_option_descriptions": {
+                    "qr_add_device": "推荐 — 按需刷新一次已连接账户，然后将所选设备配置为局域网控制。",
+                    "manual_add_device": "手动输入 Device ID 和 local_key。",
+                    "qr_relink": "如果保存的 Tuya 会话已过期或被撤销，请使用新的二维码授权。",
+                    "qr_disconnect": "清除云端授权。已配置的设备仍会继续通过局域网工作。"
+                }
+            },
+            "qr_add_device": {
+                "title": "选择新的 Tuya 设备",
+                "description": "账户已按需刷新。请选择尚未配置且可本地控制的设备。",
+                "data": {
+                    "device_id": "Tuya 设备"
+                }
+            },
+            "qr_add_mapping_review": {
+                "title": "检查建议映射",
+                "description": "LocalTuya 找到了需要确认的映射。高置信度映射已自动包含。",
+                "data": {
+                    "qr_mapping_selection": "其他映射"
+                }
+            },
+            "qr_relink": {
+                "title": "重新连接 Smart Life / Tuya",
+                "description": "输入用户代码以创建新的可续期配网授权。",
+                "data": {
+                    "user_code": "用户代码"
+                }
+            },
+            "qr_relink_scan": {
+                "title": "重新连接 Smart Life / Tuya",
+                "description": "在 Smart Life 或 Tuya 应用中扫描二维码并批准授权，然后继续。",
+                "data": {
+                    "QR": "二维码"
+                }
+            },
+            "qr_disconnect": {
+                "title": "断开 Tuya 账户",
+                "description": "仅删除保存的 Tuya 授权。已配置设备及其本地密钥不会被更改。",
+                "data": {
+                    "confirm": "断开账户"
+                }
             }
         }
     },
@@ -307,6 +550,7 @@
         "action_review_mapping": "检查设备映射",
         "mapping_change_update": "更新",
         "mapping_change_new": "新实体",
-        "action_prepare_contribution": "准备社区贡献"
+        "action_prepare_contribution": "准备社区贡献",
+        "action_link_qr_account": "通过二维码关联 Smart Life / Tuya 账户"
     }
 }

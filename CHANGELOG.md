@@ -1,5 +1,57 @@
 # Changelog
 
+## 6.6.0 — 2026-09-08
+
+QR onboarding and provisioning release.
+
+LocalTuya 6.6.0 makes Smart Life / Tuya QR account linking the recommended setup path while keeping normal device control local after provisioning.
+
+### QR onboarding
+
+- Added recommended User Code + Smart Life / Tuya QR login.
+- Removed the Tuya Developer Platform, Client ID, Client Secret and Data Center requirements from the standard onboarding path.
+- Added renewable provisioning-only account authorization for adding more devices later without repeating QR while authorization remains valid.
+- Added retrieval of Device ID, `local_key`, Product ID, product metadata and local-capable datapoint metadata through `tuya-device-sharing-sdk`.
+- Added explicit QR re-link and disconnect flows.
+- Added migration for existing 6.5.x entries so configured LAN devices and mappings are preserved when switching from the legacy cloud setup to QR provisioning.
+
+### LAN validation and safety
+
+- Tuya UDP discovery remains the preferred source for a current local device address.
+- Discovery failure no longer hard-fails onboarding when direct LAN communication is still possible.
+- Added validated IP / hostname fallback for VLAN, container and restrictive broadcast/multicast environments.
+- Manually supplied addresses are never trusted blindly: LocalTuya must authenticate with the selected Device ID / `local_key`, auto-detect a compatible Tuya protocol and retrieve datapoints before saving.
+- Cloud-reported IP addresses are not treated as authoritative for local control.
+- Unsupported hub child devices remain fail-closed until an explicit tested local child-device transport exists.
+
+### Mapping and runtime
+
+- Catalog/product-specific mappings remain authoritative when their requirements match the real device.
+- Generic mapping fills only safely inferable capabilities.
+- Medium-confidence mappings are presented for review instead of being silently enabled.
+- New QR-created entries keep normal runtime cloud access disabled (`no_cloud: true`).
+- Existing manual Device ID + `local_key` setup and configuration import remain available.
+
+### Privacy and diagnostics
+
+- QR authorization data, refresh tokens and local keys are excluded from diagnostics and logging.
+- Disconnecting the linked Smart Life / Tuya account removes provisioning authorization while preserving already configured LAN devices.
+
+### Documentation
+
+- Rebuilt the README around the new local-first QR onboarding flow.
+- Added a dedicated Smart Life / Tuya QR setup tutorial.
+- Updated HACS information for 6.6.0.
+- Updated the QR architecture document to reflect the stable release.
+
+### Validation
+
+- Real-device smoke testing completed successfully through User Code → QR approval → account device retrieval → LAN validation → protocol/DPS discovery → catalog-first mapping.
+- LocalTuya regression tests pass on Python 3.14 / Home Assistant 2026.9.
+- HACS validation passes.
+- Hassfest validation passes.
+
+
 ## 6.5.0 — 2026-09-07
 
 Compatibility, catalog and release-hygiene update building on the 6.4.0

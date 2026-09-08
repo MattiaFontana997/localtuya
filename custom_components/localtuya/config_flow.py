@@ -77,6 +77,11 @@ from .mapping_review import (
 from .mapping_export import (
     build_mapping_contribution_package,
 )
+from .qr_onboarding import (
+    CONF_QR_AUTH,
+    QrConfigFlowMixin,
+    QrOptionsFlowMixin,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -89,6 +94,7 @@ AUTO_ENTITY_SELECTION = "auto_entity_selection"
 MAPPING_REVIEW_SELECTION = "mapping_review_selection"
 CONTRIBUTION_CONFIRM = "contribution_confirm"
 CONTRIBUTION_JSON = "contribution_json"
+LINK_QR_ACCOUNT = "link_qr_account"
 
 CUSTOM_DEVICE = "..."
 
@@ -220,6 +226,8 @@ _ACTION_TRANSLATION_KEYS = {
         "action_prepare_contribution",
     CONF_SETUP_CLOUD:
         "action_setup_cloud",
+    LINK_QR_ACCOUNT:
+        "action_link_qr_account",
 }
 
 _ACTION_FALLBACKS = {
@@ -233,6 +241,8 @@ _ACTION_FALLBACKS = {
         "Prepare community contribution",
     CONF_SETUP_CLOUD:
         "Reconfigure Cloud API account",
+    LINK_QR_ACCOUNT:
+        "Link Smart Life / Tuya account by QR",
 }
 
 
@@ -964,7 +974,7 @@ async def attempt_cloud_connection(hass, user_input):
     return cloud_api, {}
 
 
-class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class LocaltuyaConfigFlow(QrConfigFlowMixin, config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for LocalTuya integration."""
 
     VERSION = ENTRIES_VERSION
@@ -980,30 +990,14 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize a new LocaltuyaConfigFlow."""
 
     async def async_step_user(self, user_input=None):
-        """Handle the initial step."""
-        errors = {}
-        placeholders = {}
-        if user_input is not None:
-            if user_input.get(CONF_NO_CLOUD):
-                for i in [CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_USER_ID]:
-                    user_input[i] = ""
-                return await self._create_entry(user_input)
-
-            cloud_api, res = await attempt_cloud_connection(self.hass, user_input)
-
-            if not res:
-                return await self._create_entry(user_input)
-            errors["base"] = res["reason"]
-            placeholders = {"msg": res["msg"]}
-
-        defaults = {}
-        defaults.update(user_input or {})
-
-        return self.async_show_form(
+        """Choose the recommended QR onboarding or advanced manual setup."""
+        return self.async_show_menu(
             step_id="user",
-            data_schema=schema_defaults(CLOUD_SETUP_SCHEMA, **defaults),
-            errors=errors,
-            description_placeholders=placeholders,
+            menu_options=[
+                "qr_login",
+                "manual_device",
+                "import_existing",
+            ],
         )
 
     async def _create_entry(self, user_input):
@@ -1026,7 +1020,7 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
+class LocalTuyaOptionsFlowHandler(QrOptionsFlowMixin, config_entries.OptionsFlow):
     """Handle options flow for LocalTuya integration."""
 
     def __init__(self, config_entry):
@@ -1053,6 +1047,8 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                 return await self.async_step_cloud_setup()
             if user_input.get(CONF_ACTION) == CONF_ADD_DEVICE:
                 return await self.async_step_add_device()
+            if user_input.get(CONF_ACTION) == LINK_QR_ACCOUNT:
+                return await self.async_step_qr_relink()
             if user_input.get(CONF_ACTION) == CONF_EDIT_DEVICE:
                 return await self.async_step_edit_device()
             if user_input.get(CONF_ACTION) == CONF_REVIEW_MAPPING:
@@ -1070,6 +1066,39 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
                 self.hass
             )
         )
+
+        # The Tuya Developer Platform flow is retained only for
+        # backward compatibility with entries that already use it.
+        # New QR/manual installations must never expose Client ID,
+        # Client Secret, Data Center or IoT Core setup as a standard path.
+        has_legacy_cloud = (
+            not self.config_entry.data.get(
+                CONF_NO_CLOUD,
+                True,
+            )
+            or bool(
+                self.config_entry.data.get(
+                    CONF_CLIENT_ID
+                )
+            )
+            or bool(
+                self.config_entry.data.get(
+                    CONF_CLIENT_SECRET
+                )
+            )
+        )
+
+        if not has_legacy_cloud:
+            action_labels.pop(
+                CONF_SETUP_CLOUD,
+                None,
+            )
+
+        # Existing LocalTuya installations upgraded from 6.5.x must be able
+        # to adopt the new QR account link without deleting/recreating their
+        # config entry. Once linked, account management lives under Add device.
+        if self.config_entry.data.get(CONF_QR_AUTH):
+            action_labels.pop(LINK_QR_ACCOUNT, None)
 
         return self.async_show_form(
             step_id="init",
@@ -1933,6 +1962,11 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_add_device(self, user_input=None):
         """Handle adding a new device."""
+        if (
+            self.config_entry.data.get(CONF_QR_AUTH)
+            and not getattr(self, "_manual_add_in_progress", False)
+        ):
+            return await self.async_step_add_device_method()
         # Use cache if available or fallback to manual discovery
         self.editing_device = False
         self.selected_device = None
