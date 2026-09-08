@@ -315,10 +315,10 @@ class ConfigFlowMapperTests(
 
 
 
-    async def test_builtin_mapping_wins_and_catalog_only_enriches(
+    async def test_verified_catalog_wins_and_generic_remains_traceable(
         self,
     ):
-        """Remote catalog must not replace built-in mapper data."""
+        """Verified catalog owns product-specific mapping data."""
 
         class FakeCatalog:
             """Return a catalog mapping for the built-in switch."""
@@ -345,14 +345,11 @@ class ConfigFlowMapperTests(
                                 "id": 1,
                                 "platform": "switch",
 
-                                # This must NOT replace the
-                                # built-in friendly name.
+                                # Trusted catalog values are authoritative
+                                # for fields explicitly defined by the match.
                                 "friendly_name":
                                     "Remote Catalog Name",
 
-                                # This does not exist in the
-                                # generic candidate and therefore
-                                # may safely enrich it.
                                 CONF_DEFAULT_VALUE:
                                     "catalog-added-value",
                             },
@@ -401,12 +398,12 @@ class ConfigFlowMapperTests(
             )
         )
 
-        # Built-in mapping still owns identity/name/confidence.
+        # Trusted catalog owns the product-specific identity/name/config.
         self.assertEqual(
             switch_candidate.config[
                 "friendly_name"
             ],
-            "Generic Device",
+            "Remote Catalog Name",
         )
 
         self.assertEqual(
@@ -414,7 +411,6 @@ class ConfigFlowMapperTests(
             "high",
         )
 
-        # Catalog was allowed to add missing knowledge.
         self.assertEqual(
             switch_candidate.config[
                 CONF_DEFAULT_VALUE
