@@ -4,6 +4,8 @@
 
 Make Smart Life / Tuya QR login the recommended onboarding path without requiring users to create or maintain a Tuya Developer Platform project.
 
+For the end-user setup walkthrough, see [Smart Life / Tuya QR setup guide](QR_SETUP_GUIDE.md).
+
 ## User flow
 
 ### First setup
@@ -73,6 +75,6 @@ Existing LocalTuya configuration entries and the legacy Tuya Developer Platform 
 
 The third onboarding mode accepts a single device JSON object, a list of devices, a LocalTuya `devices` object, or common Tuya/TinyTuya aliases (`id`, `key`, `ip`, `version`). Imported credentials are validated over LAN before they are saved. Existing entity definitions are preserved; otherwise Catalog/mapper suggestions and the manual fallback are used.
 
-## Merge status
+## Release status
 
-The implementation remains on a draft pull request until the complete User Code -> QR -> Smart Life/Tuya approval -> device retrieval -> LAN provisioning flow has been validated against a real Home Assistant installation and real Tuya account.
+The QR onboarding flow is included in LocalTuya **6.6.0** after successful real-device smoke validation of User Code → QR approval → account device retrieval → LAN validation → protocol/DPS discovery → catalog-first mapping.
