@@ -16,6 +16,12 @@ Make Smart Life / Tuya QR login the recommended onboarding path without requirin
 6. LocalTuya combines temporary cloud metadata with LAN discovery, auto-detects the Tuya LAN protocol, and resolves mappings through the LocalTuya catalog/mapper.
 7. LocalTuya stores the local device configuration and a renewable account link for future provisioning.
 
+### Existing LocalTuya installation
+
+An existing 6.5.x configuration does not need to be removed or recreated. Open LocalTuya options and choose **Link Smart Life / Tuya account by QR**, enter the User Code, and approve the generated QR code. Existing LAN devices and their mappings remain intact.
+
+If the existing entry previously used the Tuya Developer Platform, choosing the QR account link explicitly migrates that entry to provisioning-only cloud access: `no_cloud` is enabled and the legacy Client ID, Client Secret and User ID are cleared. Normal device control therefore remains LAN-only after migration.
+
 ### Adding devices later
 
 1. Open LocalTuya options and choose **Add a new device**.
@@ -44,7 +50,8 @@ Users may explicitly disconnect the linked Tuya account. This deletes the accoun
 
 ## Backward compatibility
 
-Existing LocalTuya configuration entries and the legacy Tuya Developer Platform cloud client remain readable for compatibility. The new standard onboarding does not expose those credentials as a requirement.
+Existing LocalTuya configuration entries and the legacy Tuya Developer Platform cloud client remain readable for compatibility. The new standard onboarding does not expose those credentials as a requirement. Existing users can opt into QR onboarding in place; the migration preserves configured devices while disabling the legacy cloud runtime.
 
 ## Existing configuration import
+
 The third onboarding mode accepts a single device JSON object, a list of devices, a LocalTuya `devices` object, or common Tuya/TinyTuya aliases (`id`, `key`, `ip`, `version`). Imported credentials are validated over LAN before they are saved. Existing entity definitions are preserved; otherwise Catalog/mapper suggestions and the manual fallback are used.
