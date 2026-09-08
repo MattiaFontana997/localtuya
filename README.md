@@ -30,6 +30,8 @@ Highlights:
 
 **Step-by-step guide:** [Smart Life / Tuya QR setup](docs/QR_SETUP_GUIDE.md)
 
+![LocalTuya QR onboarding](docs/images/qr-setup/01-localtuya-qr-choice.png)
+
 ## Local-first design
 
 LocalTuya controls configured devices directly over the local network.
@@ -117,7 +119,7 @@ After installing LocalTuya:
 9. Review any suggested mappings if Home Assistant asks you to do so.
 10. Finish setup.
 
-For screenshots, troubleshooting and the flow for adding more devices later, see the full guide:
+For the full illustrated walkthrough, troubleshooting and the flow for adding more devices later, see:
 
 **[Smart Life / Tuya QR setup guide](docs/QR_SETUP_GUIDE.md)**
 
