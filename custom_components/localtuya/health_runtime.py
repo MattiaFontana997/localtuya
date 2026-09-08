@@ -9,8 +9,8 @@ from typing import Any
 from homeassistant.const import CONF_DEVICE_ID
 from homeassistant.core import HomeAssistant
 
-from .config_flow import async_device_preflight
 from .const import DOMAIN, TUYA_DEVICES
+from .device_probe import async_device_preflight
 
 DEVICE_HEALTH_PROBE_TIMEOUT = 10.0
 
