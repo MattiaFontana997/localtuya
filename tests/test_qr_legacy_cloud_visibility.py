@@ -1,4 +1,4 @@
-"""Tests for legacy Tuya Developer Platform compatibility visibility."""
+"""Tests for legacy cloud compatibility and QR-link visibility."""
 
 from __future__ import annotations
 
@@ -9,13 +9,17 @@ from unittest.mock import AsyncMock, patch
 from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 import voluptuous as vol
 
-from custom_components.localtuya.config_flow import LocalTuyaOptionsFlowHandler
+from custom_components.localtuya.config_flow import (
+    LINK_QR_ACCOUNT,
+    LocalTuyaOptionsFlowHandler,
+)
 from custom_components.localtuya.const import (
     CONF_ACTION,
     CONF_ADD_DEVICE,
     CONF_NO_CLOUD,
     CONF_SETUP_CLOUD,
 )
+from custom_components.localtuya.qr_onboarding import CONF_QR_AUTH
 
 
 class _OptionsFlowUnderTest(LocalTuyaOptionsFlowHandler):
@@ -27,7 +31,7 @@ class _OptionsFlowUnderTest(LocalTuyaOptionsFlowHandler):
 
 
 class LegacyCloudVisibilityTests(unittest.IsolatedAsyncioTestCase):
-    """Developer Platform setup must not appear in the new standard UX."""
+    """Expose only account actions appropriate for the stored entry type."""
 
     async def _schema_for(self, data):
         entry = SimpleNamespace(data=data)
@@ -37,6 +41,7 @@ class LegacyCloudVisibilityTests(unittest.IsolatedAsyncioTestCase):
         labels = {
             CONF_ADD_DEVICE: "Add a new device",
             CONF_SETUP_CLOUD: "Reconfigure Cloud API account",
+            LINK_QR_ACCOUNT: "Link Smart Life / Tuya account by QR",
         }
         with patch(
             "custom_components.localtuya.config_flow._async_action_labels",
@@ -45,12 +50,13 @@ class LegacyCloudVisibilityTests(unittest.IsolatedAsyncioTestCase):
             result = await flow.async_step_init()
         return result["data_schema"]
 
-    async def test_new_qr_or_manual_entry_hides_developer_platform(self):
+    async def test_new_manual_entry_hides_developer_platform_and_offers_qr_link(self):
         schema = await self._schema_for(
             {
                 CONF_NO_CLOUD: True,
                 CONF_CLIENT_ID: "",
                 CONF_CLIENT_SECRET: "",
+                CONF_QR_AUTH: {},
             }
         )
 
@@ -58,8 +64,25 @@ class LegacyCloudVisibilityTests(unittest.IsolatedAsyncioTestCase):
             schema({CONF_ACTION: CONF_ADD_DEVICE})[CONF_ACTION],
             CONF_ADD_DEVICE,
         )
+        self.assertEqual(
+            schema({CONF_ACTION: LINK_QR_ACCOUNT})[CONF_ACTION],
+            LINK_QR_ACCOUNT,
+        )
         with self.assertRaises(vol.Invalid):
             schema({CONF_ACTION: CONF_SETUP_CLOUD})
+
+    async def test_linked_qr_entry_hides_redundant_top_level_link_action(self):
+        schema = await self._schema_for(
+            {
+                CONF_NO_CLOUD: True,
+                CONF_CLIENT_ID: "",
+                CONF_CLIENT_SECRET: "",
+                CONF_QR_AUTH: {"user_code": "linked"},
+            }
+        )
+
+        with self.assertRaises(vol.Invalid):
+            schema({CONF_ACTION: LINK_QR_ACCOUNT})
 
     async def test_existing_legacy_cloud_entry_keeps_compatibility_action(self):
         schema = await self._schema_for(
@@ -67,12 +90,17 @@ class LegacyCloudVisibilityTests(unittest.IsolatedAsyncioTestCase):
                 CONF_NO_CLOUD: False,
                 CONF_CLIENT_ID: "legacy-client-id",
                 CONF_CLIENT_SECRET: "legacy-secret",
+                CONF_QR_AUTH: {},
             }
         )
 
         self.assertEqual(
             schema({CONF_ACTION: CONF_SETUP_CLOUD})[CONF_ACTION],
             CONF_SETUP_CLOUD,
+        )
+        self.assertEqual(
+            schema({CONF_ACTION: LINK_QR_ACCOUNT})[CONF_ACTION],
+            LINK_QR_ACCOUNT,
         )
 
 
