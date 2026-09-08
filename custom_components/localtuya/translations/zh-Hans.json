@@ -556,7 +556,6 @@
     "issues": {
         "host_recovery_failed": {
             "title": "LocalTuya 无法安全恢复 {device_name}",
-            "description": "LocalTuya 检测到 {device_name} 的 LAN 地址可能发生变化，但无法使用已保存的本地凭据验证新地址。当前配置的地址未被修改。",
             "fix_flow": {
                 "error": {
                     "cannot_connect": "设备在该地址没有响应。请确认设备已开机，并且 Home Assistant 可以访问它。",

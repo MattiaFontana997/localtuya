@@ -556,7 +556,6 @@
     "issues": {
         "host_recovery_failed": {
             "title": "LocalTuya konnte {device_name} nicht sicher wiederherstellen",
-            "description": "LocalTuya hat für {device_name} eine mögliche Änderung der LAN-Adresse erkannt, konnte die neue Adresse jedoch nicht mit den gespeicherten lokalen Zugangsdaten verifizieren. Die konfigurierte Adresse wurde nicht geändert.",
             "fix_flow": {
                 "error": {
                     "cannot_connect": "Das Gerät antwortet unter dieser Adresse nicht. Prüfe, ob es eingeschaltet und von Home Assistant erreichbar ist.",

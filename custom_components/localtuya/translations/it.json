@@ -556,7 +556,6 @@
     "issues": {
         "host_recovery_failed": {
             "title": "LocalTuya non è riuscito a ripristinare in sicurezza {device_name}",
-            "description": "LocalTuya ha rilevato un possibile cambio di indirizzo LAN per {device_name}, ma il nuovo indirizzo non è stato convalidato con le credenziali locali salvate. L'indirizzo configurato non è stato modificato.",
             "fix_flow": {
                 "error": {
                     "cannot_connect": "Il dispositivo non risponde a questo indirizzo. Verifica che sia acceso e raggiungibile da Home Assistant.",
