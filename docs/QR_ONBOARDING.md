@@ -55,3 +55,7 @@ Existing LocalTuya configuration entries and the legacy Tuya Developer Platform 
 ## Existing configuration import
 
 The third onboarding mode accepts a single device JSON object, a list of devices, a LocalTuya `devices` object, or common Tuya/TinyTuya aliases (`id`, `key`, `ip`, `version`). Imported credentials are validated over LAN before they are saved. Existing entity definitions are preserved; otherwise Catalog/mapper suggestions and the manual fallback are used.
+
+## Merge status
+
+The implementation remains on a draft pull request until the complete User Code -> QR -> Smart Life/Tuya approval -> device retrieval -> LAN provisioning flow has been validated against a real Home Assistant installation and real Tuya account.
