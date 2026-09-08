@@ -66,7 +66,7 @@ def async_sync_host_recovery_issue(
         hass,
         DOMAIN,
         issue_id,
-        is_fixable=False,
+        is_fixable=True,
         is_persistent=True,
         severity=ir.IssueSeverity.WARNING,
         translation_key="host_recovery_failed",
