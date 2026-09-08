@@ -1,0 +1,112 @@
+name: Translate device health options flow
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - .github/workflows/translate-health-options.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+
+      - name: Add health options translations
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payloads = {
+              "en": {
+                  "action": "Check device health",
+                  "error": "The selected LocalTuya device is no longer configured.",
+                  "select_title": "Check device health",
+                  "select_description": "Select a configured device. LocalTuya will perform a live LAN, protocol and datapoint preflight without changing the device configuration.",
+                  "select_field": "Configured device",
+                  "result_title": "Device health result",
+                  "result_description": "Device: **{device}**\n\nRuntime loaded: {runtime_present} · connected: {runtime_connected}\n\nLAN preflight: {preflight_ok} · stage: `{stage}` · failure: `{failure}`\n\nRecommended action: `{action}`\n\nProtocol: requested `{requested_protocol}` · resolved `{resolved_protocol}`\n\nDatapoints: {dps_count} (`{dp_ids}`) · attempts: {attempts}\n\nProbe error: `{probe_error}`\n\nNo Device ID, local key, IP address or raw datapoint values are displayed."
+              },
+              "it": {
+                  "action": "Controlla stato dispositivo",
+                  "error": "Il dispositivo LocalTuya selezionato non è più configurato.",
+                  "select_title": "Controlla stato dispositivo",
+                  "select_description": "Seleziona un dispositivo configurato. LocalTuya eseguirà un controllo live di LAN, protocollo e datapoint senza modificare la configurazione del dispositivo.",
+                  "select_field": "Dispositivo configurato",
+                  "result_title": "Risultato controllo dispositivo",
+                  "result_description": "Dispositivo: **{device}**\n\nRuntime caricato: {runtime_present} · connesso: {runtime_connected}\n\nControllo LAN: {preflight_ok} · fase: `{stage}` · errore: `{failure}`\n\nAzione consigliata: `{action}`\n\nProtocollo: richiesto `{requested_protocol}` · rilevato `{resolved_protocol}`\n\nDatapoint: {dps_count} (`{dp_ids}`) · tentativi: {attempts}\n\nErrore del controllo: `{probe_error}`\n\nNon vengono mostrati Device ID, local key, indirizzo IP o valori grezzi dei datapoint."
+              },
+              "de": {
+                  "action": "Gerätezustand prüfen",
+                  "error": "Das ausgewählte LocalTuya-Gerät ist nicht mehr konfiguriert.",
+                  "select_title": "Gerätezustand prüfen",
+                  "select_description": "Wähle ein konfiguriertes Gerät. LocalTuya führt eine Live-Prüfung von LAN, Protokoll und Datenpunkten durch, ohne die Gerätekonfiguration zu ändern.",
+                  "select_field": "Konfiguriertes Gerät",
+                  "result_title": "Ergebnis der Geräteprüfung",
+                  "result_description": "Gerät: **{device}**\n\nRuntime geladen: {runtime_present} · verbunden: {runtime_connected}\n\nLAN-Prüfung: {preflight_ok} · Phase: `{stage}` · Fehler: `{failure}`\n\nEmpfohlene Aktion: `{action}`\n\nProtokoll: angefordert `{requested_protocol}` · erkannt `{resolved_protocol}`\n\nDatenpunkte: {dps_count} (`{dp_ids}`) · Versuche: {attempts}\n\nPrüffehler: `{probe_error}`\n\nGeräte-ID, Local Key, IP-Adresse und Rohwerte der Datenpunkte werden nicht angezeigt."
+              },
+              "pt-BR": {
+                  "action": "Verificar integridade do dispositivo",
+                  "error": "O dispositivo LocalTuya selecionado não está mais configurado.",
+                  "select_title": "Verificar integridade do dispositivo",
+                  "select_description": "Selecione um dispositivo configurado. O LocalTuya executará uma verificação ao vivo da LAN, protocolo e datapoints sem alterar a configuração do dispositivo.",
+                  "select_field": "Dispositivo configurado",
+                  "result_title": "Resultado da verificação do dispositivo",
+                  "result_description": "Dispositivo: **{device}**\n\nRuntime carregado: {runtime_present} · conectado: {runtime_connected}\n\nVerificação LAN: {preflight_ok} · estágio: `{stage}` · falha: `{failure}`\n\nAção recomendada: `{action}`\n\nProtocolo: solicitado `{requested_protocol}` · detectado `{resolved_protocol}`\n\nDatapoints: {dps_count} (`{dp_ids}`) · tentativas: {attempts}\n\nErro da verificação: `{probe_error}`\n\nID do dispositivo, local key, endereço IP e valores brutos dos datapoints não são exibidos."
+              },
+              "zh-Hans": {
+                  "action": "检查设备健康状态",
+                  "error": "所选 LocalTuya 设备已不再配置。",
+                  "select_title": "检查设备健康状态",
+                  "select_description": "选择一个已配置的设备。LocalTuya 将实时检查 LAN、协议和数据点，而不会更改设备配置。",
+                  "select_field": "已配置设备",
+                  "result_title": "设备健康检查结果",
+                  "result_description": "设备：**{device}**\n\n运行时已加载：{runtime_present} · 已连接：{runtime_connected}\n\nLAN 预检：{preflight_ok} · 阶段：`{stage}` · 故障：`{failure}`\n\n建议操作：`{action}`\n\n协议：请求 `{requested_protocol}` · 检测到 `{resolved_protocol}`\n\n数据点：{dps_count}（`{dp_ids}`）· 尝试次数：{attempts}\n\n检查错误：`{probe_error}`\n\n不会显示设备 ID、local key、IP 地址或原始数据点值。"
+              }
+          }
+
+          root = Path("custom_components/localtuya/translations")
+          for lang, values in payloads.items():
+              path = root / f"{lang}.json"
+              data = json.loads(path.read_text(encoding="utf-8"))
+              common = data.setdefault("common", {})
+              common["action_check_device_health"] = values["action"]
+
+              options = data.setdefault("options", {})
+              errors = options.setdefault("error", {})
+              errors["health_device_not_found"] = values["error"]
+              steps = options.setdefault("step", {})
+              steps["check_device_health_device"] = {
+                  "title": values["select_title"],
+                  "description": values["select_description"],
+                  "data": {
+                      "selected_device": values["select_field"]
+                  }
+              }
+              steps["check_device_health_result"] = {
+                  "title": values["result_title"],
+                  "description": values["result_description"]
+              }
+
+              path.write_text(
+                  json.dumps(data, ensure_ascii=False, indent=4) + "\n",
+                  encoding="utf-8",
+              )
+          PY
+
+      - name: Commit translations
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/localtuya/translations
+          git commit -m "Translate device health options flow"
+          git push origin HEAD:develop
