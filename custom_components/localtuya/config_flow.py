@@ -72,6 +72,10 @@ from .device_mapper import (
     EntityCandidate,
     MappingConfidence,
 )
+from .health_service import (
+    DeviceHealthTargetNotFound,
+    async_check_configured_device_health,
+)
 from .mapping_resolver import (
     resolve_entity_candidates,
 )
@@ -102,6 +106,7 @@ MAPPING_REVIEW_SELECTION = "mapping_review_selection"
 CONTRIBUTION_CONFIRM = "contribution_confirm"
 CONTRIBUTION_JSON = "contribution_json"
 LINK_QR_ACCOUNT = "link_qr_account"
+CHECK_DEVICE_HEALTH = "check_device_health"
 
 CUSTOM_DEVICE = "..."
 
@@ -217,6 +222,8 @@ _ACTION_TRANSLATION_KEYS = {
         "action_setup_cloud",
     LINK_QR_ACCOUNT:
         "action_link_qr_account",
+    CHECK_DEVICE_HEALTH:
+        "action_check_device_health",
 }
 
 _ACTION_FALLBACKS = {
@@ -232,7 +239,48 @@ _ACTION_FALLBACKS = {
         "Reconfigure Cloud API account",
     LINK_QR_ACCOUNT:
         "Link Smart Life / Tuya account by QR",
+    CHECK_DEVICE_HEALTH:
+        "Check device health",
 }
+
+
+def _device_health_placeholders(
+    device_name: str,
+    snapshot: dict,
+) -> dict[str, str]:
+    """Build privacy-safe options-flow placeholders from a health snapshot."""
+    preflight = snapshot.get("preflight")
+    if not isinstance(preflight, dict):
+        preflight = {}
+
+    def mark(value):
+        if value is True:
+            return "✓"
+        if value is False:
+            return "✗"
+        return "—"
+
+    attempts = preflight.get("attempts")
+    attempt_count = len(attempts) if isinstance(attempts, list) else 0
+    dp_ids = preflight.get("dp_ids")
+    if not isinstance(dp_ids, list):
+        dp_ids = []
+
+    return {
+        "device": str(device_name or "LocalTuya device"),
+        "runtime_present": mark(snapshot.get("runtime_present")),
+        "runtime_connected": mark(snapshot.get("runtime_connected")),
+        "preflight_ok": mark(preflight.get("ok")) if preflight else "—",
+        "stage": str(preflight.get("stage") or "—"),
+        "failure": str(preflight.get("failure") or "—"),
+        "action": str(preflight.get("recommended_action") or "—"),
+        "requested_protocol": str(preflight.get("requested_protocol") or "—"),
+        "resolved_protocol": str(preflight.get("resolved_protocol") or "—"),
+        "dps_count": str(preflight.get("dps_count", 0) if preflight else 0),
+        "dp_ids": ", ".join(str(dp) for dp in dp_ids) or "—",
+        "attempts": str(attempt_count),
+        "probe_error": str(snapshot.get("probe_error_type") or "—"),
+    }
 
 
 _MAPPING_CHANGE_FALLBACKS = {
@@ -904,6 +952,7 @@ class LocalTuyaOptionsFlowHandler(QrOptionsFlowMixin, config_entries.OptionsFlow
         self.auto_candidates = []
         self.mapping_reviews = []
         self.contribution_package = None
+        self.device_health_result = None
 
     async def async_step_init(self, user_input=None):
         """Manage basic options."""
@@ -920,6 +969,8 @@ class LocalTuyaOptionsFlowHandler(QrOptionsFlowMixin, config_entries.OptionsFlow
                 return await self.async_step_review_mapping_device()
             if user_input.get(CONF_ACTION) == CONF_PREPARE_CONTRIBUTION:
                 return await self.async_step_prepare_contribution_device()
+            if user_input.get(CONF_ACTION) == CHECK_DEVICE_HEALTH:
+                return await self.async_step_check_device_health_device()
 
         action_labels = await _async_action_labels(self.hass)
 
@@ -938,6 +989,71 @@ class LocalTuyaOptionsFlowHandler(QrOptionsFlowMixin, config_entries.OptionsFlow
         return self.async_show_form(
             step_id="init",
             data_schema=_configure_schema(action_labels),
+        )
+
+    async def async_step_check_device_health_device(self, user_input=None):
+        """Select a configured device and run a privacy-safe live health check."""
+        errors = {}
+        devices = {
+            device_id: str(
+                device_data.get(CONF_FRIENDLY_NAME)
+                or "LocalTuya device"
+            )
+            for device_id, device_data
+            in self.config_entry.data.get(CONF_DEVICES, {}).items()
+            if isinstance(device_data, dict)
+        }
+
+        if user_input is not None:
+            self.selected_device = user_input[SELECTED_DEVICE]
+            try:
+                self.device_health_result = (
+                    await async_check_configured_device_health(
+                        self.hass,
+                        self.selected_device,
+                    )
+                )
+            except DeviceHealthTargetNotFound:
+                errors["base"] = "health_device_not_found"
+            else:
+                return await self.async_step_check_device_health_result()
+
+        return self.async_show_form(
+            step_id="check_device_health_device",
+            data_schema=vol.Schema(
+                {vol.Required(SELECTED_DEVICE): vol.In(devices)}
+            ),
+            errors=errors,
+        )
+
+    async def async_step_check_device_health_result(self, user_input=None):
+        """Show only the privacy-safe result of a live device health check."""
+        if (
+            self.selected_device is None
+            or not isinstance(self.device_health_result, dict)
+        ):
+            return await self.async_step_check_device_health_device()
+
+        if user_input is not None:
+            return self.async_create_entry(title="", data={})
+
+        configured = self.config_entry.data.get(CONF_DEVICES, {}).get(
+            self.selected_device,
+            {},
+        )
+        device_name = (
+            configured.get(CONF_FRIENDLY_NAME)
+            if isinstance(configured, dict)
+            else None
+        )
+
+        return self.async_show_form(
+            step_id="check_device_health_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=_device_health_placeholders(
+                str(device_name or "LocalTuya device"),
+                self.device_health_result,
+            ),
         )
 
     async def async_step_prepare_contribution_device(self, user_input=None):
