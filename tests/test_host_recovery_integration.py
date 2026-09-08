@@ -18,7 +18,6 @@ from custom_components.localtuya.const import (
     CONF_LOCAL_KEY,
     CONF_PRODUCT_KEY,
     CONF_PROTOCOL_VERSION,
-    DATA_DISCOVERY,
     DOMAIN,
     TUYA_DEVICES,
 )
@@ -110,13 +109,7 @@ class HostRecoveryRuntimeTests(unittest.IsolatedAsyncioTestCase):
             return lambda: None
 
         self.hass = SimpleNamespace(
-            data={
-                DOMAIN: {
-                    TUYA_DEVICES: {
-                        "device-1": self.runtime_device,
-                    }
-                }
-            },
+            data={},
             config_entries=self.manager,
             async_create_task=create_task,
             services=SimpleNamespace(async_register=lambda *args, **kwargs: None),
@@ -157,6 +150,13 @@ class HostRecoveryRuntimeTests(unittest.IsolatedAsyncioTestCase):
             item.start()
 
         await integration.async_setup(self.hass, {})
+
+        # async_setup owns initialization of TUYA_DEVICES, so add the runtime
+        # fixture only after the integration has established its data tree.
+        self.hass.data[DOMAIN][TUYA_DEVICES][
+            "device-1"
+        ] = self.runtime_device
+
         await asyncio.sleep(0)
 
     async def asyncTearDown(self):
