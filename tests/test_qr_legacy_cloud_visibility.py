@@ -16,8 +16,10 @@ from custom_components.localtuya.config_flow import (
 from custom_components.localtuya.const import (
     CONF_ACTION,
     CONF_ADD_DEVICE,
+    CONF_DEVICES,
     CONF_NO_CLOUD,
     CONF_SETUP_CLOUD,
+    CONF_USER_ID,
 )
 from custom_components.localtuya.qr_onboarding import CONF_QR_AUTH
 
@@ -102,6 +104,50 @@ class LegacyCloudVisibilityTests(unittest.IsolatedAsyncioTestCase):
             schema({CONF_ACTION: LINK_QR_ACCOUNT})[CONF_ACTION],
             LINK_QR_ACCOUNT,
         )
+
+    async def test_qr_link_migrates_legacy_entry_to_lan_only(self):
+        """Opting into QR removes Developer Platform runtime credentials."""
+        devices = {
+            "device-1": {
+                "friendly_name": "Existing Plug",
+                "host": "192.168.1.40",
+                "local_key": "existing-local-key",
+            }
+        }
+        entry = SimpleNamespace(
+            data={
+                CONF_NO_CLOUD: False,
+                CONF_CLIENT_ID: "legacy-client-id",
+                CONF_CLIENT_SECRET: "legacy-secret",
+                CONF_USER_ID: "legacy-user-id",
+                CONF_DEVICES: devices,
+                CONF_QR_AUTH: {},
+            }
+        )
+        flow = _OptionsFlowUnderTest(entry)
+        flow._test_entry = entry
+        flow.hass = SimpleNamespace(
+            config_entries=SimpleNamespace(
+                async_update_entry=lambda target, data: setattr(
+                    target,
+                    "data",
+                    data,
+                )
+            )
+        )
+        auth = {
+            "user_code": "qr-user",
+            "token_info": {"refresh_token": "refresh-token"},
+        }
+
+        flow._persist_qr_auth(auth)
+
+        self.assertTrue(entry.data[CONF_NO_CLOUD])
+        self.assertEqual(entry.data[CONF_CLIENT_ID], "")
+        self.assertEqual(entry.data[CONF_CLIENT_SECRET], "")
+        self.assertEqual(entry.data[CONF_USER_ID], "")
+        self.assertEqual(entry.data[CONF_QR_AUTH], auth)
+        self.assertEqual(entry.data[CONF_DEVICES], devices)
 
 
 if __name__ == "__main__":
