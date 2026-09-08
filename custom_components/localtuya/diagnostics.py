@@ -37,6 +37,19 @@ DEVICE_CONFIG = "device_config"
 DEVICE_CLOUD_INFO = "device_cloud_info"
 MAPPING_DIAGNOSTICS = "mapping"
 
+# QR account authorization contains renewable Tuya access credentials. Redact
+# the complete bundle, and also list its nested field names defensively in case
+# a future diagnostic path exposes them outside the bundle.
+QR_AUTH_TO_REDACT = {
+    "qr_auth",
+    "token_info",
+    "access_token",
+    "refresh_token",
+    "terminal_id",
+    "endpoint",
+    "user_code",
+}
+
 TO_REDACT = {
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
@@ -44,6 +57,7 @@ TO_REDACT = {
     CONF_USER_ID,
     CONF_LOCAL_KEY,
     CONF_HOST,
+    *QR_AUTH_TO_REDACT,
 }
 
 # These keys are sensitive only in Tuya Cloud device metadata.

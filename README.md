@@ -2,206 +2,94 @@
 
 ![LocalTuya](img/logo-small.png)
 
-A Home Assistant custom integration for controlling Tuya devices directly over the local network.
+Local control of Tuya devices in Home Assistant, with a modern onboarding flow and a community-driven device catalog.
 
-This repository is a maintained modernization fork of the original
-[LocalTuya project](https://github.com/rospogrigio/localtuya), focused on
-current Home Assistant releases, safer protocol handling and easier device
-configuration.
+This repository is a maintained modernization fork of the original [LocalTuya project](https://github.com/rospogrigio/localtuya), focused on current Home Assistant releases, safer Tuya protocol handling, easier device setup and predictable local-first behavior.
 
-## Current target
+## What's new in 6.6.0
+
+LocalTuya 6.6.0 introduces the recommended **Smart Life / Tuya QR onboarding flow**.
+
+You no longer need to create a Tuya Developer Platform project, enable a Data Center, or manually copy a Client ID / Client Secret for the standard setup path.
+
+The recommended flow is now:
+
+`Install LocalTuya → User Code → scan QR → choose device → LocalTuya validates it on the LAN → done`
+
+Highlights:
+
+- Recommended **User Code + QR login** with Smart Life / Tuya
+- No Tuya Developer Platform required for normal onboarding
+- Automatic retrieval of Device ID, `local_key`, Product ID and provisioning metadata
+- LAN discovery first, with a validated IP / hostname fallback when UDP discovery is unavailable
+- Automatic protocol detection and datapoint discovery before a device is saved
+- Catalog-first automatic entity mapping
+- Normal device control remains **LAN-only** after provisioning
+- Existing manual Device ID + `local_key` setup remains available
+- Existing configurations can link a Tuya account by QR without recreating configured devices
+
+**Step-by-step guide:** [Smart Life / Tuya QR setup](docs/QR_SETUP_GUIDE.md)
+
+## Local-first design
+
+LocalTuya controls configured devices directly over the local network.
+
+The Smart Life / Tuya account link introduced in 6.6.0 is used for **provisioning only**: it obtains the device credentials and metadata needed to create a local configuration. After onboarding, normal device control does not require Tuya Cloud polling.
+
+A device is not saved merely because it appears in the Tuya account. LocalTuya must successfully:
+
+1. Resolve or receive a LAN address.
+2. Authenticate to the selected device with its Device ID and `local_key`.
+3. Detect a compatible Tuya protocol.
+4. Read the device datapoints.
+5. Resolve a safe entity mapping or let the user review/configure one.
+
+If those checks fail, the device is not partially saved.
+
+## Requirements
+
+Current development and CI target:
 
 - Home Assistant **2026.9 or newer**
 - Python **3.14**
 - Tuya LAN protocols **3.1, 3.2, 3.3, 3.4 and 3.5**
 - Local push updates
-- Optional Tuya Cloud metadata
-- Automatic entity suggestions
-- Manual entity configuration remains available
 
 ## Supported platforms
 
-LocalTuya currently supports:
+LocalTuya supports a broad range of Home Assistant platforms, including:
 
-- Switches
-- Lights
-- Covers
-- Fans
-- Climate devices
-- Vacuums
-- Binary sensors
-- Sensors
-- Numbers
-- Selects
+- Switch
+- Light
+- Cover
+- Fan
+- Climate
+- Vacuum
+- Sensor
+- Binary sensor
+- Number
+- Select
+- Button
+- Text
+- Valve
+- Humidifier
+- Lock
+- Time / Datetime
+- Water heater
+- Siren
+- Alarm control panel
+- Event
+- Camera
+- Lawn mower
+- Remote / infrared catalog mappings where the local semantics are safely representable
 
-Energy monitoring such as voltage, current and power is supported on
-compatible devices.
-
-## Automatic entity detection
-
-When Tuya Cloud metadata is available, LocalTuya can suggest entities from
-the device specification.
-
-Suggestions are deliberately confidence-based:
-
-- **High confidence** entities are preselected.
-- **Medium confidence** entities are shown for review but are not selected
-  automatically.
-- Uncertain metadata is ignored rather than creating potentially incorrect
-  entities.
-
-Current automatic mapping includes common Tuya switches, lights, climate
-devices, covers, fans, sensors, binary sensors, numbers and selects.
-
-Manual configuration remains available after reviewing the suggestions.
-
-## Community device catalog
-
-LocalTuya includes a community-maintained device mapping catalog for
-product-specific configurations that cannot be safely inferred from generic
-Tuya metadata alone.
-
-Catalog mappings are matched against:
-
-- Tuya product ID
-- Tuya category, when available
-- datapoints actually detected from the device over the LAN
-
-The built-in generic mapper remains the first source of automatic mappings.
-Product-specific catalog entries can complete or refine a configuration when
-the detected hardware matches the catalog requirements.
-
-LocalTuya uses:
-
-- the remote community catalog for current mappings
-- a persistent local cache
-- a bundled `builtin_catalog.json` snapshot as an offline fallback
-
-Catalog mappings use three confidence levels:
-
-- **experimental** — newly submitted mapping awaiting trusted promotion
-- **community** — reviewed mapping accepted into the published catalog
-- **verified** — community mapping additionally validated on real hardware
-
-The catalog promotion lifecycle is:
-
-`experimental` → `community` → `verified`
-
-Experimental mappings cannot skip directly to verified status.
-
-### Verified catalog devices
-
-The bundled catalog currently includes physically verified product-specific
-mappings for real Tuya hardware.
-
-#### LSC Smart Connect RGB+CCT smart light (Action)
-
-- Brand: **LSC Smart Connect**
-- Retailer: **Action**
-- Tuya product ID: `r7sn2fda7l5hwzvx`
-- Category: `dj`
-- Mapping ID: `r7sn2fda7l5hwzvx-0cc115f608`
-- Protocol physically tested: **Tuya 3.5**
-- Platform: `light`
-- DPS:
-  - DP 20 — power
-  - DP 21 — work/color mode
-  - DP 22 — brightness
-  - DP 23 — color temperature
-  - DP 24 — RGB/HSV color
-
-Power, brightness, color temperature, color and spontaneous device/Tuya app
-state updates back to Home Assistant were validated on real hardware.
-
-#### EMOS GoSmart P56201 Wi-Fi Room Thermostat
-
-- Brand: **EMOS**
-- Model: **GoSmart P56201 Wi-Fi Room Thermostat**
-- Tuya product ID: `wxmbjwpt8yea7bag`
-- Category: `wk`
-- Mapping ID: `wxmbjwpt8yea7bag-ef945de926`
-- Main platform: `climate`
-- Additional entities: holiday temperature and holiday-day controls
-- Amazon ASIN: `B0BS3TL7DC`
-- EAN: `8592920117767`
-
-The thermostat mapping is physically verified and preserves product-specific
-climate behaviour that cannot be inferred safely from generic metadata alone.
-
-### Contributing a device mapping
-
-The recommended contribution flow is available directly from the LocalTuya
-configuration menu:
-
-`Prepare community contribution`
-
-Configure and test the device first, then select the configured device and
-review the generated privacy-safe JSON contribution.
-
-LocalTuya also exposes the Home Assistant action/service:
-
-`localtuya.export_device_mapping`
-
-The configured Tuya device ID is used only to locate the device and is not
-included in the exported mapping.
-
-Catalog contributions must not contain local keys, device IDs, IP addresses,
-Tuya Cloud credentials or user-specific friendly names.
-
-New submissions start as `experimental` and follow the trusted promotion
-lifecycle:
-
-`experimental` → `community` → `verified`
-
-LocalTuya also provides:
-
-`localtuya.refresh_device_catalog`
-
-to refresh the remote community catalog without reinstalling or upgrading the
-integration.
-
-Device catalog repository:
-
-`https://github.com/MattiaFontana997/localtuya-device-catalog`
-
-## Reliability and testing
-
-The modernization fork includes regression coverage for:
-
-- Protocol framing and CRC validation
-- Tuya 3.4 and 3.5 session-key negotiation and authentication
-- Protocol payload decoding from 3.1 through 3.5
-- Passive and active UDP discovery
-- Legacy AES-ECB discovery
-- Tuya 55AA discovery frames
-- Tuya 6699 AES-GCM discovery frames
-- Tuya 3.5 6699 AES-GCM framing and payload handling
-- Tuya 3.5 global response sequence numbers
-- Tuya Cloud API signing and specification fallback
-- Automatic entity mapping
-- Numeric scaling
-- Diagnostics secret redaction
-- Config-entry setup, migration and unload lifecycle
-
-The current suite contains **more than 140 automated tests** and runs in CI against
-Python 3.14 and Home Assistant 2026.
-
-## Tuya Cloud
-
-A Tuya Cloud account is **optional**.
-
-LocalTuya communicates with devices locally. Cloud access is used to retrieve
-device information, local keys and Tuya DP metadata that can improve automatic
-configuration.
-
-If Cloud access is not configured, devices can still be added manually when
-their device ID and local key are known.
+Energy monitoring such as voltage, current and power is supported on compatible devices.
 
 ## Installation with HACS
 
 This fork must be added as a **custom HACS repository**.
 
-1. Open HACS.
+1. Open **HACS**.
 2. Open **Integrations**.
 3. Open the menu and choose **Custom repositories**.
 4. Add:
@@ -209,11 +97,169 @@ This fork must be added as a **custom HACS repository**.
    `https://github.com/MattiaFontana997/localtuya`
 
 5. Select **Integration** as the repository type.
-6. Install LocalTuya.
+6. Install **LocalTuya**.
 7. Restart Home Assistant.
 
-> Do not install this fork and the upstream LocalTuya integration at the same
-> time. Both use the `localtuya` integration domain.
+> Do not install this fork and the upstream LocalTuya integration at the same time. Both use the `localtuya` integration domain.
+
+## Recommended setup: Smart Life / Tuya QR
+
+After installing LocalTuya:
+
+1. Open **Settings → Devices & services** in Home Assistant.
+2. Add **LocalTuya**.
+3. Choose **QR login with Smart Life / Tuya**.
+4. In the Smart Life or Tuya mobile app, locate your account **User Code**.
+5. Enter the User Code in Home Assistant.
+6. Scan the QR code shown by LocalTuya with the Smart Life / Tuya app and approve the authorization.
+7. Choose the device you want to add.
+8. LocalTuya tries to discover the device on the LAN and validates its local credentials, protocol and datapoints.
+9. Review any suggested mappings if Home Assistant asks you to do so.
+10. Finish setup.
+
+For screenshots, troubleshooting and the flow for adding more devices later, see the full guide:
+
+**[Smart Life / Tuya QR setup guide](docs/QR_SETUP_GUIDE.md)**
+
+### Adding more devices later
+
+While the saved Tuya authorization is still valid, you normally do **not** need to scan another QR code.
+
+Open the LocalTuya integration options, choose **Add a new device**, then select the Smart Life / Tuya provisioning path. LocalTuya refreshes the linked account and shows eligible devices that are not already configured.
+
+### Existing LocalTuya installation
+
+You do not need to remove your existing LocalTuya entry or recreate devices.
+
+Open the integration options and choose:
+
+**Link Smart Life / Tuya account by QR**
+
+Existing LAN devices and mappings are preserved. If the entry previously used the legacy Tuya Developer Platform cloud configuration, explicitly linking the account by QR migrates that entry to the provisioning-only model and disables normal cloud runtime use.
+
+## Manual setup
+
+Advanced users can still choose **Manual device setup** and provide:
+
+- Device name
+- IP address / hostname
+- Device ID
+- `local_key`
+- Protocol version, or automatic probing where available
+
+The manual path remains useful for offline setups, imported credentials, unusual networks and devices that are not eligible for QR provisioning.
+
+LocalTuya also supports importing existing LocalTuya / Tuya JSON containing Device ID and `local_key` data. Imported credentials are validated over the LAN before they are saved.
+
+## LAN discovery and IP fallback
+
+LocalTuya prefers Tuya UDP discovery because it can resolve the current device address and confirm its advertised identity.
+
+Some networks do not pass discovery broadcasts correctly, especially setups involving:
+
+- VLANs
+- Docker or container networking
+- restrictive Wi-Fi access points
+- unusual multicast / broadcast handling
+
+If automatic discovery cannot determine a usable address, the QR flow can ask for the current device IP address or hostname.
+
+This is **not** a trust bypass: the address is accepted only if LocalTuya can authenticate to the selected device locally and successfully read its datapoints.
+
+## Automatic mapping
+
+LocalTuya combines observed LAN datapoints with safe metadata and the Community Device Catalog.
+
+Mapping behavior is confidence-based:
+
+- **High confidence** mappings can be included automatically.
+- **Medium confidence** mappings are shown for review.
+- Ambiguous or unsafe mappings are not guessed.
+
+Product-specific catalog mappings are authoritative when their Product ID / fingerprint and observed datapoints match the device requirements. Generic mapping fills capabilities that can be inferred safely.
+
+Manual entity configuration remains available.
+
+## Community Device Catalog
+
+LocalTuya uses a community-maintained catalog for product-specific mappings that cannot be inferred reliably from generic Tuya metadata alone.
+
+Catalog matching can use:
+
+- Tuya Product ID
+- Tuya category
+- datapoints observed from the real device over the LAN
+- conservative exact-DP fingerprints for eligible devices without Product ID
+
+LocalTuya uses:
+
+- the remote community catalog for current mappings
+- a persistent local cache
+- a bundled `builtin_catalog.json` snapshot as an offline fallback
+
+Catalog confidence levels:
+
+`experimental → community → verified`
+
+Verified mappings are additionally validated on real hardware.
+
+Device catalog repository:
+
+`https://github.com/MattiaFontana997/localtuya-device-catalog`
+
+## Submit a device mapping
+
+After configuring and testing a device, open LocalTuya options and choose the community contribution flow.
+
+The final call to action is:
+
+**Submit to Community Catalog**
+
+LocalTuya prepares a privacy-safe mapping contribution. It does **not** automatically upload the contribution.
+
+The export excludes sensitive/user-specific data such as:
+
+- `local_key`
+- Tuya Device ID
+- IP address
+- Tuya account authorization
+- legacy Tuya Cloud credentials
+- user-defined friendly names
+
+LocalTuya also exposes:
+
+- `localtuya.export_device_mapping`
+- `localtuya.refresh_device_catalog`
+
+## Privacy and diagnostics
+
+LocalTuya redacts device secrets and QR authorization material from diagnostics.
+
+QR access/refresh tokens and device `local_key` values must not be copied into issues, screenshots or logs posted publicly.
+
+Disconnecting the linked Smart Life / Tuya account removes the provisioning authorization while preserving already configured LAN devices.
+
+## Troubleshooting
+
+### Device appears in Smart Life / Tuya but LocalTuya cannot find it on the LAN
+
+Confirm that Home Assistant can reach the device network directly. If discovery is blocked but direct LAN communication works, use the IP / hostname fallback when offered.
+
+### Device IP changed
+
+Use a DHCP reservation when possible. A stable address makes local integrations more reliable.
+
+### Device cannot be authenticated
+
+A reachable IP is not enough. The Device ID / `local_key` pair must match the device. Re-link or reprovision if the Tuya credentials changed.
+
+### Hub child device is not shown / cannot be added
+
+The initial QR flow intentionally rejects unsupported hub child devices until LocalTuya has an explicit and tested local child-device transport model.
+
+### QR authorization expired
+
+Open LocalTuya options and choose **Link Smart Life / Tuya account by QR** again.
 
 ## Manual installation
 
@@ -227,206 +273,43 @@ into:
 
 and restart Home Assistant.
 
-## Upgrading from LocalTuya 5.x
+## Upgrading
 
-The integration domain remains `localtuya`, so existing config entries are
-intended to be retained.
+Before upgrading a production Home Assistant instance, create a backup.
 
-Before replacing an existing installation, make a Home Assistant backup.
-Because Tuya hardware varies considerably, review automatically generated
-entities rather than assuming every Cloud specification is correct.
+Existing LocalTuya config entries are intended to be retained across 6.x upgrades. Version 6.6.0 does not require existing users to delete their integration and start over.
+
+## Reliability and testing
+
+The modernization fork includes regression coverage for areas such as:
+
+- Tuya protocol framing and authentication
+- Tuya 3.1 through 3.5 payload handling
+- Tuya 3.4 / 3.5 session-key negotiation
+- passive and active LAN discovery
+- 55AA and 6699 discovery frames
+- config-entry migration and lifecycle
+- QR account linking and provisioning
+- LAN validation before save
+- automatic and catalog mapping
+- advanced / multi-DP mappings
+- diagnostics secret redaction
+
+CI runs against current Home Assistant / Python targets and includes HACS/Hassfest validation.
+
+## Documentation
+
+- [Smart Life / Tuya QR setup guide](docs/QR_SETUP_GUIDE.md)
+- [QR onboarding architecture and safety model](docs/QR_ONBOARDING.md)
+- [QR onboarding test plan](docs/QR_ONBOARDING_TEST_PLAN.md)
+- [Community Device Catalog](https://github.com/MattiaFontana997/localtuya-device-catalog)
 
 ## Credits
 
-This fork builds on the work of the original LocalTuya maintainers and
-contributors. Upstream project:
+This fork builds on the work of the original LocalTuya maintainers and contributors.
 
-https://github.com/rospogrigio/localtuya
+Original project:
 
-The modernization work in this fork includes Home Assistant 2026 compatibility,
-Cloud metadata mapping, discovery/protocol hardening and expanded regression
-testing.
+`https://github.com/rospogrigio/localtuya`
 
----
-
-# Adding the Integration
-
-
-**NOTE: starting from v4.0.0, configuration using YAML files is no longer supported. The integration can only be configured using the config flow.**
-
-
-To start configuring the integration, just press the "+ADD INTEGRATION" button in the Settings - Integrations page, and select LocalTuya from the drop-down menu.
-The Cloud API configuration page will appear, requesting to input your Tuya IoT Platform account credentials:
-
-![cloud_setup](https://github.com/rospogrigio/localtuya-homeassistant/blob/master/img/9-cloud_setup.png)
-
-To setup a Tuya IoT Platform account and setup a project in it, refer to the instructions for the official Tuya integration:
-https://www.home-assistant.io/integrations/tuya/
-The Client ID and Secret can be found at `Cloud > Development > Overview` and the User ID can be found in the "Link Tuya App Account" subtab within the Cloud project:
-
-![user_id.png](https://github.com/rospogrigio/localtuya-homeassistant/blob/master/img/8-user_id.png)
-
-> **Note: as stated in the above link, if you already have an account and an IoT project, make sure that it was created after May 25, 2021 (due to changes introduced in the cloud for Tuya 2.0). Otherwise, you need to create a new project. See the following screenshot for where to check your project creation date:**
-
-![project_date](https://github.com/rospogrigio/localtuya-homeassistant/blob/master/img/6-project_date.png)
-
-After pressing the Submit button, the first setup is complete and the Integration will be added. 
-
-> **Note: it is not mandatory to input the Cloud API credentials: you can choose to tick the "Do not configure a Cloud API account" button, and the Integration will be added anyway.**
-
-After the Integration has been set up, devices can be added and configured pressing the Configure button in the Integrations page:
-
-![integration_configure](https://github.com/rospogrigio/localtuya-homeassistant/blob/master/img/10-integration_configure.png)
-
-
-# Integration Configuration menu
-
-The configuration menu is the following:
-
-![config_menu](https://github.com/rospogrigio/localtuya-homeassistant/blob/master/img/11-config_menu.png)
-
-From this menu, you can select the "Reconfigure Cloud API account" to edit your Tuya Cloud credentials and settings, in case they have changed or if the integration was migrated from v.3.x.x versions.
-
-You can then proceed Adding or Editing your Tuya devices.
-
-# Adding/editing a device
-
-If you select to "Add or Edit a device", a drop-down menu will appear containing the list of detected devices (using auto-discovery if adding was selected, or the list of already configured devices if editing was selected): you can select one of these, or manually input all the parameters selecting the "..." option.
-
-> **Note: The tuya app on your device must be closed for the following steps to work reliably.**
-
-
-![discovery](https://github.com/rospogrigio/localtuya-homeassistant/blob/master/img/1-discovery.png)
-
-If you have selected one entry, you only need to input the device's Friendly Name and localKey. These values will be automatically retrieved if you have configured your Cloud API account, otherwise you will need to input them manually.
-
-Setting the scan interval is optional, it is only needed if energy/power values are not updating frequently enough by default. Values less than 10 seconds may cause stability issues.
-
-Setting the 'Manual DPS To Add' is optional, it is only needed if the device doesn't advertise the DPS correctly until the entity has been properly initiailised. This setting can often be avoided by first connecting/initialising the device with the Tuya App, then closing the app and then adding the device in the integration. **Note: Any DPS added using this option will have a -1 value during setup.** 
-
-Setting the 'DPIDs to send in RESET command' is optional. It is used when a device doesn't respond to any Tuya commands after a power cycle, but can be connected to (zombie state). This scenario mostly occurs when the device is blocked from accessing the internet. The DPids will vary between devices, but typically "18,19,20" is used. If the wrong entries are added here, then the device may not come out of the zombie state. Typically only sensor DPIDs entered here.
-
-Once you press "Submit", the connection is tested to check that everything works.
-
-![image](https://github.com/rospogrigio/localtuya-homeassistant/blob/master/img/2-device.png)
-
-
-Then, it's time to add the entities: this step will take place several times. First, select the entity type from the drop-down menu to set it up.
-After you have defined all the needed entities, leave the "Do not add more entities" checkbox checked: this will complete the procedure.
-
-![entity_type](https://github.com/rospogrigio/localtuya-homeassistant/blob/master/img/3-entity_type.png)
-
-For each entity, the associated DP has to be selected. All the options requiring to select a DP will provide a drop-down menu showing
-all the available DPs found on the device (with their current status!!) for easy identification. 
-
-**Note: If your device requires an LocalTuya to send an initialisation value to the entity for it to work, this can be configured (in supported entities) through the 'Passive entity' option. Optionally you can specify the initialisation value to be sent**
-
-Each entity type has different options to be configured. Here is an example for the "switch" entity:
-
-![entity](https://github.com/rospogrigio/localtuya-homeassistant/blob/master/img/4-entity.png)
-
-Once you configure the entities, the procedure is complete. You can now associate the device with an Area in Home Assistant
-
-![success](https://github.com/rospogrigio/localtuya-homeassistant/blob/master/img/5-success.png)
-
-
-# Migration from LocalTuya v.3.x.x
-
-If you upgrade LocalTuya from v3.x.x or older, the config entry will automatically be migrated to the new setup. Everything should work as it did before the upgrade, apart from the fact that in the Integration tab you will see just one LocalTuya integration (showing the number of devices and entities configured) instead of several Integrations grouped within the LocalTuya Box. This will happen both if the old configuration was done using YAML files and with the config flow. Once migrated, you can just input your Tuya IoT account credentials to enable the support for the Cloud API (and benefit from the local_key retrieval and auto-update): see [Configuration menu](https://github.com/rospogrigio/localtuya#integration-configuration-menu).
-
-If you had configured LocalTuya using YAML files, you can delete all its references from within the YAML files because they will no longer be considered so they might bring confusion (only the logger configuration part needs to be kept, of course, see [Debugging](https://github.com/rospogrigio/localtuya#debugging) ).
-
-
-# Energy monitoring values
-
-You can obtain Energy monitoring (voltage, current) in two different ways:
-
-1) Creating individual sensors, each one with the desired name.
-  Note: Voltage and Consumption usually include the first decimal. You will need to scale the parament by 0.1 to get the correct values.
-2) Access the voltage/current/current_consumption attributes of a switch, and define template sensors
-  Note:  these values are already divided by 10 for Voltage and Consumption
-3) On some devices, you may find that the energy values are not updating frequently enough by default. If so, set the scan interval (see above) to an appropriate value. Settings below 10 seconds may cause stability issues, 30 seconds is recommended.
-
-```yaml
-       sensor:
-         - platform: template
-           sensors:
-             tuya-sw01_voltage:
-               value_template: >-
-                 {{ states.switch.sw01.attributes.voltage }}
-               unit_of_measurement: 'V'
-             tuya-sw01_current:
-               value_template: >-
-                 {{ states.switch.sw01.attributes.current }}
-               unit_of_measurement: 'mA'
-             tuya-sw01_current_consumption:
-               value_template: >-
-                 {{ states.switch.sw01.attributes.current_consumption }}
-               unit_of_measurement: 'W'
-```
-
-# Climates
-
-There are a multitude of Tuya based climates out there, both heaters,
-thermostats and ACs. The all seems to be integrated in different ways and it's
-hard to find a common DP mapping. Below are a table of DP to product mapping
-which are currently seen working. Use it as a guide for your own mapping and
-please contribute to the list if you have the possibility.
-
-| DP  | Moes BHT 002                                            | Qlima WMS S + SC52 (AB;AF)                              | Avatto                                     |
-|-----|---------------------------------------------------------|---------------------------------------------------------|--------------------------------------------|
-| 1   | ID: On/Off<br>{true, false}                             | ID: On/Off<br>{true, false}                             | ID: On/Off<br>{true, false}                |
-| 2   | Target temperature<br>Integer, scaling: 0.5             | Target temperature<br>Integer, scaling 1                | Target temperature<br>Integer, scaling 1   |
-| 3   | Current temperature<br>Integer, scaling: 0.5            | Current temperature<br>Integer, scaling: 1              | Current temperature<br>Integer, scaling: 1 |
-| 4   | Mode<br>{0, 1}                                          | Mode<br>{"hot", "wind", "wet", "cold", "auto"}          | ?                                          |
-| 5   | Eco mode<br>?                                           | Fan mode<br>{"strong", "high", "middle", "low", "auto"} | ?                                          |
-| 15  | Not supported                                           | Supported, unknown<br>{true, false}                     | ?                                          |
-| 19  | Not supported                                           | Temperature unit<br>{"c", "f"}                          | ?                                          |
-| 23  | Not supported                                           | Supported, unknown<br>Integer, eg. 68                   | ?                                          |
-| 24  | Not supported                                           | Supported, unknown<br>Integer, eg. 64                   | ?                                          |
-| 101 | Not supported                                           | Outdoor temperature<br>Integer. Scaling: 1              | ?                                          |
-| 102 | Temperature of external sensor<br>Integer, scaling: 0.5 | Supported, unknown<br>Integer, eg. 34                   | ?                                          |
-| 104 | Supported, unknown<br>{true, false(?)}                  | Not supported                                           | ?                                          |
-
-[Moes BHT 002](https://community.home-assistant.io/t/moes-bht-002-thermostat-local-control-tuya-based/151953/47)
-[Avatto thermostat](https://pl.aliexpress.com/item/1005001605377377.html?gatewayAdapt=glo2pol)
-
-# Debugging
-
-Whenever you write a bug report, it helps tremendously if you include debug logs directly (otherwise we will just ask for them and it will take longer). So please enable debug logs like this and include them in your issue:
-
-```yaml
-logger:
-  default: warning
-  logs:
-    custom_components.localtuya: debug
-    custom_components.localtuya.pytuya: debug
-```
-
-Then, edit the device that is showing problems and check the "Enable debugging for this device" button.
-
-# Notes:
-
-* Do not declare anything as "tuya", such as by initiating a "switch.tuya". Using "tuya" launches Home Assistant's built-in, cloud-based Tuya integration in lieu of localtuya.
-
-# To-do list:
-
-* Create a (good and precise) sensor (counter) for Energy (kWh) -not just Power, but based on it-.
-      Ideas: Use: https://www.home-assistant.io/integrations/integration/ and https://www.home-assistant.io/integrations/utility_meter/
-
-* Everything listed in https://github.com/rospogrigio/localtuya-homeassistant/issues/15
-
-# Thanks to:
-
-NameLessJedi https://github.com/NameLessJedi/localtuya-homeassistant and mileperhour https://github.com/mileperhour/localtuya-homeassistant being the major sources of inspiration, and whose code for switches is substantially unchanged.
-
-TradeFace, for being the only one to provide the correct code for communication with the cover (in particular, the 0x0d command for the status instead of the 0x0a, and related needs such as double reply to be received): https://github.com/TradeFace/tuya/
-
-sean6541, for the working (standard) Python Handler for Tuya devices.
-
-jasonacox, for the TinyTuya project from where I could import the code to communicate with devices using protocol 3.4.
-
-postlund, for the ideas, for coding 95% of the refactoring and boosting the quality of this repo to levels hard to imagine (by me, at least) and teaching me A LOT of how things work in Home Assistant.
-
-<a href="https://www.buymeacoffee.com/rospogrigio" target="_blank"><img src="https://bmc-cdn.nyc3.digitaloceanspaces.com/BMC-button-images/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a>
-<a href="https://paypal.me/rospogrigio" target="_blank"><img src="https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_37x23.jpg" border="0" alt="PayPal Logo" style="height: auto !important;width: auto !important;"></a>
+The modernization work in this fork includes current Home Assistant compatibility, Tuya 3.5 support, QR provisioning, discovery/protocol hardening, catalog-driven mappings and expanded regression testing.

@@ -2,7 +2,11 @@
     "config": {
         "abort": {
             "already_configured": "Das Gerät wurde bereits konfiguriert.",
-            "device_updated": "Die Gerätekonfiguration wurde aktualisiert!"
+            "device_updated": "Die Gerätekonfiguration wurde aktualisiert!",
+            "qr_no_local_devices": "Tuya hat keine lokal steuerbaren Geräte mit nutzbarem local_key zurückgegeben.",
+            "qr_cloud_unavailable": "Die temporäre Tuya-Bereitstellungssitzung ist nicht erreichbar. Versuche es später erneut.",
+            "qr_reauth_required": "Die Tuya-Kontoautorisierung ist abgelaufen. Verknüpfe das Konto erneut per QR.",
+            "qr_mapping_not_found": "Es wurde keine sichere automatische Zuordnung gefunden. Verwende für dieses Gerät die manuelle Einrichtung."
         },
         "error": {
             "authentication_failed": "Authentifizierung fehlgeschlagen.\n{msg}",
@@ -13,19 +17,197 @@
             "entity_already_configured": "Eine Entität mit dieser ID wurde bereits konfiguriert.",
             "address_in_use": "Die für die Erkennung verwendete Adresse wird bereits verwendet. Stelle sicher, dass keine andere Anwendung sie verwendet (TCP-Port 6668).",
             "discovery_failed": "Bei der Geräteerkennung ist ein Fehler aufgetreten. Weitere Einzelheiten findest du im Protokoll.",
-            "empty_dps": "Die Verbindung zum Gerät war erfolgreich, es wurden jedoch keine Datenpunkte gefunden. Versuche es erneut. Erstelle ein neues Issue und füge Debug-Protokolle hinzu, wenn das Problem weiterhin besteht."
+            "empty_dps": "Die Verbindung zum Gerät war erfolgreich, es wurden jedoch keine Datenpunkte gefunden. Versuche es erneut. Erstelle ein neues Issue und füge Debug-Protokolle hinzu, wenn das Problem weiterhin besteht.",
+            "qr_login_error": "QR-Anmeldung konnte nicht abgeschlossen werden. {msg}",
+            "qr_device_not_on_lan": "Das ausgewählte Gerät wurde im Home-Assistant-LAN nicht gefunden. {msg}",
+            "qr_device_not_local": "Das ausgewählte Gerät stellt keine nutzbaren lokalen Zugangsdaten bereit. {msg}",
+            "qr_subdevice_not_supported": "Hub-Untergeräte werden von diesem QR-Ablauf noch nicht unterstützt. {msg}",
+            "qr_mapping_required": "Wähle mindestens eine Zuordnung aus, bevor du fortfährst.",
+            "import_invalid": "Das eingefügte JSON enthält keine unterstützte Gerätekonfiguration.",
+            "import_missing_credentials": "Dem importierten Gerät fehlt Device ID oder local_key. {msg}",
+            "import_device_not_on_lan": "Das importierte Gerät wurde im Home-Assistant-LAN nicht gefunden. {msg}"
         },
         "step": {
             "user": {
-                "title": "Cloud-API-Konto konfigurieren",
-                "description": "Gib die Zugangsdaten für die Tuya Cloud API ein.",
+                "title": "LocalTuya einrichten",
+                "description": "QR-Anmeldung wird empfohlen. Smart Life/Tuya wird nur für die bedarfsgesteuerte Bereitstellung verknüpft; die normale Gerätesteuerung bleibt lokal.",
+                "menu_options": {
+                    "qr_login": "QR-Anmeldung mit Smart Life / Tuya",
+                    "manual_device": "Manuelle Geräteeinrichtung",
+                    "import_existing": "Vorhandene Konfiguration / Local Key importieren"
+                },
+                "menu_option_descriptions": {
+                    "qr_login": "Empfohlen — keine Tuya Developer Platform, Client-ID oder Client-Secret erforderlich.",
+                    "manual_device": "Erweitert — Geräte-ID, local_key und LAN-Daten manuell eingeben.",
+                    "import_existing": "Eine vorhandene LocalTuya/Tuya-JSON-Konfiguration oder einen Export mit Device ID und local_key wiederverwenden."
+                }
+            },
+            "qr_login": {
+                "title": "Smart Life / Tuya verknüpfen",
+                "description": "Gib den User Code aus den Kontoeinstellungen der Smart-Life- oder Tuya-App ein.",
                 "data": {
-                    "region": "API-Serverregion",
-                    "client_id": "Client ID",
-                    "client_secret": "Client-Secret",
-                    "user_id": "User ID",
-                    "user_name": "Benutzername",
-                    "no_cloud": "Kein Cloud-API-Konto konfigurieren"
+                    "user_code": "Benutzercode"
+                }
+            },
+            "qr_scan": {
+                "title": "Mit Smart Life / Tuya scannen",
+                "description": "Scanne den QR-Code in der Smart-Life- oder Tuya-App, bestätige die Autorisierung und fahre dann fort.",
+                "data": {
+                    "QR": "QR-Code"
+                }
+            },
+            "qr_choose_device": {
+                "title": "Gerät auswählen",
+                "description": "Wähle ein Gerät für die lokale Bereitstellung. Angezeigt werden nur Geräte mit nutzbarem local_key.",
+                "data": {
+                    "device_id": "Tuya-Gerät"
+                }
+            },
+            "qr_mapping_review": {
+                "title": "Vorgeschlagene Zuordnungen prüfen",
+                "description": "LocalTuya hat Zuordnungen gefunden, die bestätigt werden müssen. Zuordnungen mit hoher Sicherheit sind bereits enthalten.",
+                "data": {
+                    "qr_mapping_selection": "Zusätzliche Zuordnungen"
+                }
+            },
+            "manual_device": {
+                "title": "Manuelle Geräteeinrichtung",
+                "description": "Erweiterte Einrichtung ohne Verknüpfung eines Tuya-Kontos.",
+                "data": {
+                    "friendly_name": "Gerätename",
+                    "host": "IP-Adresse / Host",
+                    "device_id": "Geräte-ID",
+                    "local_key": "Lokaler Schlüssel",
+                    "protocol_version": "Protokollversion",
+                    "enable_debug": "Debugging für dieses Gerät aktivieren",
+                    "scan_interval": "Abfrageintervall",
+                    "entities": "Konfigurierte Entitäten",
+                    "add_entities": "Weitere Entitäten im Modus „Gerät bearbeiten“ hinzufügen",
+                    "manual_dps_strings": "Manuelle DPS hinzufügen, durch Kommas getrennt – nur verwenden, wenn die automatische Erkennung nicht funktioniert (optional)",
+                    "reset_dpids": "DPIDs für den RESET-Befehl, durch Kommas getrennt (optional; verwenden, wenn das Gerät nach dem Einschalten nicht auf Statusanfragen antwortet)",
+                    "manual_dps": "Manuelle DPS, durch Kommas getrennt (optional; nur verwenden, wenn die automatische Erkennung nicht funktioniert)",
+                    "enable_add_entities": "Weitere Entitäten hinzufügen"
+                }
+            },
+            "manual_mapping_review": {
+                "title": "Vorgeschlagene Zuordnungen prüfen",
+                "description": "LocalTuya hat Zuordnungen gefunden, die bestätigt werden müssen. Zuordnungen mit hoher Sicherheit sind bereits enthalten.",
+                "data": {
+                    "manual_mapping_selection": "Zusätzliche Zuordnungen"
+                }
+            },
+            "manual_pick_entity_type": {
+                "title": "Entitätstyp auswählen",
+                "description": "Wähle den Typ der hinzuzufügenden Entität.",
+                "data": {
+                    "manual_platform": "Plattform",
+                    "manual_finish": "Keine weiteren Entitäten hinzufügen"
+                }
+            },
+            "manual_configure_entity": {
+                "title": "Entität konfigurieren",
+                "description": "Gib die Details für {entity} vom Typ `{platform}` ein. Alle Einstellungen außer `ID` können später über die Optionsseite geändert werden.",
+                "data": {
+                    "id": "ID",
+                    "friendly_name": "Name",
+                    "current": "Aktueller Wert",
+                    "current_consumption": "Aktueller Verbrauch",
+                    "voltage": "Spannung",
+                    "commands_set": "Befehlssatz Öffnen_Schließen_Stopp",
+                    "positioning_mode": "Positionierungsmodus",
+                    "current_position_dp": "Aktuelle Position (nur für den Modus *Position*)",
+                    "set_position_dp": "Position einstellen (nur für den Modus *Position*)",
+                    "position_inverted": "Position 0–100 invertieren (nur für den Modus *Position*)",
+                    "span_time": "Vollständige Öffnungszeit in Sekunden (nur für den Modus *Zeitsteuerung*)",
+                    "unit_of_measurement": "Maßeinheit",
+                    "device_class": "Geräteklasse",
+                    "scaling": "Skalierungsfaktor",
+                    "state_on": "Einschaltwert",
+                    "state_off": "Ausschaltwert",
+                    "powergo_dp": "Leistungs-DP (normalerweise 25 oder 2)",
+                    "idle_status_value": "Leerlaufstatus (durch Kommas getrennt)",
+                    "returning_status_value": "Rückkehrstatus",
+                    "docked_status_value": "Dockingstatus (durch Kommas getrennt)",
+                    "fault_dp": "Fehler-DP (normalerweise 11)",
+                    "battery_dp": "Batteriestatus-DP (normalerweise 14)",
+                    "mode_dp": "Modus-DP (normalerweise 27)",
+                    "modes": "Liste der Modi",
+                    "return_mode": "Rückkehrmodus",
+                    "fan_speed_dp": "DP für Lüftergeschwindigkeit (normalerweise 30)",
+                    "fan_speeds": "Liste der Lüftergeschwindigkeiten (durch Kommas getrennt)",
+                    "clean_time_dp": "DP für Reinigungsdauer (normalerweise 33)",
+                    "clean_area_dp": "DP für gereinigte Fläche (normalerweise 32)",
+                    "clean_record_dp": "DP für Reinigungsprotokoll (normalerweise 34)",
+                    "locate_dp": "DP für Ortungsfunktion (normalerweise 31)",
+                    "paused_state": "Pausenstatus (pause, paused usw.)",
+                    "stop_status": "Stoppstatus",
+                    "brightness": "Helligkeit (nur für Weiß)",
+                    "brightness_lower": "Unterer Helligkeitswert",
+                    "brightness_upper": "Oberer Helligkeitswert",
+                    "color_temp": "Farbtemperatur",
+                    "color_temp_reverse": "Farbtemperatur umkehren",
+                    "color": "Farbe",
+                    "color_mode": "Farbmodus",
+                    "color_temp_min_kelvin": "Minimale Farbtemperatur in K",
+                    "color_temp_max_kelvin": "Maximale Farbtemperatur in K",
+                    "music_mode": "Musikmodus verfügbar",
+                    "scene": "Szene",
+                    "select_options": "Gültige Einträge, durch Semikolon (;) trennen",
+                    "select_options_friendly": "Benutzerfreundliche Optionen, durch Semikolon (;) trennen",
+                    "fan_speed_control": "DP für Lüftergeschwindigkeitssteuerung",
+                    "fan_oscillating_control": "DP für Lüfteroszillation",
+                    "fan_speed_min": "Minimale Lüftergeschwindigkeit",
+                    "fan_speed_max": "Maximale Lüftergeschwindigkeit",
+                    "fan_speed_ordered_list": "Liste der Lüftergeschwindigkeitsmodi (überschreibt Minimum/Maximum)",
+                    "fan_direction": "DP für Lüfterrichtung",
+                    "fan_direction_forward": "DP-Zeichenfolge für Vorwärtsrichtung",
+                    "fan_direction_reverse": "DP-Zeichenfolge für Rückwärtsrichtung",
+                    "fan_dps_type": "DP-Werttyp",
+                    "current_temperature_dp": "Aktuelle Temperatur",
+                    "target_temperature_dp": "Zieltemperatur",
+                    "temperature_step": "Temperaturschritt (optional)",
+                    "max_temperature_dp": "DP für maximale Temperatur (optional)",
+                    "min_temperature_dp": "DP für minimale Temperatur (optional)",
+                    "max_temperature_const": "Maximale Temperaturkonstante (optional)",
+                    "min_temperature_const": "Minimale Temperaturkonstante (optional)",
+                    "precision": "Genauigkeit (optional, für DP-Werte)",
+                    "target_precision": "Zielgenauigkeit (optional, für DP-Werte)",
+                    "temperature_unit": "Temperatureinheit (optional)",
+                    "hvac_mode_dp": "DP für HVAC-Modus (optional)",
+                    "hvac_mode_set": "Wertesatz für HVAC-Modus (optional)",
+                    "hvac_fan_mode_dp": "DP für HVAC-Lüftermodus (optional)",
+                    "hvac_fan_mode_set": "Wertesatz für HVAC-Lüftermodus (optional)",
+                    "hvac_swing_mode_dp": "DP für HVAC-Schwenkmodus (optional)",
+                    "hvac_swing_mode_set": "Wertesatz für HVAC-Schwenkmodus (optional)",
+                    "hvac_action_dp": "DP für aktuelle HVAC-Aktion (optional)",
+                    "hvac_action_set": "Wertesatz für aktuelle HVAC-Aktion (optional)",
+                    "preset_dp": "DP für Voreinstellungen (optional)",
+                    "preset_set": "Wertesatz für Voreinstellungen (optional)",
+                    "eco_dp": "Eco-DP (optional)",
+                    "eco_value": "Eco-Wert (optional)",
+                    "heuristic_action": "Heuristische Aktion aktivieren (optional)",
+                    "dps_default_value": "Standardwert bei nicht initialisiertem Zustand (optional)",
+                    "restore_on_reconnect": "Letzten in Home Assistant gesetzten Wert nach einem Verbindungsverlust wiederherstellen",
+                    "min_value": "Minimalwert",
+                    "max_value": "Maximalwert",
+                    "step_size": "Minimale Schrittweite",
+                    "is_passive_entity": "Passive Entität - die Integration muss einen Initialisierungswert senden",
+                    "default_value": "Standardwert bei nicht initialisiertem Zustand (optional)",
+                    "away_temperature_dp": "Temperatur-DP für Abwesenheit/Urlaub"
+                }
+            },
+            "import_existing": {
+                "title": "Vorhandene Konfiguration importieren",
+                "description": "Füge ein Geräte-JSON, eine Geräteliste oder eine LocalTuya-Konfiguration mit einem devices-Objekt ein. LocalTuya prüft Zugangsdaten und LAN-Verbindung vor dem Speichern.",
+                "data": {
+                    "import_json": "Konfigurations-JSON"
+                }
+            },
+            "import_choose_device": {
+                "title": "Importiertes Gerät auswählen",
+                "description": "Die importierten Daten enthalten mehrere Geräte. Wähle das Gerät aus, das jetzt hinzugefügt werden soll.",
+                "data": {
+                    "import_device_id": "Importiertes Gerät"
                 }
             }
         }
@@ -34,7 +216,12 @@
         "abort": {
             "already_configured": "Das Gerät wurde bereits konfiguriert.",
             "device_success": "Gerät {dev_name}: {action} erfolgreich.",
-            "no_entities": "Es können nicht alle Entitäten eines Geräts entfernt werden.\nWenn du ein Gerät löschen möchtest, öffne es im Menü „Geräte“, klicke im Bereich „Geräteinformationen“ auf die drei Punkte und wähle „Löschen“."
+            "no_entities": "Es können nicht alle Entitäten eines Geräts entfernt werden.\nWenn du ein Gerät löschen möchtest, öffne es im Menü „Geräte“, klicke im Bereich „Geräteinformationen“ auf die drei Punkte und wähle „Löschen“.",
+            "qr_not_linked": "Mit diesem LocalTuya-Eintrag ist kein Smart-Life/Tuya-Konto verknüpft.",
+            "qr_no_new_local_devices": "Im verknüpften Konto sind keine neuen lokal steuerbaren Geräte verfügbar.",
+            "qr_cloud_unavailable": "Die temporäre Tuya-Bereitstellungssitzung ist nicht erreichbar. Versuche es später erneut.",
+            "qr_reauth_required": "Die Tuya-Kontoautorisierung ist abgelaufen. Verknüpfe das Konto erneut per QR.",
+            "qr_mapping_not_found": "Es wurde keine sichere automatische Zuordnung gefunden. Verwende für dieses Gerät die manuelle Einrichtung."
         },
         "error": {
             "authentication_failed": "Authentifizierung fehlgeschlagen.\n{msg}",
@@ -47,7 +234,12 @@
             "discovery_failed": "Bei der Geräteerkennung ist ein Fehler aufgetreten. Weitere Einzelheiten findest du im Protokoll.",
             "empty_dps": "Die Verbindung zum Gerät war erfolgreich, es wurden jedoch keine Datenpunkte gefunden. Versuche es erneut. Erstelle ein neues Issue und füge Debug-Protokolle hinzu, wenn das Problem weiterhin besteht.",
             "contribution_not_available": "Für dieses Gerät sind nicht genügend sichere Mapping-Daten verfügbar, um einen Community-Beitrag vorzubereiten.",
-            "contribution_confirmation_required": "Bestätige vor dem Fortfahren, dass du die Beitragsdaten geprüft hast."
+            "contribution_confirmation_required": "Bestätige vor dem Fortfahren, dass du die Beitragsdaten geprüft hast.",
+            "qr_device_not_on_lan": "Das ausgewählte Gerät wurde im Home-Assistant-LAN nicht gefunden. {msg}",
+            "qr_device_not_local": "Das ausgewählte Gerät stellt keine nutzbaren lokalen Zugangsdaten bereit. {msg}",
+            "qr_subdevice_not_supported": "Hub-Untergeräte werden von diesem QR-Ablauf noch nicht unterstützt. {msg}",
+            "qr_mapping_required": "Wähle mindestens eine Zuordnung aus, bevor du fortfährst.",
+            "qr_login_error": "QR-Anmeldung konnte nicht abgeschlossen werden. {msg}"
         },
         "step": {
             "yaml_import": {
@@ -267,6 +459,57 @@
                 "menu_option_descriptions": {
                     "submit_to_community_catalog": "GitHub ↗ Vorbefüllten Katalogbeitrag öffnen."
                 }
+            },
+            "add_device_method": {
+                "title": "Gerät hinzufügen",
+                "description": "Wähle aus, wie das Gerät hinzugefügt werden soll.",
+                "menu_options": {
+                    "qr_add_device": "Aus Smart Life / Tuya",
+                    "manual_add_device": "Manuelle / LAN-Einrichtung",
+                    "qr_relink": "Smart-Life/Tuya-Konto erneut verknüpfen",
+                    "qr_disconnect": "Smart-Life/Tuya-Konto trennen"
+                },
+                "menu_option_descriptions": {
+                    "qr_add_device": "Empfohlen — das verknüpfte Konto einmal aktualisieren und das gewählte Gerät für LAN-Steuerung konfigurieren.",
+                    "manual_add_device": "Geräte-ID und local_key manuell eingeben.",
+                    "qr_relink": "Neue QR-Autorisierung verwenden, wenn die gespeicherte Tuya-Sitzung abgelaufen oder widerrufen wurde.",
+                    "qr_disconnect": "Cloud-Autorisierung vergessen. Bereits konfigurierte Geräte funktionieren weiter über LAN."
+                }
+            },
+            "qr_add_device": {
+                "title": "Neues Tuya-Gerät auswählen",
+                "description": "Das Konto wurde bei Bedarf aktualisiert. Wähle ein noch nicht konfiguriertes lokal steuerbares Gerät.",
+                "data": {
+                    "device_id": "Tuya-Gerät"
+                }
+            },
+            "qr_add_mapping_review": {
+                "title": "Vorgeschlagene Zuordnungen prüfen",
+                "description": "LocalTuya hat Zuordnungen gefunden, die bestätigt werden müssen. Zuordnungen mit hoher Sicherheit sind bereits enthalten.",
+                "data": {
+                    "qr_mapping_selection": "Zusätzliche Zuordnungen"
+                }
+            },
+            "qr_relink": {
+                "title": "Smart Life / Tuya erneut verknüpfen",
+                "description": "Benutzercode eingeben, um eine neue erneuerbare Autorisierung für die Bereitstellung zu erstellen.",
+                "data": {
+                    "user_code": "Benutzercode"
+                }
+            },
+            "qr_relink_scan": {
+                "title": "Smart Life / Tuya erneut verknüpfen",
+                "description": "Scanne den QR-Code in der Smart-Life- oder Tuya-App, bestätige die Autorisierung und fahre dann fort.",
+                "data": {
+                    "QR": "QR-Code"
+                }
+            },
+            "qr_disconnect": {
+                "title": "Tuya-Konto trennen",
+                "description": "Nur die gespeicherte Tuya-Autorisierung wird entfernt. Konfigurierte Geräte und lokale Schlüssel bleiben erhalten.",
+                "data": {
+                    "confirm": "Konto trennen"
+                }
             }
         }
     },
@@ -307,6 +550,7 @@
         "action_review_mapping": "Gerätezuordnung prüfen",
         "mapping_change_update": "Aktualisierung",
         "mapping_change_new": "Neue Entität",
-        "action_prepare_contribution": "Community-Beitrag vorbereiten"
+        "action_prepare_contribution": "Community-Beitrag vorbereiten",
+        "action_link_qr_account": "Smart Life / Tuya-Konto per QR verknüpfen"
     }
 }

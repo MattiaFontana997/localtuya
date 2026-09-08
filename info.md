@@ -4,65 +4,52 @@
 
 Local control of Tuya devices for Home Assistant.
 
-This repository is a modernization fork of the original LocalTuya project,
-targeting current Home Assistant releases.
+This repository is a maintained modernization fork of the original LocalTuya project, targeting current Home Assistant releases with safer protocol handling, QR-based provisioning and a community-driven device catalog.
 
-## LocalTuya 6.2
+## LocalTuya 6.6.0
 
-LocalTuya 6.2 adds stable and physically validated **Tuya protocol 3.5**
-support while retaining support for protocols 3.1 through 3.4.
+LocalTuya 6.6.0 adds the recommended **Smart Life / Tuya QR onboarding flow**.
+
+Standard setup no longer requires a Tuya Developer Platform project, Data Center configuration, Client ID or Client Secret.
+
+Recommended flow:
+
+`User Code → scan QR → choose device → LAN validation → automatic mapping`
 
 Highlights:
 
 - Home Assistant 2026.9+
 - Python 3.14 CI
 - Tuya protocols 3.1, 3.2, 3.3, 3.4 and 3.5
-- Automatic protocol probing including Tuya 3.5
-- Tuya 3.5 6699 AES-GCM framing
-- Tuya 3.5 session-key negotiation and authentication
-- Tuya 3.5 payload handling and response sequence support
-- Active LAN discovery for devices that do not advertise passively
-- Automatic entity suggestions from Tuya Cloud metadata
-- Community device catalog with remote cache and bundled offline snapshot
-- Mapping review and privacy-safe community contribution flow
-- Verified product-specific mappings
-- Improved string-based Tuya v2 color-data mapping
+- Smart Life / Tuya User Code + QR provisioning
+- Device ID, `local_key`, Product ID and provisioning metadata retrieval
+- LAN discovery with validated IP / hostname fallback
+- Automatic protocol probing and datapoint validation before save
+- LAN-only normal runtime after QR provisioning
+- Automatic entity suggestions and catalog-first mappings
+- Community Device Catalog with remote cache and bundled offline snapshot
+- Advanced and multi-DP catalog mappings
+- Privacy-safe community contribution flow
 - Diagnostics secret redaction
-- Expanded protocol, catalog and lifecycle regression coverage
+- Existing manual Device ID + `local_key` setup retained
 
-## Verified catalog devices
+## QR setup guide
 
-The bundled snapshot includes physically verified mappings for:
+Full step-by-step instructions:
 
-- **LSC Smart Connect RGB+CCT smart light**, sold by Action
-- **EMOS GoSmart P56201 Wi-Fi Room Thermostat**
+https://github.com/MattiaFontana997/localtuya/blob/master/docs/QR_SETUP_GUIDE.md
 
-The remote community catalog can be refreshed independently of LocalTuya
-releases.
+## Community Device Catalog
 
-## Automatic configuration
+The remote catalog can be refreshed independently of LocalTuya releases and supports product-specific mappings plus conservative fingerprints for eligible devices without Product IDs.
 
-High-confidence entities are selected automatically.
+Device catalog:
 
-Medium-confidence suggestions are presented for review and remain unselected
-until you choose them.
-
-Manual configuration is always available.
-
-## Supported Tuya protocols
-
-Stable:
-
-- 3.1
-- 3.2
-- 3.3
-- 3.4
-- 3.5
+https://github.com/MattiaFontana997/localtuya-device-catalog
 
 ## Important
 
-This fork uses the same Home Assistant integration domain as upstream
-LocalTuya:
+This fork uses the same Home Assistant integration domain as upstream LocalTuya:
 
 `localtuya`
 
@@ -70,17 +57,10 @@ Do not install the upstream integration and this fork simultaneously.
 
 ## Documentation
 
-Full documentation and development information:
-
 https://github.com/MattiaFontana997/localtuya
-
-Device catalog:
-
-https://github.com/MattiaFontana997/localtuya-device-catalog
 
 ## Credits
 
-Based on the original LocalTuya project and the work of its maintainers and
-contributors:
+Based on the original LocalTuya project and the work of its maintainers and contributors:
 
 https://github.com/rospogrigio/localtuya
