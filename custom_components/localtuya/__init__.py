@@ -58,6 +58,8 @@ from .mapping_export import build_mapping_submission
 
 _LOGGER = logging.getLogger(__name__)
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 LOADED_PLATFORMS = "loaded_platforms"
 LOADED_DEVICES = "loaded_devices"
 
