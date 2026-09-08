@@ -239,7 +239,8 @@
             "qr_device_not_local": "The selected device does not expose usable local credentials. {msg}",
             "qr_subdevice_not_supported": "Hub child devices are not supported by this QR flow yet. {msg}",
             "qr_mapping_required": "Select at least one mapping before continuing.",
-            "qr_login_error": "Unable to complete QR login. {msg}"
+            "qr_login_error": "Unable to complete QR login. {msg}",
+            "health_device_not_found": "The selected LocalTuya device is no longer configured."
         },
         "step": {
             "yaml_import": {
@@ -510,6 +511,17 @@
                 "data": {
                     "confirm": "Disconnect account"
                 }
+            },
+            "check_device_health_device": {
+                "title": "Check device health",
+                "description": "Select a configured device. LocalTuya will perform a live LAN, protocol and datapoint preflight without changing the device configuration.",
+                "data": {
+                    "selected_device": "Configured device"
+                }
+            },
+            "check_device_health_result": {
+                "title": "Device health result",
+                "description": "Device: **{device}**\n\nRuntime loaded: {runtime_present} · connected: {runtime_connected}\n\nLAN preflight: {preflight_ok} · stage: `{stage}` · failure: `{failure}`\n\nRecommended action: `{action}`\n\nProtocol: requested `{requested_protocol}` · resolved `{resolved_protocol}`\n\nDatapoints: {dps_count} (`{dp_ids}`) · attempts: {attempts}\n\nProbe error: `{probe_error}`\n\nNo Device ID, local key, IP address or raw datapoint values are displayed."
             }
         }
     },
@@ -575,7 +587,8 @@
         "mapping_change_update": "Update",
         "mapping_change_new": "New entity",
         "action_prepare_contribution": "Prepare community contribution",
-        "action_link_qr_account": "Link Smart Life / Tuya account by QR"
+        "action_link_qr_account": "Link Smart Life / Tuya account by QR",
+        "action_check_device_health": "Check device health"
     },
     "issues": {
         "host_recovery_failed": {

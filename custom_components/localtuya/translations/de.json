@@ -239,7 +239,8 @@
             "qr_device_not_local": "Das ausgewählte Gerät stellt keine nutzbaren lokalen Zugangsdaten bereit. {msg}",
             "qr_subdevice_not_supported": "Hub-Untergeräte werden von diesem QR-Ablauf noch nicht unterstützt. {msg}",
             "qr_mapping_required": "Wähle mindestens eine Zuordnung aus, bevor du fortfährst.",
-            "qr_login_error": "QR-Anmeldung konnte nicht abgeschlossen werden. {msg}"
+            "qr_login_error": "QR-Anmeldung konnte nicht abgeschlossen werden. {msg}",
+            "health_device_not_found": "Das ausgewählte LocalTuya-Gerät ist nicht mehr konfiguriert."
         },
         "step": {
             "yaml_import": {
@@ -510,6 +511,17 @@
                 "data": {
                     "confirm": "Konto trennen"
                 }
+            },
+            "check_device_health_device": {
+                "title": "Gerätezustand prüfen",
+                "description": "Wähle ein konfiguriertes Gerät. LocalTuya führt eine Live-Prüfung von LAN, Protokoll und Datenpunkten durch, ohne die Gerätekonfiguration zu ändern.",
+                "data": {
+                    "selected_device": "Konfiguriertes Gerät"
+                }
+            },
+            "check_device_health_result": {
+                "title": "Ergebnis der Geräteprüfung",
+                "description": "Gerät: **{device}**\n\nRuntime geladen: {runtime_present} · verbunden: {runtime_connected}\n\nLAN-Prüfung: {preflight_ok} · Phase: `{stage}` · Fehler: `{failure}`\n\nEmpfohlene Aktion: `{action}`\n\nProtokoll: angefordert `{requested_protocol}` · erkannt `{resolved_protocol}`\n\nDatenpunkte: {dps_count} (`{dp_ids}`) · Versuche: {attempts}\n\nPrüffehler: `{probe_error}`\n\nGeräte-ID, Local Key, IP-Adresse und Rohwerte der Datenpunkte werden nicht angezeigt."
             }
         }
     },
@@ -575,7 +587,8 @@
         "mapping_change_update": "Aktualisierung",
         "mapping_change_new": "Neue Entität",
         "action_prepare_contribution": "Community-Beitrag vorbereiten",
-        "action_link_qr_account": "Smart Life / Tuya-Konto per QR verknüpfen"
+        "action_link_qr_account": "Smart Life / Tuya-Konto per QR verknüpfen",
+        "action_check_device_health": "Gerätezustand prüfen"
     },
     "issues": {
         "host_recovery_failed": {

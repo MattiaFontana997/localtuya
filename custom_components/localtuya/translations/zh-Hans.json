@@ -239,7 +239,8 @@
             "qr_device_not_local": "所选设备未提供可用的本地凭据。{msg}",
             "qr_subdevice_not_supported": "此二维码流程暂不支持网关子设备。{msg}",
             "qr_mapping_required": "继续前请至少选择一个映射。",
-            "qr_login_error": "无法完成二维码登录。{msg}"
+            "qr_login_error": "无法完成二维码登录。{msg}",
+            "health_device_not_found": "所选 LocalTuya 设备已不再配置。"
         },
         "step": {
             "yaml_import": {
@@ -510,6 +511,17 @@
                 "data": {
                     "confirm": "断开账户"
                 }
+            },
+            "check_device_health_device": {
+                "title": "检查设备健康状态",
+                "description": "选择一个已配置的设备。LocalTuya 将实时检查 LAN、协议和数据点，而不会更改设备配置。",
+                "data": {
+                    "selected_device": "已配置设备"
+                }
+            },
+            "check_device_health_result": {
+                "title": "设备健康检查结果",
+                "description": "设备：**{device}**\n\n运行时已加载：{runtime_present} · 已连接：{runtime_connected}\n\nLAN 预检：{preflight_ok} · 阶段：`{stage}` · 故障：`{failure}`\n\n建议操作：`{action}`\n\n协议：请求 `{requested_protocol}` · 检测到 `{resolved_protocol}`\n\n数据点：{dps_count}（`{dp_ids}`）· 尝试次数：{attempts}\n\n检查错误：`{probe_error}`\n\n不会显示设备 ID、local key、IP 地址或原始数据点值。"
             }
         }
     },
@@ -575,7 +587,8 @@
         "mapping_change_update": "更新",
         "mapping_change_new": "新实体",
         "action_prepare_contribution": "准备社区贡献",
-        "action_link_qr_account": "通过二维码关联 Smart Life / Tuya 账户"
+        "action_link_qr_account": "通过二维码关联 Smart Life / Tuya 账户",
+        "action_check_device_health": "检查设备健康状态"
     },
     "issues": {
         "host_recovery_failed": {

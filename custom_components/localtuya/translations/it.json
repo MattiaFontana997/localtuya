@@ -239,7 +239,8 @@
             "qr_device_not_local": "Il dispositivo selezionato non espone credenziali locali utilizzabili. {msg}",
             "qr_subdevice_not_supported": "I dispositivi figli di un hub non sono ancora supportati da questo flusso QR. {msg}",
             "qr_mapping_required": "Seleziona almeno un mapping prima di continuare.",
-            "qr_login_error": "Impossibile completare il login QR. {msg}"
+            "qr_login_error": "Impossibile completare il login QR. {msg}",
+            "health_device_not_found": "Il dispositivo LocalTuya selezionato non è più configurato."
         },
         "step": {
             "yaml_import": {
@@ -510,6 +511,17 @@
                 "data": {
                     "confirm": "Disconnetti account"
                 }
+            },
+            "check_device_health_device": {
+                "title": "Controlla stato dispositivo",
+                "description": "Seleziona un dispositivo configurato. LocalTuya eseguirà un controllo live di LAN, protocollo e datapoint senza modificare la configurazione del dispositivo.",
+                "data": {
+                    "selected_device": "Dispositivo configurato"
+                }
+            },
+            "check_device_health_result": {
+                "title": "Risultato controllo dispositivo",
+                "description": "Dispositivo: **{device}**\n\nRuntime caricato: {runtime_present} · connesso: {runtime_connected}\n\nControllo LAN: {preflight_ok} · fase: `{stage}` · errore: `{failure}`\n\nAzione consigliata: `{action}`\n\nProtocollo: richiesto `{requested_protocol}` · rilevato `{resolved_protocol}`\n\nDatapoint: {dps_count} (`{dp_ids}`) · tentativi: {attempts}\n\nErrore del controllo: `{probe_error}`\n\nNon vengono mostrati Device ID, local key, indirizzo IP o valori grezzi dei datapoint."
             }
         }
     },
@@ -575,7 +587,8 @@
         "mapping_change_update": "Da aggiornare",
         "mapping_change_new": "Nuova entità",
         "action_prepare_contribution": "Prepara contributo community",
-        "action_link_qr_account": "Collega account Smart Life / Tuya tramite QR"
+        "action_link_qr_account": "Collega account Smart Life / Tuya tramite QR",
+        "action_check_device_health": "Controlla stato dispositivo"
     },
     "issues": {
         "host_recovery_failed": {
