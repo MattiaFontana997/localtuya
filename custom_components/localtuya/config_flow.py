@@ -61,6 +61,11 @@ from .const import (
     PLATFORMS,
 )
 from .discovery import discover
+from .device_health import (
+    DeviceHealthFailure,
+    DeviceHealthReport,
+    async_run_device_preflight,
+)
 from .device_mapper import (
     EntityCandidate,
     MappingConfidence,
@@ -776,7 +781,7 @@ async def _async_probe_protocol(
                         "Initial DPS detection failed using "
                         "protocol %s (%s); trying reset IDs %s",
                         protocol_version,
-                        ex,
+                        type(ex).__name__,
                         reset_ids,
                     )
 
@@ -798,8 +803,66 @@ async def _async_probe_protocol(
                 _LOGGER.debug(
                     "Error closing protocol %s probe: %s",
                     protocol_version,
-                    ex,
+                    type(ex).__name__,
                 )
+
+
+def _reset_ids_from_data(data) -> list[int]:
+    """Parse optional reset DPIDs without retaining other device data."""
+    reset_ids_value = data.get(CONF_RESET_DPIDS)
+    if not reset_ids_value:
+        return []
+
+    return [
+        int(value.strip())
+        for value in reset_ids_value.split(",")
+        if value.strip()
+    ]
+
+
+async def async_device_preflight(
+    hass: core.HomeAssistant,
+    data,
+) -> DeviceHealthReport:
+    """Run a structured, privacy-safe LAN/protocol/DPS preflight."""
+    del hass  # Reserved for future HA repair/diagnostic integration.
+
+    requested_protocol = data.get(
+        CONF_PROTOCOL_VERSION,
+        PROTOCOL_AUTO,
+    )
+
+    try:
+        reset_ids = _reset_ids_from_data(data)
+    except (TypeError, ValueError):
+        report = DeviceHealthReport(
+            requested_protocol=str(requested_protocol),
+            stage=DeviceHealthStage.CONFIGURATION,
+            failure=DeviceHealthFailure.INVALID_CONFIGURATION,
+        )
+        _LOGGER.debug("LocalTuya preflight result: %s", report.as_dict())
+        return report
+
+    async def probe(protocol_version: str):
+        return await _async_probe_protocol(
+            data,
+            protocol_version,
+            reset_ids,
+        )
+
+    report = await async_run_device_preflight(
+        requested_protocol=str(requested_protocol),
+        supported_protocols=SUPPORTED_PROTOCOL_VERSIONS,
+        probe=probe,
+        auto_protocol=PROTOCOL_AUTO,
+        auth_or_protocol_error_types=(
+            pytuya.DecodeError,
+            ValueError,
+        ),
+    )
+
+    _LOGGER.debug("LocalTuya preflight result: %s", report.as_dict())
+    return report
 
 
 async def validate_input(
@@ -807,111 +870,63 @@ async def validate_input(
     data,
 ):
     """Validate input and resolve the Tuya LAN protocol."""
-    reset_ids = []
-
-    reset_ids_value = data.get(CONF_RESET_DPIDS)
-
-    if reset_ids_value:
-        try:
-            reset_ids = [
-                int(value.strip())
-                for value in reset_ids_value.split(",")
-                if value.strip()
-            ]
-        except ValueError as ex:
-            raise InvalidAuth from ex
-
-        _LOGGER.debug(
-            "Reset DPIDs configured: %s",
-            reset_ids,
-        )
-
     requested_protocol = data.get(
         CONF_PROTOCOL_VERSION,
         PROTOCOL_AUTO,
     )
 
-    detected_dps = {}
-    resolved_protocol = None
+    # Keep the existing public validation API while the richer report becomes
+    # available to onboarding, diagnostics and Repairs in incremental steps.
+    report = await async_device_preflight(hass, data)
 
-    if requested_protocol == PROTOCOL_AUTO:
-        _LOGGER.debug(
-            "Auto-detecting Tuya protocol for host %s",
-            data[CONF_HOST],
-        )
+    if report.ok:
+        detected_dps = dict(report.detected_dps)
+        resolved_protocol = report.resolved_protocol
 
-        for protocol_version in SUPPORTED_PROTOCOL_VERSIONS:
-            try:
-                detected_dps = await _async_probe_protocol(
-                    data,
-                    protocol_version,
-                    reset_ids,
-                )
-
-            except Exception as ex:
-                _LOGGER.debug(
-                    "Protocol %s probe failed for host %s: %s: %s",
-                    protocol_version,
-                    data[CONF_HOST],
-                    type(ex).__name__,
-                    ex,
-                )
-                continue
-
-            if not detected_dps:
-                _LOGGER.debug(
-                    "Protocol %s connected but returned no DPS",
-                    protocol_version,
-                )
-                continue
-
-            resolved_protocol = protocol_version
-
+        if requested_protocol == PROTOCOL_AUTO:
             _LOGGER.info(
-                "Detected Tuya protocol %s for device %s",
-                protocol_version,
-                data[CONF_DEVICE_ID],
+                "Detected Tuya protocol %s during LAN preflight",
+                resolved_protocol,
             )
-
-            break
-
-        if resolved_protocol is None:
-            raise CannotConnect
-
-    else:
+    elif (
+        report.failure is DeviceHealthFailure.EMPTY_DPS
+        and requested_protocol != PROTOCOL_AUTO
+    ):
+        # Preserve the explicit-protocol manual-DP escape hatch: a device may
+        # require manually supplied datapoints even after a successful socket
+        # and protocol exchange returned no discoverable DPS.
+        detected_dps = {}
+        resolved_protocol = str(requested_protocol)
+    elif report.failure is DeviceHealthFailure.EMPTY_DPS:
+        raise EmptyDpsList
+    elif (
+        report.failure is DeviceHealthFailure.AUTH_OR_PROTOCOL
+        and requested_protocol != PROTOCOL_AUTO
+    ):
+        raise InvalidAuth
+    elif report.failure is DeviceHealthFailure.INVALID_CONFIGURATION:
         if (
-            requested_protocol
-            not in SUPPORTED_PROTOCOL_VERSIONS
+            requested_protocol != PROTOCOL_AUTO
+            and requested_protocol not in SUPPORTED_PROTOCOL_VERSIONS
         ):
             raise CannotConnect
+        raise InvalidAuth
+    else:
+        # During auto-detection an auth-looking error can simply mean that the
+        # currently probed protocol version is wrong, so do not overstate it as
+        # invalid credentials unless the user explicitly selected a protocol.
+        raise CannotConnect
 
-        try:
-            detected_dps = await _async_probe_protocol(
-                data,
-                requested_protocol,
-                reset_ids,
-            )
+    try:
+        reset_ids = _reset_ids_from_data(data)
+    except (TypeError, ValueError) as ex:
+        raise InvalidAuth from ex
 
-        except (
-            ConnectionRefusedError,
-            ConnectionResetError,
-            OSError,
-            TimeoutError,
-        ) as ex:
-            raise CannotConnect from ex
-
-        except ValueError as ex:
-            raise InvalidAuth from ex
-
-        except Exception as ex:
-            _LOGGER.debug(
-                "DPS detection failed using protocol %s: %s",
-                requested_protocol,
-                ex,
-            )
-            detected_dps = {}
-
-        resolved_protocol = requested_protocol
+    if reset_ids:
+        _LOGGER.debug(
+            "Reset DPIDs configured: %s",
+            reset_ids,
+        )
 
     manual_dps_value = data.get(CONF_MANUAL_DPS)
 
@@ -941,7 +956,7 @@ async def validate_input(
     _LOGGER.debug(
         "Total DPS using protocol %s: %s",
         resolved_protocol,
-        detected_dps,
+        sorted(str(dp) for dp in detected_dps),
     )
 
     return (
