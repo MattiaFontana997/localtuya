@@ -1,0 +1,621 @@
+name: Temporary QR import implementation
+
+on:
+  push:
+    branches:
+      - feature/qr-onboarding
+    paths:
+      - .github/workflows/temp-qr-import.yml
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/qr-onboarding
+          fetch-depth: 0
+
+      - name: Implement existing configuration import
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          config_path = Path("custom_components/localtuya/config_flow.py")
+          config = config_path.read_text()
+          old_menu = '''            menu_options=[
+                "qr_login",
+                "manual_device",
+            ],'''
+          new_menu = '''            menu_options=[
+                "qr_login",
+                "manual_device",
+                "import_existing",
+            ],'''
+          if old_menu not in config:
+              raise SystemExit("config flow user menu anchor not found")
+          config = config.replace(old_menu, new_menu, 1)
+          config_path.write_text(config)
+
+          qr_path = Path("custom_components/localtuya/qr_onboarding.py")
+          qr = qr_path.read_text()
+
+          old_selector = '''from homeassistant.helpers.selector import (
+    QrCodeSelector,
+    QrCodeSelectorConfig,
+    QrErrorCorrectionLevel,
+)'''
+          new_selector = '''from homeassistant.helpers.selector import (
+    QrCodeSelector,
+    QrCodeSelectorConfig,
+    QrErrorCorrectionLevel,
+    TextSelector,
+    TextSelectorConfig,
+)'''
+          if old_selector not in qr:
+              raise SystemExit("selector import anchor not found")
+          qr = qr.replace(old_selector, new_selector, 1)
+
+          old_constants = '''CONF_QR_TOKEN_INFO = "token_info"
+
+TUYA_CLIENT_ID'''
+          new_constants = '''CONF_QR_TOKEN_INFO = "token_info"
+CONF_IMPORT_JSON = "import_json"
+CONF_IMPORT_DEVICE_ID = "import_device_id"
+
+TUYA_CLIENT_ID'''
+          if old_constants not in qr:
+              raise SystemExit("QR constants anchor not found")
+          qr = qr.replace(old_constants, new_constants, 1)
+
+          helper_anchor = '''class QrConfigFlowMixin:
+    """Config-flow steps for recommended QR onboarding and manual fallback."""
+'''
+          helpers = r'''def _normalize_import_device(
+    raw: dict[str, Any],
+    device_id_hint: str | None = None,
+) -> dict[str, Any]:
+    """Normalize supported LocalTuya/Tuya/TinyTuya device export shapes."""
+    if not isinstance(raw, dict):
+        raise ValueError("device must be an object")
+
+    device_id = str(
+        raw.get(CONF_DEVICE_ID)
+        or raw.get("id")
+        or raw.get("dev_id")
+        or device_id_hint
+        or ""
+    ).strip()
+    local_key = str(
+        raw.get(CONF_LOCAL_KEY)
+        or raw.get("localKey")
+        or raw.get("key")
+        or ""
+    ).strip()
+
+    if not device_id or not local_key:
+        raise QrProvisioningError(
+            "import_missing_credentials",
+            "Device ID and local_key are required",
+        )
+
+    host = str(raw.get(CONF_HOST) or raw.get("ip") or "").strip()
+    name = str(
+        raw.get(CONF_FRIENDLY_NAME)
+        or raw.get(CONF_NAME)
+        or raw.get("product_name")
+        or device_id
+    ).strip()
+    protocol = str(
+        raw.get(CONF_PROTOCOL_VERSION)
+        or raw.get("version")
+        or raw.get("protocol")
+        or "auto"
+    ).strip()
+    if protocol not in {"auto", "3.1", "3.2", "3.3", "3.4", "3.5"}:
+        protocol = "auto"
+
+    result: dict[str, Any] = {
+        CONF_FRIENDLY_NAME: name or device_id,
+        CONF_HOST: host,
+        CONF_DEVICE_ID: device_id,
+        CONF_LOCAL_KEY: local_key,
+        CONF_PROTOCOL_VERSION: protocol,
+        CONF_ENABLE_DEBUG: bool(raw.get(CONF_ENABLE_DEBUG, False)),
+    }
+
+    product_key = (
+        raw.get(CONF_PRODUCT_KEY)
+        or raw.get("productKey")
+        or raw.get("product_id")
+        or raw.get("productId")
+    )
+    if product_key:
+        result[CONF_PRODUCT_KEY] = str(product_key)
+
+    product_id = raw.get("product_id") or raw.get("productId")
+    if product_id:
+        result["product_id"] = str(product_id)
+
+    for key in (
+        "scan_interval",
+        "manual_dps",
+        "reset_dpids",
+        "model",
+    ):
+        if key in raw and raw[key] is not None:
+            result[key] = copy.deepcopy(raw[key])
+
+    entities = raw.get(CONF_ENTITIES)
+    if isinstance(entities, list):
+        result[CONF_ENTITIES] = [
+            copy.deepcopy(entity)
+            for entity in entities
+            if isinstance(entity, dict)
+        ]
+
+    return result
+
+
+def _parse_import_payload(value: str) -> dict[str, dict[str, Any]]:
+    """Parse one device, a device list, or a LocalTuya root devices object."""
+    try:
+        payload = json.loads(str(value or ""))
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid JSON") from exc
+
+    records: dict[str, dict[str, Any]] = {}
+
+    def add(raw: Any, hint: str | None = None) -> None:
+        if not isinstance(raw, dict):
+            return
+        device = _normalize_import_device(raw, hint)
+        records[device[CONF_DEVICE_ID]] = device
+
+    if isinstance(payload, dict) and isinstance(payload.get(CONF_DEVICES), dict):
+        for device_id, raw in payload[CONF_DEVICES].items():
+            add(raw, str(device_id))
+    elif isinstance(payload, list):
+        for raw in payload:
+            add(raw)
+    elif isinstance(payload, dict):
+        add(payload)
+    else:
+        raise ValueError("unsupported JSON root")
+
+    if not records:
+        raise ValueError("no devices found")
+    return records
+
+
+class QrConfigFlowMixin:
+    """Config-flow steps for recommended QR onboarding and manual fallback."""
+
+    def _import_schema(self):
+        """Return the multiline JSON import schema."""
+        source = getattr(self, "_import_source", "")
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_IMPORT_JSON,
+                    default=source,
+                ): TextSelector(TextSelectorConfig(multiline=True))
+            }
+        )
+
+    async def async_step_import_existing(self, user_input=None):
+        """Import existing Device ID/local_key configuration without Tuya login."""
+        errors = {}
+        placeholders = {}
+        if user_input is not None:
+            self._import_source = str(user_input.get(CONF_IMPORT_JSON, ""))
+            try:
+                self._import_devices = _parse_import_payload(self._import_source)
+            except QrProvisioningError as exc:
+                errors["base"] = exc.reason
+                placeholders = {"msg": exc.detail}
+            except ValueError:
+                errors["base"] = "import_invalid"
+            else:
+                if len(self._import_devices) == 1:
+                    return await self._async_start_import_device(
+                        next(iter(self._import_devices.values()))
+                    )
+                return await self.async_step_import_choose_device()
+
+        return self.async_show_form(
+            step_id="import_existing",
+            data_schema=self._import_schema(),
+            errors=errors,
+            description_placeholders=placeholders,
+        )
+
+    async def async_step_import_choose_device(self, user_input=None):
+        """Choose one device when an import contains multiple records."""
+        devices = getattr(self, "_import_devices", {})
+        if not devices:
+            return await self.async_step_import_existing()
+
+        labels = {
+            device_id: (
+                f"{device.get(CONF_FRIENDLY_NAME) or device_id}"
+                f" ({device.get(CONF_HOST) or 'LAN discovery'})"
+            )
+            for device_id, device in devices.items()
+        }
+
+        if user_input is not None:
+            selected = user_input[CONF_IMPORT_DEVICE_ID]
+            return await self._async_start_import_device(devices[selected])
+
+        return self.async_show_form(
+            step_id="import_choose_device",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_IMPORT_DEVICE_ID): vol.In(labels)}
+            ),
+        )
+
+    async def _async_start_import_device(self, imported: dict[str, Any]):
+        """Validate an imported device and continue through normal mapping flow."""
+        from .config_flow import (
+            CannotConnect,
+            EmptyDpsList,
+            InvalidAuth,
+            async_get_entity_candidates,
+            validate_input,
+        )
+
+        device_data = copy.deepcopy(imported)
+        device_id = device_data[CONF_DEVICE_ID]
+        try:
+            discovery = {}
+            if not device_data.get(CONF_HOST):
+                discovery = await _async_discovery_snapshot(self.hass)
+                discovered = _find_discovered_device(discovery, device_id)
+                if discovered is None or not discovered.get("ip"):
+                    raise QrProvisioningError(
+                        "import_device_not_on_lan",
+                        "The imported device was not found on the Home Assistant LAN",
+                    )
+                device_data[CONF_HOST] = discovered["ip"]
+
+            dps_strings, resolved = await validate_input(self.hass, device_data)
+            device_data[CONF_PROTOCOL_VERSION] = resolved
+            device_data[CONF_DPS_STRINGS] = list(dps_strings)
+
+            existing_entities = device_data.get(CONF_ENTITIES)
+            self._manual_device_data = device_data
+            self._manual_dps_strings = list(dps_strings)
+            self._manual_entities = (
+                copy.deepcopy(existing_entities)
+                if isinstance(existing_entities, list)
+                else []
+            )
+
+            if self._manual_entities:
+                return self._finish_manual_initial_device()
+
+            if not discovery:
+                try:
+                    discovery = await _async_discovery_snapshot(self.hass)
+                except QrProvisioningError:
+                    discovery = {}
+
+            self._manual_candidates = list(
+                await async_get_entity_candidates(
+                    self.hass,
+                    device_data,
+                    discovery,
+                    dps_strings,
+                )
+            )
+            if self._manual_candidates:
+                return await self.async_step_manual_mapping_review()
+            return await self.async_step_manual_pick_entity_type()
+
+        except CannotConnect:
+            error = "cannot_connect"
+            placeholders = {}
+        except InvalidAuth:
+            error = "invalid_auth"
+            placeholders = {}
+        except EmptyDpsList:
+            error = "empty_dps"
+            placeholders = {}
+        except QrProvisioningError as exc:
+            error = exc.reason
+            placeholders = {"msg": exc.detail}
+        except Exception as exc:
+            _LOGGER.exception("Unexpected imported-device validation failure: %s", exc)
+            error = "unknown"
+            placeholders = {}
+
+        return self.async_show_form(
+            step_id="import_existing",
+            data_schema=self._import_schema(),
+            errors={"base": error},
+            description_placeholders=placeholders,
+        )
+'''
+          if helper_anchor not in qr:
+              raise SystemExit("QR config mixin anchor not found")
+          qr = qr.replace(helper_anchor, helpers, 1)
+          qr_path.write_text(qr)
+
+          translations = {
+              "en": {
+                  "menu": "Import existing configuration / local key",
+                  "menu_desc": "Reuse an existing LocalTuya/Tuya JSON configuration or Device ID/local_key export.",
+                  "title": "Import existing configuration",
+                  "description": "Paste a device JSON object, a list of devices, or a LocalTuya configuration containing a devices object. LocalTuya validates the credentials and LAN connection before saving.",
+                  "data": "Configuration JSON",
+                  "choose_title": "Choose imported device",
+                  "choose_desc": "The imported data contains multiple devices. Choose the device to add now.",
+                  "choose_data": "Imported device",
+                  "invalid": "The pasted JSON does not contain a supported device configuration.",
+                  "missing": "The imported device is missing Device ID or local_key. {msg}",
+                  "lan": "The imported device was not found on the Home Assistant LAN. {msg}",
+              },
+              "it": {
+                  "menu": "Importa configurazione / local key esistente",
+                  "menu_desc": "Riutilizza una configurazione JSON LocalTuya/Tuya esistente o un export con Device ID e local_key.",
+                  "title": "Importa configurazione esistente",
+                  "description": "Incolla un dispositivo JSON, una lista di dispositivi o una configurazione LocalTuya contenente l'oggetto devices. LocalTuya verifica credenziali e connessione LAN prima di salvare.",
+                  "data": "Configurazione JSON",
+                  "choose_title": "Scegli dispositivo importato",
+                  "choose_desc": "I dati importati contengono più dispositivi. Scegli il dispositivo da aggiungere ora.",
+                  "choose_data": "Dispositivo importato",
+                  "invalid": "Il JSON incollato non contiene una configurazione dispositivo supportata.",
+                  "missing": "Nel dispositivo importato manca Device ID o local_key. {msg}",
+                  "lan": "Il dispositivo importato non è stato trovato nella LAN di Home Assistant. {msg}",
+              },
+              "de": {
+                  "menu": "Vorhandene Konfiguration / Local Key importieren",
+                  "menu_desc": "Eine vorhandene LocalTuya/Tuya-JSON-Konfiguration oder einen Export mit Device ID und local_key wiederverwenden.",
+                  "title": "Vorhandene Konfiguration importieren",
+                  "description": "Füge ein Geräte-JSON, eine Geräteliste oder eine LocalTuya-Konfiguration mit einem devices-Objekt ein. LocalTuya prüft Zugangsdaten und LAN-Verbindung vor dem Speichern.",
+                  "data": "Konfigurations-JSON",
+                  "choose_title": "Importiertes Gerät auswählen",
+                  "choose_desc": "Die importierten Daten enthalten mehrere Geräte. Wähle das Gerät aus, das jetzt hinzugefügt werden soll.",
+                  "choose_data": "Importiertes Gerät",
+                  "invalid": "Das eingefügte JSON enthält keine unterstützte Gerätekonfiguration.",
+                  "missing": "Dem importierten Gerät fehlt Device ID oder local_key. {msg}",
+                  "lan": "Das importierte Gerät wurde im Home-Assistant-LAN nicht gefunden. {msg}",
+              },
+              "pt-BR": {
+                  "menu": "Importar configuração / local key existente",
+                  "menu_desc": "Reutilize uma configuração JSON existente do LocalTuya/Tuya ou uma exportação com Device ID e local_key.",
+                  "title": "Importar configuração existente",
+                  "description": "Cole um objeto JSON de dispositivo, uma lista de dispositivos ou uma configuração LocalTuya contendo o objeto devices. O LocalTuya valida as credenciais e a conexão LAN antes de salvar.",
+                  "data": "JSON da configuração",
+                  "choose_title": "Escolher dispositivo importado",
+                  "choose_desc": "Os dados importados contêm vários dispositivos. Escolha o dispositivo para adicionar agora.",
+                  "choose_data": "Dispositivo importado",
+                  "invalid": "O JSON colado não contém uma configuração de dispositivo compatível.",
+                  "missing": "O dispositivo importado não possui Device ID ou local_key. {msg}",
+                  "lan": "O dispositivo importado não foi encontrado na LAN do Home Assistant. {msg}",
+              },
+              "zh-Hans": {
+                  "menu": "导入现有配置 / local key",
+                  "menu_desc": "复用现有 LocalTuya/Tuya JSON 配置，或包含 Device ID 和 local_key 的导出数据。",
+                  "title": "导入现有配置",
+                  "description": "粘贴单个设备 JSON、设备列表，或包含 devices 对象的 LocalTuya 配置。LocalTuya 会在保存前验证凭据和局域网连接。",
+                  "data": "配置 JSON",
+                  "choose_title": "选择导入的设备",
+                  "choose_desc": "导入数据中包含多个设备。请选择现在要添加的设备。",
+                  "choose_data": "导入的设备",
+                  "invalid": "粘贴的 JSON 不包含受支持的设备配置。",
+                  "missing": "导入的设备缺少 Device ID 或 local_key。{msg}",
+                  "lan": "在 Home Assistant 局域网中未找到导入的设备。{msg}",
+              },
+          }
+
+          for lang, text in translations.items():
+              path = Path(f"custom_components/localtuya/translations/{lang}.json")
+              data = json.loads(path.read_text())
+              config = data["config"]
+              user = config["step"]["user"]
+              user["menu_options"]["import_existing"] = text["menu"]
+              user["menu_option_descriptions"]["import_existing"] = text["menu_desc"]
+              config["error"]["import_invalid"] = text["invalid"]
+              config["error"]["import_missing_credentials"] = text["missing"]
+              config["error"]["import_device_not_on_lan"] = text["lan"]
+              config["step"]["import_existing"] = {
+                  "title": text["title"],
+                  "description": text["description"],
+                  "data": {"import_json": text["data"]},
+              }
+              config["step"]["import_choose_device"] = {
+                  "title": text["choose_title"],
+                  "description": text["choose_desc"],
+                  "data": {"import_device_id": text["choose_data"]},
+              }
+              path.write_text(json.dumps(data, ensure_ascii=False, indent=4) + "\n")
+
+          test_path = Path("tests/test_qr_import_onboarding.py")
+          test_path.write_text(r'''"""Tests for existing LocalTuya/Tuya configuration import onboarding."""
+
+from __future__ import annotations
+
+import json
+import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+from homeassistant.data_entry_flow import FlowResultType
+
+from custom_components.localtuya.config_flow import LocaltuyaConfigFlow
+from custom_components.localtuya.const import CONF_LOCAL_KEY, CONF_NO_CLOUD
+from custom_components.localtuya.qr_onboarding import _parse_import_payload
+
+
+class QrImportParsingTests(unittest.TestCase):
+    """Supported export shapes normalize to one safe device structure."""
+
+    def test_localtuya_root_devices_object(self):
+        devices = _parse_import_payload(
+            json.dumps(
+                {
+                    "devices": {
+                        "device-a": {
+                            "friendly_name": "Kitchen Plug",
+                            "host": "192.168.1.30",
+                            "local_key": "secret-a",
+                            "protocol_version": "3.4",
+                        }
+                    }
+                }
+            )
+        )
+        self.assertEqual(set(devices), {"device-a"})
+        self.assertEqual(devices["device-a"][CONF_LOCAL_KEY], "secret-a")
+
+    def test_tinytuya_aliases_are_supported(self):
+        devices = _parse_import_payload(
+            json.dumps(
+                [
+                    {
+                        "id": "device-b",
+                        "key": "secret-b",
+                        "ip": "192.168.1.31",
+                        "version": "3.3",
+                        "name": "Desk Lamp",
+                    }
+                ]
+            )
+        )
+        self.assertEqual(devices["device-b"]["host"], "192.168.1.31")
+        self.assertEqual(devices["device-b"]["protocol_version"], "3.3")
+
+
+class QrImportFlowTests(unittest.IsolatedAsyncioTestCase):
+    """Imported credentials are verified before creating a LAN-only entry."""
+
+    async def test_user_menu_exposes_three_onboarding_modes(self):
+        flow = LocaltuyaConfigFlow()
+        result = await flow.async_step_user()
+        self.assertEqual(
+            result["menu_options"],
+            ["qr_login", "manual_device", "import_existing"],
+        )
+
+    async def test_import_preserves_existing_entities_after_validation(self):
+        flow = LocaltuyaConfigFlow()
+        flow.hass = SimpleNamespace(data={})
+        payload = json.dumps(
+            {
+                "device_id": "device-c",
+                "local_key": "secret-c",
+                "host": "192.168.1.32",
+                "protocol_version": "auto",
+                "friendly_name": "Existing Switch",
+                "entities": [
+                    {
+                        "platform": "switch",
+                        "id": 1,
+                        "friendly_name": "Power",
+                    }
+                ],
+            }
+        )
+
+        with patch(
+            "custom_components.localtuya.config_flow.validate_input",
+            new=AsyncMock(return_value=(["1 (value: True)"], "3.4")),
+        ):
+            result = await flow.async_step_import_existing(
+                {"import_json": payload}
+            )
+
+        self.assertEqual(result["type"], FlowResultType.CREATE_ENTRY)
+        self.assertTrue(result["data"][CONF_NO_CLOUD])
+        device = result["data"]["devices"]["device-c"]
+        self.assertEqual(device["protocol_version"], "3.4")
+        self.assertEqual(device[CONF_LOCAL_KEY], "secret-c")
+        self.assertEqual(device["entities"][0]["platform"], "switch")
+
+    async def test_import_without_host_uses_lan_discovery(self):
+        flow = LocaltuyaConfigFlow()
+        flow.hass = SimpleNamespace(data={})
+        payload = json.dumps(
+            {
+                "id": "device-d",
+                "key": "secret-d",
+                "name": "Imported Plug",
+                "entities": [
+                    {
+                        "platform": "switch",
+                        "id": 1,
+                        "friendly_name": "Power",
+                    }
+                ],
+            }
+        )
+
+        discovery = {
+            "device-d": {
+                "gwId": "device-d",
+                "ip": "192.168.1.33",
+            }
+        }
+        with patch(
+            "custom_components.localtuya.qr_onboarding._async_discovery_snapshot",
+            new=AsyncMock(return_value=discovery),
+        ), patch(
+            "custom_components.localtuya.config_flow.validate_input",
+            new=AsyncMock(return_value=(["1 (value: True)"], "3.3")),
+        ):
+            result = await flow.async_step_import_existing(
+                {"import_json": payload}
+            )
+
+        device = result["data"]["devices"]["device-d"]
+        self.assertEqual(device["host"], "192.168.1.33")
+        self.assertEqual(device["protocol_version"], "3.3")
+
+
+if __name__ == "__main__":
+    unittest.main()
+''')
+
+          for doc_name in ("docs/QR_ONBOARDING.md", "docs/QR_ONBOARDING_TEST_PLAN.md"):
+              path = Path(doc_name)
+              if not path.exists():
+                  continue
+              text = path.read_text()
+              marker = "\n## Existing configuration import\n"
+              if marker not in text:
+                  if doc_name.endswith("QR_ONBOARDING.md"):
+                      text += marker + (
+                          "The third onboarding mode accepts a single device JSON object, a list of devices, "
+                          "a LocalTuya `devices` object, or common Tuya/TinyTuya aliases (`id`, `key`, `ip`, `version`). "
+                          "Imported credentials are always validated against the device over LAN before they are saved. "
+                          "Existing entity definitions are preserved; otherwise Catalog/mapper suggestions and the manual fallback are used.\n"
+                      )
+                  else:
+                      text += marker + (
+                          "- Import a LocalTuya root `devices` object and confirm Device ID/local_key are normalized.\n"
+                          "- Import an `id/key/ip/version` record and confirm aliases are normalized.\n"
+                          "- Import without an IP and confirm LAN discovery supplies the host before validation.\n"
+                          "- Confirm invalid JSON or missing Device ID/local_key is rejected without logging secrets.\n"
+                      )
+                  path.write_text(text)
+
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/temp-qr-import.yml
+          git add custom_components/localtuya/config_flow.py \
+                  custom_components/localtuya/qr_onboarding.py \
+                  custom_components/localtuya/translations \
+                  docs/QR_ONBOARDING.md \
+                  docs/QR_ONBOARDING_TEST_PLAN.md \
+                  tests/test_qr_import_onboarding.py
+          git commit -m "Add existing configuration import onboarding"
+          git push origin HEAD:feature/qr-onboarding
