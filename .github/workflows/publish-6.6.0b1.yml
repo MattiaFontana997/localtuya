@@ -1,0 +1,54 @@
+name: Publish LocalTuya 6.6.0b1 prerelease
+
+on:
+  push:
+    branches:
+      - feature/qr-onboarding
+    paths:
+      - .github/workflows/publish-6.6.0b1.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/release-notes.md <<'EOF'
+          LocalTuya 6.6.0b1 is the first public beta of the new QR onboarding flow.
+
+          Highlights:
+          - Recommended User Code + Smart Life / Tuya QR account linking for provisioning.
+          - No Tuya Developer Platform, Client ID or Client Secret required in the standard onboarding path.
+          - Device ID, local_key, Product ID and local-capable datapoint metadata retrieved through the Tuya Device Sharing SDK.
+          - Automatic LAN discovery remains preferred, with a validated manual IP/hostname fallback when UDP discovery is unavailable.
+          - Manual addresses are never trusted blindly: LocalTuya must authenticate locally, auto-detect the Tuya protocol and retrieve DPS before saving.
+          - Verified/community Device Catalog mappings are authoritative during first onboarding; the generic mapper only fills missing fields.
+          - Runtime remains LAN-only after provisioning (`no_cloud: true`).
+          - Existing manual Device ID + local_key setup and device import remain available.
+          - QR re-link/disconnect and migration from legacy cloud-backed 6.5.x entries are included.
+          - QR authorization and device secrets remain redacted from diagnostics.
+
+          Validation before beta publication:
+          - LocalTuya Tests: passed on Python 3.14 / Home Assistant 2026.9.0.
+          - HACS validation: passed.
+          - Developer smoke test: User Code -> QR approval -> device list -> LAN validation -> protocol/DPS discovery -> catalog-first mapping completed successfully on the test Home Assistant instance.
+
+          This is a beta intended for real-install testing. Back up Home Assistant before installing it. Stable 6.5.0 remains unchanged.
+          EOF
+
+          if gh release view v6.6.0b1 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "v6.6.0b1 already exists; nothing to publish."
+            exit 0
+          fi
+
+          gh release create v6.6.0b1 \
+            --repo "$GITHUB_REPOSITORY" \
+            --target 7e83b6a57dc9f5942f8854f1583407bb417c7cb0 \
+            --title "LocalTuya 6.6.0b1" \
+            --prerelease \
+            --notes-file /tmp/release-notes.md
