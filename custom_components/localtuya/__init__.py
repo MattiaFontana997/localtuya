@@ -54,6 +54,10 @@ from .host_recovery import (
     HostRecoveryOutcome,
     async_recover_discovered_host,
 )
+from .health_service import (
+    DeviceHealthTargetNotFound,
+    async_check_configured_device_health,
+)
 from .mapping_export import build_mapping_submission
 
 _LOGGER = logging.getLogger(__name__)
@@ -87,6 +91,17 @@ SERVICE_EXPORT_DEVICE_MAPPING = (
 )
 
 SERVICE_EXPORT_DEVICE_MAPPING_SCHEMA = vol.Schema(
+    {
+        vol.Required(
+            CONF_DEVICE_ID
+        ): cv.string,
+    }
+)
+
+SERVICE_CHECK_DEVICE_HEALTH = (
+    "check_device_health"
+)
+SERVICE_CHECK_DEVICE_HEALTH_SCHEMA = vol.Schema(
     {
         vol.Required(
             CONF_DEVICE_ID
@@ -270,6 +285,18 @@ async def async_setup(hass: HomeAssistant, config: dict):
         except ValueError as ex:
             raise HomeAssistantError(
                 str(ex)
+            ) from ex
+
+    async def _handle_check_device_health(service):
+        """Return a bounded privacy-safe health report for one device."""
+        try:
+            return await async_check_configured_device_health(
+                hass,
+                service.data[CONF_DEVICE_ID],
+            )
+        except DeviceHealthTargetNotFound as ex:
+            raise HomeAssistantError(
+                "unknown LocalTuya device id"
             ) from ex
 
     async def _async_recover_discovered_device(
@@ -514,6 +541,19 @@ async def async_setup(hass: HomeAssistant, config: dict):
         _handle_export_device_mapping,
         schema=(
             SERVICE_EXPORT_DEVICE_MAPPING_SCHEMA
+        ),
+        supports_response=(
+            SupportsResponse.ONLY
+        ),
+    )
+
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        SERVICE_CHECK_DEVICE_HEALTH,
+        _handle_check_device_health,
+        schema=(
+            SERVICE_CHECK_DEVICE_HEALTH_SCHEMA
         ),
         supports_response=(
             SupportsResponse.ONLY

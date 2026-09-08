@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import copy
 from typing import Any
 
@@ -19,7 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.redact import async_redact_data
 
-from .config_flow import async_device_preflight
+from .health_runtime import async_build_device_health_snapshot
 from .const import (
     CONF_DPS_STRINGS,
     CONF_LOCAL_KEY,
@@ -29,7 +28,6 @@ from .const import (
     DATA_DEVICE_CATALOG,
     DATA_DISCOVERY,
     DOMAIN,
-    TUYA_DEVICES,
 )
 from .mapping_resolver import (
     resolve_entity_candidates,
@@ -40,7 +38,6 @@ DEVICE_CONFIG = "device_config"
 DEVICE_CLOUD_INFO = "device_cloud_info"
 MAPPING_DIAGNOSTICS = "mapping"
 DEVICE_HEALTH_DIAGNOSTICS = "device_health"
-DEVICE_HEALTH_PROBE_TIMEOUT = 10.0
 
 # QR account authorization contains renewable Tuya access credentials. Redact
 # the complete bundle, and also list its nested field names defensively in case
@@ -134,52 +131,6 @@ def _diagnostic_dp_ids(
     return sorted(
         result
     )
-
-
-async def _async_device_health_diagnostics(
-    hass: HomeAssistant,
-    device_id: str,
-    device_config: dict[str, Any],
-) -> dict[str, Any]:
-    """Return a bounded, privacy-safe live health snapshot."""
-    domain_data = hass.data.get(DOMAIN, {})
-    runtime_devices = domain_data.get(TUYA_DEVICES, {})
-    runtime_device = (
-        runtime_devices.get(device_id)
-        if isinstance(runtime_devices, dict)
-        else None
-    )
-
-    result: dict[str, Any] = {
-        "runtime_present": runtime_device is not None,
-        "runtime_connected": (
-            bool(getattr(runtime_device, "connected", False))
-            if runtime_device is not None
-            else None
-        ),
-        "preflight": None,
-    }
-
-    probe_data = copy.deepcopy(device_config)
-    probe_data[CONF_DEVICE_ID] = device_id
-
-    try:
-        async with asyncio.timeout(DEVICE_HEALTH_PROBE_TIMEOUT):
-            report = await async_device_preflight(
-                hass,
-                probe_data,
-            )
-    except TimeoutError:
-        result["probe_error_type"] = "TimeoutError"
-        return result
-    except Exception as ex:  # noqa: BLE001 - diagnostics must remain available.
-        # Keep only the exception class. Lower-level exception messages may
-        # contain network addresses, device identifiers, or credentials.
-        result["probe_error_type"] = type(ex).__name__
-        return result
-
-    result["preflight"] = report.as_dict()
-    return result
 
 
 def _catalog_mapping_id(
@@ -580,7 +531,7 @@ async def async_get_device_diagnostics(
 
     data[
         DEVICE_HEALTH_DIAGNOSTICS
-    ] = await _async_device_health_diagnostics(
+    ] = await async_build_device_health_snapshot(
         hass,
         dev_id,
         device_config,
