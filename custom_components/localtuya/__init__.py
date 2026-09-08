@@ -34,6 +34,7 @@ from .common import TuyaDevice, async_config_entry_by_device_id
 from .config_flow import (
     ENTRIES_VERSION,
     async_get_entity_candidates,
+    validate_input,
 )
 from .const import (
     ATTR_UPDATED_AT,
@@ -48,8 +49,12 @@ from .const import (
     TUYA_DEVICES,
 )
 from .device_catalog import DeviceCatalog
-from .mapping_export import build_mapping_submission
 from .discovery import TuyaDiscovery
+from .host_recovery import (
+    HostRecoveryOutcome,
+    async_recover_discovered_host,
+)
+from .mapping_export import build_mapping_submission
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -113,7 +118,7 @@ async def async_setup(hass: HomeAssistant, config: dict):
         device_catalog.async_refresh()
     )
 
-    device_cache = {}
+    host_recovery_tasks = {}
 
     async def _handle_reload(service):
         """Handle reload service call."""
@@ -265,83 +270,207 @@ async def async_setup(hass: HomeAssistant, config: dict):
                 str(ex)
             ) from ex
 
+    async def _async_recover_discovered_device(
+        device_id,
+        device_ip,
+        product_key,
+    ):
+        """Validate a discovered address before persisting it."""
+        result = None
+
+        try:
+            entry = async_config_entry_by_device_id(
+                hass,
+                device_id,
+            )
+
+            if entry is None:
+                return
+
+            result = await async_recover_discovered_host(
+                hass,
+                entry,
+                device_id,
+                str(device_ip),
+                validator=validate_input,
+                product_key=(
+                    str(product_key)
+                    if product_key is not None
+                    else None
+                ),
+            )
+
+            _LOGGER.debug(
+                "Validated Tuya host recovery result: %s",
+                result.as_dict(),
+            )
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as ex:  # pylint: disable=broad-except
+            _LOGGER.debug(
+                "Unexpected Tuya host recovery failure: %s",
+                type(ex).__name__,
+            )
+        finally:
+            host_recovery_tasks.pop(
+                device_id,
+                None,
+            )
+
+        if (
+            result is not None
+            and result.outcome
+            is HostRecoveryOutcome.UNCHANGED
+        ):
+            runtime_device = hass.data[
+                DOMAIN
+            ][TUYA_DEVICES].get(
+                device_id
+            )
+
+            if (
+                runtime_device is not None
+                and not runtime_device.connected
+            ):
+                runtime_device.async_connect()
+
     def _device_discovered(device):
-        """Update address of device if it has changed."""
+        """Reconnect configured devices and safely recover changed addresses."""
         device_ip = device.get("ip")
         device_id = device.get("gwId") or device.get("id")
         product_key = device.get("productKey")
 
         if not device_id or not device_ip:
             _LOGGER.debug(
-                "Ignoring incomplete Tuya discovery payload: %s",
-                device,
+                "Ignoring incomplete Tuya discovery payload"
             )
             return
 
-        # If device is not in cache, check if a config entry exists
-        entry = async_config_entry_by_device_id(hass, device_id)
-        if entry is None:
-            return
+        device_id = str(device_id)
+        device_ip = str(device_ip)
 
-        if device_id not in device_cache:
-            if entry and device_id in entry.data[CONF_DEVICES]:
-                # Save address from config entry in cache to trigger
-                # potential update below
-                host_ip = entry.data[CONF_DEVICES][device_id][CONF_HOST]
-                device_cache[device_id] = host_ip
-
-        if device_id not in device_cache:
+        entry = async_config_entry_by_device_id(
+            hass,
+            device_id,
+        )
+        if (
+            entry is None
+            or device_id not in entry.data[CONF_DEVICES]
+        ):
             return
 
         dev_entry = entry.data[CONF_DEVICES][device_id]
+        configured_host = str(
+            dev_entry.get(CONF_HOST) or ""
+        )
 
-        new_data = copy.deepcopy(dict(entry.data))
-        updated = False
+        if configured_host != device_ip:
+            existing_task = host_recovery_tasks.get(
+                device_id
+            )
 
-        if device_cache[device_id] != device_ip:
-            updated = True
-            new_data[CONF_DEVICES][device_id][CONF_HOST] = device_ip
-            device_cache[device_id] = device_ip
+            if (
+                existing_task is None
+                or existing_task.done()
+            ):
+                task = hass.async_create_task(
+                    _async_recover_discovered_device(
+                        device_id,
+                        device_ip,
+                        product_key,
+                    )
+                )
+                host_recovery_tasks[
+                    device_id
+                ] = task
+
+            return
 
         if (
             product_key is not None
-            and dev_entry.get(CONF_PRODUCT_KEY) != product_key
+            and dev_entry.get(CONF_PRODUCT_KEY)
+            != product_key
         ):
-            updated = True
-            new_data[CONF_DEVICES][device_id][CONF_PRODUCT_KEY] = product_key
-
-        # Update settings if something changed, otherwise try to connect. Updating
-        # settings triggers a reload of the config entry, which tears down the device
-        # so no need to connect in that case.
-        if updated:
-            _LOGGER.debug(
-                "Updating keys for device %s: %s %s", device_id, device_ip, product_key
+            new_data = copy.deepcopy(
+                dict(entry.data)
             )
-            new_data[ATTR_UPDATED_AT] = str(int(time.time() * 1000))
-            hass.config_entries.async_update_entry(entry, data=new_data)
+            new_data[CONF_DEVICES][device_id][
+                CONF_PRODUCT_KEY
+            ] = product_key
+            new_data[ATTR_UPDATED_AT] = str(
+                int(time.time() * 1000)
+            )
+            hass.config_entries.async_update_entry(
+                entry,
+                data=new_data,
+            )
+            return
 
-        elif device_id in hass.data[DOMAIN][TUYA_DEVICES]:
-            _LOGGER.debug("Device %s found with IP %s", device_id, device_ip)
+        runtime_device = hass.data[DOMAIN][
+            TUYA_DEVICES
+        ].get(device_id)
 
-        device = hass.data[DOMAIN][TUYA_DEVICES].get(device_id)
-        if not device:
-            _LOGGER.warning(f"Could not find device for device_id {device_id}")
-        elif not device.connected:
-            device.async_connect()
-
+        if runtime_device is None:
+            _LOGGER.warning(
+                "Could not find configured LocalTuya runtime device"
+            )
+        elif not runtime_device.connected:
+            runtime_device.async_connect()
 
     def _shutdown(event):
         """Clean up resources when shutting down."""
         discovery.close()
         remove_catalog_refresh()
+        remove_reconnect()
+
+        for task in tuple(
+            host_recovery_tasks.values()
+        ):
+            task.cancel()
+
+        host_recovery_tasks.clear()
 
     async def _async_refresh_catalog(now):
         """Refresh community mappings periodically."""
         await device_catalog.async_refresh()
 
     async def _async_reconnect(now):
-        """Try connecting to devices not already connected to."""
-        for device_id, device in hass.data[DOMAIN][TUYA_DEVICES].items():
+        """Rediscover and reconnect devices that are currently offline."""
+        disconnected = [
+            (device_id, device)
+            for device_id, device
+            in hass.data[DOMAIN][TUYA_DEVICES].items()
+            if not device.connected
+        ]
+
+        if not disconnected:
+            return
+
+        discovery_service = hass.data[
+            DOMAIN
+        ].get(DATA_DISCOVERY)
+
+        request_discovery = getattr(
+            discovery_service,
+            "async_request_discovery",
+            None,
+        )
+
+        if callable(request_discovery):
+            try:
+                await request_discovery()
+                await asyncio.sleep(1.0)
+            except Exception as ex:  # pylint: disable=broad-except
+                _LOGGER.debug(
+                    "Active Tuya rediscovery before reconnect failed: %s",
+                    type(ex).__name__,
+                )
+
+        for device_id, device in disconnected:
+            if device_id in host_recovery_tasks:
+                continue
+
             if not device.connected:
                 device.async_connect()
 
@@ -353,7 +482,7 @@ async def async_setup(hass: HomeAssistant, config: dict):
         )
     )
 
-    async_track_time_interval(
+    remove_reconnect = async_track_time_interval(
         hass,
         _async_reconnect,
         RECONNECT_INTERVAL,
