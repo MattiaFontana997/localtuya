@@ -84,6 +84,26 @@ class HostRecoveryRepairFlow(RepairsFlow):
         """Return privacy-safe translation placeholders."""
         return {"device_name": self._target.device_name}
 
+    def _manual_host_form(
+        self,
+        *,
+        user_input: dict[str, str] | None = None,
+        errors: dict[str, str] | None = None,
+        suggested_host: str | None = None,
+    ) -> RepairsFlowResult:
+        """Return the validated manual-address form."""
+        values = dict(user_input or {})
+        if suggested_host and CONF_HOST not in values:
+            values[CONF_HOST] = suggested_host
+
+        schema = vol.Schema({vol.Required(CONF_HOST): str})
+        return self.async_show_form(
+            step_id="manual_host",
+            data_schema=self.add_suggested_values_to_schema(schema, values),
+            errors=errors or {},
+            description_placeholders=self._placeholders(),
+        )
+
     async def async_step_init(
         self,
         user_input: dict[str, str] | None = None,
@@ -165,33 +185,36 @@ class HostRecoveryRepairFlow(RepairsFlow):
         """Actively rediscover the device and validate the discovered address."""
         discovery = self.hass.data.get(DOMAIN, {}).get(DATA_DISCOVERY)
         if discovery is None:
-            return self.async_abort(reason="discovery_unavailable")
+            return self._manual_host_form(errors={"base": "discovery_unavailable"})
 
         request_discovery = getattr(discovery, "async_request_discovery", None)
         if not callable(request_discovery):
-            return self.async_abort(reason="discovery_unavailable")
+            return self._manual_host_form(errors={"base": "discovery_unavailable"})
 
         try:
             await request_discovery()
             await asyncio.sleep(_DISCOVERY_SETTLE_SECONDS)
         except Exception:  # noqa: BLE001 - network discovery is recoverable.
-            return self.async_abort(reason="discovery_failed")
+            return self._manual_host_form(errors={"base": "discovery_failed"})
 
         devices = getattr(discovery, "devices", {})
         candidate = devices.get(self._target.device_id) if isinstance(devices, dict) else None
         if not isinstance(candidate, dict):
-            return self.async_abort(reason="device_not_found")
+            return self._manual_host_form(errors={"base": "device_not_found"})
 
         host = candidate.get("ip")
         if not host:
-            return self.async_abort(reason="device_not_found")
+            return self._manual_host_form(errors={"base": "device_not_found"})
 
         error = await self._async_apply_candidate(
             str(host),
             product_key=candidate.get("productKey"),
         )
         if error is not None:
-            return self.async_abort(reason=error)
+            return self._manual_host_form(
+                errors={"base": error},
+                suggested_host=str(host),
+            )
 
         return self.async_create_entry(title="", data={})
 
@@ -200,21 +223,16 @@ class HostRecoveryRepairFlow(RepairsFlow):
         user_input: dict[str, str] | None = None,
     ) -> RepairsFlowResult:
         """Validate and save a user-supplied LAN address."""
-        errors: dict[str, str] = {}
-
         if user_input is not None:
             error = await self._async_apply_candidate(user_input.get(CONF_HOST, ""))
             if error is None:
                 return self.async_create_entry(title="", data={})
-            errors["base"] = error
+            return self._manual_host_form(
+                user_input=user_input,
+                errors={"base": error},
+            )
 
-        schema = vol.Schema({vol.Required(CONF_HOST): str})
-        return self.async_show_form(
-            step_id="manual_host",
-            data_schema=self.add_suggested_values_to_schema(schema, user_input or {}),
-            errors=errors,
-            description_placeholders=self._placeholders(),
-        )
+        return self._manual_host_form()
 
 
 async def async_create_fix_flow(
