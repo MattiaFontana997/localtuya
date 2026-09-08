@@ -550,6 +550,7 @@
         "action_review_mapping": "检查设备映射",
         "mapping_change_update": "更新",
         "mapping_change_new": "新实体",
-        "action_prepare_contribution": "准备社区贡献"
+        "action_prepare_contribution": "准备社区贡献",
+        "action_link_qr_account": "通过二维码关联 Smart Life / Tuya 账户"
     }
 }

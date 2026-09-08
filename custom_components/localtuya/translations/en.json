@@ -550,6 +550,7 @@
         "action_review_mapping": "Review device mapping",
         "mapping_change_update": "Update",
         "mapping_change_new": "New entity",
-        "action_prepare_contribution": "Prepare community contribution"
+        "action_prepare_contribution": "Prepare community contribution",
+        "action_link_qr_account": "Link Smart Life / Tuya account by QR"
     }
 }

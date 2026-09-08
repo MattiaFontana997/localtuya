@@ -94,6 +94,7 @@ AUTO_ENTITY_SELECTION = "auto_entity_selection"
 MAPPING_REVIEW_SELECTION = "mapping_review_selection"
 CONTRIBUTION_CONFIRM = "contribution_confirm"
 CONTRIBUTION_JSON = "contribution_json"
+LINK_QR_ACCOUNT = "link_qr_account"
 
 CUSTOM_DEVICE = "..."
 
@@ -225,6 +226,8 @@ _ACTION_TRANSLATION_KEYS = {
         "action_prepare_contribution",
     CONF_SETUP_CLOUD:
         "action_setup_cloud",
+    LINK_QR_ACCOUNT:
+        "action_link_qr_account",
 }
 
 _ACTION_FALLBACKS = {
@@ -238,6 +241,8 @@ _ACTION_FALLBACKS = {
         "Prepare community contribution",
     CONF_SETUP_CLOUD:
         "Reconfigure Cloud API account",
+    LINK_QR_ACCOUNT:
+        "Link Smart Life / Tuya account by QR",
 }
 
 
@@ -1042,6 +1047,8 @@ class LocalTuyaOptionsFlowHandler(QrOptionsFlowMixin, config_entries.OptionsFlow
                 return await self.async_step_cloud_setup()
             if user_input.get(CONF_ACTION) == CONF_ADD_DEVICE:
                 return await self.async_step_add_device()
+            if user_input.get(CONF_ACTION) == LINK_QR_ACCOUNT:
+                return await self.async_step_qr_relink()
             if user_input.get(CONF_ACTION) == CONF_EDIT_DEVICE:
                 return await self.async_step_edit_device()
             if user_input.get(CONF_ACTION) == CONF_REVIEW_MAPPING:
@@ -1086,6 +1093,12 @@ class LocalTuyaOptionsFlowHandler(QrOptionsFlowMixin, config_entries.OptionsFlow
                 CONF_SETUP_CLOUD,
                 None,
             )
+
+        # Existing LocalTuya installations upgraded from 6.5.x must be able
+        # to adopt the new QR account link without deleting/recreating their
+        # config entry. Once linked, account management lives under Add device.
+        if self.config_entry.data.get(CONF_QR_AUTH):
+            action_labels.pop(LINK_QR_ACCOUNT, None)
 
         return self.async_show_form(
             step_id="init",
