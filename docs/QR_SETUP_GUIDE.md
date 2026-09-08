@@ -6,6 +6,8 @@ You do **not** need a Tuya Developer Platform project, Client ID, Client Secret 
 
 After a device is provisioned, normal control remains local over the LAN.
 
+> Screenshots in this guide are privacy-redacted. User Codes, account details, QR authorization data and device identifiers are not published.
+
 ## Before you start
 
 Make sure that:
@@ -28,23 +30,25 @@ Choose:
 
 **QR login with Smart Life / Tuya**
 
-This is the recommended setup method.
+This is the recommended setup method. Manual setup and configuration import remain available for advanced use.
 
-The other setup methods remain available for advanced/manual use.
-
-<!-- Screenshot 1: Home Assistant LocalTuya setup menu with “QR login with Smart Life / Tuya” visible. -->
+![LocalTuya QR login choice](images/qr-setup/01-localtuya-qr-choice.png)
 
 ## 2. Find your Smart Life / Tuya User Code
 
-Open the **Smart Life** or **Tuya Smart** mobile app and locate the **User Code** in your account settings.
+Open the **Smart Life** or **Tuya Smart** mobile app and go to the account/security settings.
 
-The exact menu wording can vary between app versions and regions, so look for **User Code** under the account/profile settings.
+The exact menu wording can vary by app version and region, but look for **User Code** / **Codice Utente**.
+
+The screenshot below shows the location in Smart Life. The real User Code and account details have been redacted.
+
+<p align="center">
+  <img src="images/qr-setup/06-smartlife-user-code.png" alt="Smart Life account security page showing the User Code location" width="360">
+</p>
 
 Copy the User Code.
 
-> Do not publish your User Code in a public issue or screenshot. Redact it before sharing screenshots.
-
-<!-- Screenshot 2: Smart Life / Tuya screen showing where “User Code” is located. Redact the actual code, email, account ID and other personal data. -->
+> Do not publish your User Code in issues, logs or screenshots.
 
 ## 3. Enter the User Code in Home Assistant
 
@@ -52,45 +56,53 @@ Return to Home Assistant and paste the User Code into the LocalTuya setup screen
 
 Press **Submit** / **Continue**.
 
+![Enter Smart Life or Tuya User Code in LocalTuya](images/qr-setup/02-localtuya-user-code.png)
+
 LocalTuya starts a temporary Tuya account-linking session and generates a QR code.
 
-## 4. Scan the QR code
+## 4. Scan and approve the QR login
 
 Home Assistant now shows a QR code.
 
+![LocalTuya QR authorization screen](images/qr-setup/03-localtuya-qr-scan.png)
+
 Open Smart Life / Tuya on your phone, scan the QR code and approve the authorization request.
 
-Then return to Home Assistant and continue.
+> A live QR code contains temporary authorization data. Do not publish a valid QR code. The QR shown in this documentation has been made non-usable.
 
-> The QR code contains temporary authorization data. Do not publish a live QR code in documentation, issues or screenshots. If you want to document this screen, use an expired QR code or obscure/replace the QR area.
+Smart Life / Tuya will show a confirmation page similar to this:
 
-<!-- Screenshot 3: Home Assistant QR scan screen. The QR itself must be expired or visually redacted/replaced before publishing. -->
+<p align="center">
+  <img src="images/qr-setup/07-smartlife-qr-authorize.png" alt="Smart Life QR login confirmation" width="360">
+</p>
 
-<!-- Screenshot 4: Smart Life / Tuya authorization approval screen, with personal/account data redacted. -->
+Tap **Confirm login** / **Conferma il login**, then return to Home Assistant and continue.
 
 ## 5. Choose the device
 
 After authorization succeeds, LocalTuya retrieves eligible devices from the linked Smart Life / Tuya account.
 
-Select the device you want to add.
+Only devices exposing credentials suitable for local control are shown.
 
-Only devices that expose credentials suitable for local control are shown by the QR provisioning flow.
+![Choose a Tuya device in LocalTuya](images/qr-setup/04-localtuya-device-list.png)
+
+Select the device you want to add.
 
 LocalTuya then attempts to:
 
 1. Resolve the device on the LAN.
 2. Authenticate locally with the selected Device ID and `local_key`.
-3. Detect the Tuya protocol.
+3. Detect the Tuya protocol automatically.
 4. Read the device datapoints.
-5. Match the device against the LocalTuya Community Device Catalog / safe automatic mapper.
+5. Match the device against the LocalTuya Community Device Catalog and safe automatic mapper.
 
-The device is not saved until local validation succeeds.
-
-<!-- Screenshot 5: Home Assistant “Choose a device” screen or final successful LocalTuya device setup screen. Prefer the success screen if only one image is available. -->
+The device is **not saved** until local validation succeeds.
 
 ## 6. Review mappings if requested
 
 For many supported devices, LocalTuya can create the required entities automatically.
+
+When a trusted product-specific catalog mapping matches, the catalog mapping is authoritative and the generic mapper only fills safe gaps.
 
 If Home Assistant shows **Review suggested mappings**:
 
@@ -98,19 +110,21 @@ If Home Assistant shows **Review suggested mappings**:
 - additional medium-confidence mappings may be offered for review;
 - ambiguous capabilities are not guessed automatically.
 
-Select only the extra entities you actually want, then continue.
+Select only the extra entities you want, then continue.
 
 ## 7. Finish setup
 
-Once validation and mapping are complete, Home Assistant creates the LocalTuya device and its entities.
+Once LAN validation and mapping complete, Home Assistant creates the LocalTuya device and its entities.
+
+![LocalTuya device configured successfully](images/qr-setup/05-localtuya-success.png)
 
 You can now assign the device to an Area and use it normally in Home Assistant.
 
-Normal runtime control is local. The saved Smart Life / Tuya authorization is retained only so LocalTuya can provision additional devices later without asking you to scan another QR code every time.
+Normal runtime control is local. The saved Smart Life / Tuya authorization is retained only so LocalTuya can provision additional devices later without requiring a new QR scan every time.
 
 ## Adding another device later
 
-You normally do not need to repeat the QR login while the saved authorization is valid.
+You normally do not need to repeat the QR login while the saved authorization remains valid.
 
 Open:
 
@@ -147,11 +161,11 @@ Some networks block or do not propagate Tuya UDP discovery correctly. This is co
 - restrictive access points;
 - unusual broadcast/multicast filtering.
 
-When LocalTuya cannot determine a usable address automatically, it can ask for the current device **IP address or hostname**.
+When LocalTuya cannot determine a usable address automatically, it asks for the current device **IP address or hostname** instead of accepting an unverified address.
 
 Find the address in your router/DHCP client list and enter it in Home Assistant.
 
-This does not bypass validation. LocalTuya still has to authenticate to that exact device, detect the protocol and read its datapoints before the configuration can be saved.
+This does not bypass validation. LocalTuya still has to authenticate to that exact device, auto-detect the protocol and read its datapoints before the configuration can be saved.
 
 A DHCP reservation is recommended so the device address does not change later.
 
@@ -168,6 +182,12 @@ Check that:
 - VLAN/firewall rules allow direct LAN traffic.
 
 If LocalTuya offers manual IP/hostname entry, use the current address from the router.
+
+### “Cannot connect to device”
+
+The selected or manually entered address could not complete LocalTuya's direct LAN validation.
+
+Check the current DHCP address, confirm the device is online and close/force-stop Smart Life while testing local connectivity if the device only permits a limited number of simultaneous local sessions.
 
 ### “Failed to authenticate with device”
 
@@ -213,15 +233,3 @@ Before posting logs or screenshots publicly, remove or redact:
 - public/private IP information you do not want to disclose
 
 LocalTuya diagnostics are designed to redact sensitive authorization material, but manually copied screenshots and logs should still be reviewed before publication.
-
-## Recommended screenshot set for this guide
-
-Keep the guide compact. **Five screenshots are enough:**
-
-1. Home Assistant LocalTuya setup menu with **QR login with Smart Life / Tuya** selected.
-2. Smart Life / Tuya page showing where **User Code** is located — actual code and personal data redacted.
-3. Home Assistant QR scan page — QR expired or obscured/replaced.
-4. Smart Life / Tuya authorization approval page — personal data redacted.
-5. Device selection or final successful device setup page — preferably the success page if you want to keep the guide visually short.
-
-No additional screenshots are necessary unless a specific network-error troubleshooting section later needs one.
