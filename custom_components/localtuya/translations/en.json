@@ -552,5 +552,41 @@
         "mapping_change_new": "New entity",
         "action_prepare_contribution": "Prepare community contribution",
         "action_link_qr_account": "Link Smart Life / Tuya account by QR"
+    },
+    "issues": {
+        "host_recovery_failed": {
+            "title": "LocalTuya could not safely recover {device_name}",
+            "description": "LocalTuya discovered a possible LAN address change for {device_name}, but the new address could not be validated with the saved local credentials. The configured address was not changed.",
+            "fix_flow": {
+                "error": {
+                    "cannot_connect": "The device did not respond at that address. Check that it is powered on and reachable from Home Assistant.",
+                    "invalid_auth": "The device answered, but its saved local credentials were rejected. Re-link or reconfigure the device credentials before retrying.",
+                    "empty_dps": "The device connection succeeded, but no datapoints were returned. Retry after the device is fully online.",
+                    "invalid_host": "Enter a valid LAN IP address or hostname.",
+                    "unknown": "The address could not be validated safely. The existing configuration was left unchanged.",
+                    "stale": "The device address changed again while validation was running. Retry discovery or enter the current address manually.",
+                    "device_not_found": "The configured device was not found during LAN discovery. You can enter its current address manually.",
+                    "discovery_unavailable": "Automatic LAN discovery is not available right now. Enter the device address manually.",
+                    "discovery_failed": "Automatic LAN discovery failed. Enter the device address manually or retry later."
+                },
+                "step": {
+                    "init": {
+                        "title": "Repair LAN connection for {device_name}",
+                        "description": "Choose automatic rediscovery or enter the device's current LAN address. LocalTuya validates Device ID, local key, protocol and datapoints before saving any new address.",
+                        "menu_options": {
+                            "rediscover": "Retry automatic LAN discovery",
+                            "manual_host": "Enter IP address / hostname manually"
+                        }
+                    },
+                    "manual_host": {
+                        "title": "Enter the current LAN address",
+                        "description": "Enter the current IP address or hostname for {device_name}. The address will be saved only after a successful authenticated LocalTuya validation.",
+                        "data": {
+                            "host": "IP address / Host"
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -552,5 +552,41 @@
         "mapping_change_new": "Neue Entität",
         "action_prepare_contribution": "Community-Beitrag vorbereiten",
         "action_link_qr_account": "Smart Life / Tuya-Konto per QR verknüpfen"
+    },
+    "issues": {
+        "host_recovery_failed": {
+            "title": "LocalTuya konnte {device_name} nicht sicher wiederherstellen",
+            "description": "LocalTuya hat für {device_name} eine mögliche Änderung der LAN-Adresse erkannt, konnte die neue Adresse jedoch nicht mit den gespeicherten lokalen Zugangsdaten verifizieren. Die konfigurierte Adresse wurde nicht geändert.",
+            "fix_flow": {
+                "error": {
+                    "cannot_connect": "Das Gerät antwortet unter dieser Adresse nicht. Prüfe, ob es eingeschaltet und von Home Assistant erreichbar ist.",
+                    "invalid_auth": "Das Gerät antwortet, aber die gespeicherten lokalen Zugangsdaten wurden abgelehnt. Verknüpfe oder konfiguriere die Gerätezugangsdaten neu und versuche es erneut.",
+                    "empty_dps": "Die Geräteverbindung war erfolgreich, aber es wurden keine Datenpunkte zurückgegeben. Versuche es erneut, wenn das Gerät vollständig online ist.",
+                    "invalid_host": "Gib eine gültige LAN-IP-Adresse oder einen gültigen Hostnamen ein.",
+                    "unknown": "Die Adresse konnte nicht sicher verifiziert werden. Die bestehende Konfiguration blieb unverändert.",
+                    "stale": "Die Geräteadresse hat sich während der Verifizierung erneut geändert. Starte die Suche erneut oder gib die aktuelle Adresse manuell ein.",
+                    "device_not_found": "Das konfigurierte Gerät wurde bei der LAN-Suche nicht gefunden. Du kannst seine aktuelle Adresse manuell eingeben.",
+                    "discovery_unavailable": "Die automatische LAN-Suche ist derzeit nicht verfügbar. Gib die Geräteadresse manuell ein.",
+                    "discovery_failed": "Die automatische LAN-Suche ist fehlgeschlagen. Gib die Geräteadresse manuell ein oder versuche es später erneut."
+                },
+                "step": {
+                    "init": {
+                        "title": "LAN-Verbindung für {device_name} reparieren",
+                        "description": "Wähle die automatische Suche oder gib die aktuelle LAN-Adresse des Geräts ein. LocalTuya prüft Geräte-ID, Local Key, Protokoll und Datenpunkte, bevor eine neue Adresse gespeichert wird.",
+                        "menu_options": {
+                            "rediscover": "Automatische LAN-Suche erneut ausführen",
+                            "manual_host": "IP-Adresse / Hostnamen manuell eingeben"
+                        }
+                    },
+                    "manual_host": {
+                        "title": "Aktuelle LAN-Adresse eingeben",
+                        "description": "Gib die aktuelle IP-Adresse oder den Hostnamen von {device_name} ein. Die Adresse wird erst nach einer erfolgreichen authentifizierten LocalTuya-Prüfung gespeichert.",
+                        "data": {
+                            "host": "IP-Adresse / Host"
+                        }
+                    }
+                }
+            }
+        }
     }
 }

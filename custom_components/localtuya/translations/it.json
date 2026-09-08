@@ -552,5 +552,41 @@
         "mapping_change_new": "Nuova entità",
         "action_prepare_contribution": "Prepara contributo community",
         "action_link_qr_account": "Collega account Smart Life / Tuya tramite QR"
+    },
+    "issues": {
+        "host_recovery_failed": {
+            "title": "LocalTuya non è riuscito a ripristinare in sicurezza {device_name}",
+            "description": "LocalTuya ha rilevato un possibile cambio di indirizzo LAN per {device_name}, ma il nuovo indirizzo non è stato convalidato con le credenziali locali salvate. L'indirizzo configurato non è stato modificato.",
+            "fix_flow": {
+                "error": {
+                    "cannot_connect": "Il dispositivo non risponde a questo indirizzo. Verifica che sia acceso e raggiungibile da Home Assistant.",
+                    "invalid_auth": "Il dispositivo risponde, ma le credenziali locali salvate sono state rifiutate. Ricollega o riconfigura le credenziali del dispositivo prima di riprovare.",
+                    "empty_dps": "La connessione al dispositivo è riuscita, ma non sono stati restituiti datapoint. Riprova quando il dispositivo è completamente online.",
+                    "invalid_host": "Inserisci un indirizzo IP LAN o un nome host valido.",
+                    "unknown": "Non è stato possibile convalidare l'indirizzo in sicurezza. La configurazione esistente è rimasta invariata.",
+                    "stale": "L'indirizzo del dispositivo è cambiato di nuovo durante la convalida. Ripeti la ricerca o inserisci manualmente l'indirizzo attuale.",
+                    "device_not_found": "Il dispositivo configurato non è stato trovato durante la ricerca LAN. Puoi inserire manualmente il suo indirizzo attuale.",
+                    "discovery_unavailable": "La ricerca LAN automatica non è disponibile in questo momento. Inserisci manualmente l'indirizzo del dispositivo.",
+                    "discovery_failed": "La ricerca LAN automatica non è riuscita. Inserisci manualmente l'indirizzo del dispositivo oppure riprova più tardi."
+                },
+                "step": {
+                    "init": {
+                        "title": "Ripara la connessione LAN di {device_name}",
+                        "description": "Scegli la ricerca automatica oppure inserisci l'indirizzo LAN attuale del dispositivo. LocalTuya convalida Device ID, local key, protocollo e datapoint prima di salvare un nuovo indirizzo.",
+                        "menu_options": {
+                            "rediscover": "Ripeti la ricerca LAN automatica",
+                            "manual_host": "Inserisci manualmente IP / nome host"
+                        }
+                    },
+                    "manual_host": {
+                        "title": "Inserisci l'indirizzo LAN attuale",
+                        "description": "Inserisci l'indirizzo IP o il nome host attuale di {device_name}. L'indirizzo verrà salvato solo dopo una convalida LocalTuya autenticata riuscita.",
+                        "data": {
+                            "host": "Indirizzo IP / Host"
+                        }
+                    }
+                }
+            }
+        }
     }
 }

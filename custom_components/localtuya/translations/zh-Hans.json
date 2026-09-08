@@ -552,5 +552,41 @@
         "mapping_change_new": "新实体",
         "action_prepare_contribution": "准备社区贡献",
         "action_link_qr_account": "通过二维码关联 Smart Life / Tuya 账户"
+    },
+    "issues": {
+        "host_recovery_failed": {
+            "title": "LocalTuya 无法安全恢复 {device_name}",
+            "description": "LocalTuya 检测到 {device_name} 的 LAN 地址可能发生变化，但无法使用已保存的本地凭据验证新地址。当前配置的地址未被修改。",
+            "fix_flow": {
+                "error": {
+                    "cannot_connect": "设备在该地址没有响应。请确认设备已开机，并且 Home Assistant 可以访问它。",
+                    "invalid_auth": "设备有响应，但已保存的本地凭据被拒绝。请重新关联或重新配置设备凭据后再试。",
+                    "empty_dps": "设备连接成功，但没有返回任何数据点。请在设备完全上线后重试。",
+                    "invalid_host": "请输入有效的 LAN IP 地址或主机名。",
+                    "unknown": "无法安全验证该地址。现有配置保持不变。",
+                    "stale": "验证过程中设备地址再次发生变化。请重新发现设备，或手动输入当前地址。",
+                    "device_not_found": "LAN 发现过程中未找到已配置的设备。你可以手动输入设备当前地址。",
+                    "discovery_unavailable": "当前无法使用自动 LAN 发现。请手动输入设备地址。",
+                    "discovery_failed": "自动 LAN 发现失败。请手动输入设备地址，或稍后重试。"
+                },
+                "step": {
+                    "init": {
+                        "title": "修复 {device_name} 的 LAN 连接",
+                        "description": "请选择自动重新发现，或输入设备当前的 LAN 地址。LocalTuya 会在保存任何新地址前验证设备 ID、local key、协议和数据点。",
+                        "menu_options": {
+                            "rediscover": "重新执行自动 LAN 发现",
+                            "manual_host": "手动输入 IP 地址 / 主机名"
+                        }
+                    },
+                    "manual_host": {
+                        "title": "输入当前 LAN 地址",
+                        "description": "请输入 {device_name} 当前的 IP 地址或主机名。只有通过 LocalTuya 的认证验证后才会保存该地址。",
+                        "data": {
+                            "host": "IP 地址 / 主机"
+                        }
+                    }
+                }
+            }
+        }
     }
 }

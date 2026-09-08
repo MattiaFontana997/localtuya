@@ -552,5 +552,41 @@
         "mapping_change_new": "Nova entidade",
         "action_prepare_contribution": "Preparar contribuição da comunidade",
         "action_link_qr_account": "Vincular conta Smart Life / Tuya por QR"
+    },
+    "issues": {
+        "host_recovery_failed": {
+            "title": "O LocalTuya não conseguiu recuperar {device_name} com segurança",
+            "description": "O LocalTuya detectou uma possível mudança de endereço LAN para {device_name}, mas o novo endereço não pôde ser validado com as credenciais locais salvas. O endereço configurado não foi alterado.",
+            "fix_flow": {
+                "error": {
+                    "cannot_connect": "O dispositivo não respondeu nesse endereço. Verifique se ele está ligado e acessível pelo Home Assistant.",
+                    "invalid_auth": "O dispositivo respondeu, mas as credenciais locais salvas foram rejeitadas. Vincule novamente ou reconfigure as credenciais do dispositivo antes de tentar de novo.",
+                    "empty_dps": "A conexão com o dispositivo foi bem-sucedida, mas nenhum datapoint foi retornado. Tente novamente quando o dispositivo estiver totalmente online.",
+                    "invalid_host": "Informe um endereço IP da LAN ou nome de host válido.",
+                    "unknown": "Não foi possível validar o endereço com segurança. A configuração existente permaneceu inalterada.",
+                    "stale": "O endereço do dispositivo mudou novamente durante a validação. Repita a descoberta ou informe manualmente o endereço atual.",
+                    "device_not_found": "O dispositivo configurado não foi encontrado durante a descoberta na LAN. Você pode informar manualmente o endereço atual.",
+                    "discovery_unavailable": "A descoberta automática na LAN não está disponível no momento. Informe manualmente o endereço do dispositivo.",
+                    "discovery_failed": "A descoberta automática na LAN falhou. Informe manualmente o endereço do dispositivo ou tente novamente mais tarde."
+                },
+                "step": {
+                    "init": {
+                        "title": "Reparar a conexão LAN de {device_name}",
+                        "description": "Escolha a redescoberta automática ou informe o endereço LAN atual do dispositivo. O LocalTuya valida ID do dispositivo, local key, protocolo e datapoints antes de salvar qualquer novo endereço.",
+                        "menu_options": {
+                            "rediscover": "Repetir descoberta automática na LAN",
+                            "manual_host": "Informar IP / nome de host manualmente"
+                        }
+                    },
+                    "manual_host": {
+                        "title": "Informe o endereço LAN atual",
+                        "description": "Informe o endereço IP ou nome de host atual de {device_name}. O endereço só será salvo após uma validação autenticada bem-sucedida do LocalTuya.",
+                        "data": {
+                            "host": "Endereço IP / Host"
+                        }
+                    }
+                }
+            }
+        }
     }
 }
