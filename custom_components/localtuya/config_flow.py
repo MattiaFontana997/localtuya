@@ -33,7 +33,6 @@ from homeassistant.helpers.selector import (
 )
 
 from .cloud_api import TuyaCloudApi
-from .common import pytuya
 from .const import (
     ATTR_UPDATED_AT,
     CONF_ACTION,
@@ -61,11 +60,13 @@ from .const import (
     PLATFORMS,
 )
 from .discovery import discover
-from .device_health import (
-    DeviceHealthFailure,
-    DeviceHealthReport,
-    DeviceHealthStage,
-    async_run_device_preflight,
+from .device_health import DeviceHealthFailure
+from .device_probe import (
+    PROTOCOL_AUTO,
+    PROTOCOL_OPTIONS,
+    SUPPORTED_PROTOCOL_VERSIONS,
+    async_device_preflight,
+    reset_ids_from_data,
 )
 from .device_mapper import (
     EntityCandidate,
@@ -103,24 +104,6 @@ CONTRIBUTION_JSON = "contribution_json"
 LINK_QR_ACCOUNT = "link_qr_account"
 
 CUSTOM_DEVICE = "..."
-
-PROTOCOL_AUTO = "auto"
-
-SUPPORTED_PROTOCOL_VERSIONS = (
-    "3.5",
-    "3.4",
-    "3.3",
-    "3.2",
-    "3.1",
-)
-
-PROTOCOL_OPTIONS = (
-    PROTOCOL_AUTO,
-    *SUPPORTED_PROTOCOL_VERSIONS,
-)
-
-PROTOCOL_PROBE_TIMEOUT = 8.0
-
 
 _MAPPING_STATUS_FALLBACKS = {
     "mapping_status_verified":
@@ -746,122 +729,6 @@ def strip_dps_values(user_input, dps_strings):
     return stripped
 
 
-async def _async_probe_protocol(
-    data,
-    protocol_version,
-    reset_ids,
-):
-    """Probe one Tuya LAN protocol and return detected datapoints."""
-    interface = None
-
-    try:
-        async with asyncio.timeout(PROTOCOL_PROBE_TIMEOUT):
-            interface = await pytuya.connect(
-                data[CONF_HOST],
-                data[CONF_DEVICE_ID],
-                data[CONF_LOCAL_KEY],
-                float(protocol_version),
-                data.get(CONF_ENABLE_DEBUG, False),
-            )
-
-            try:
-                detected_dps = (
-                    await interface.detect_available_dps()
-                )
-
-            except Exception as ex:
-                if (
-                    protocol_version == "3.3"
-                    and reset_ids
-                ):
-                    _LOGGER.debug(
-                        "Initial DPS detection failed using "
-                        "protocol %s (%s); trying reset IDs %s",
-                        protocol_version,
-                        type(ex).__name__,
-                        reset_ids,
-                    )
-
-                    await interface.reset(reset_ids)
-
-                    detected_dps = (
-                        await interface.detect_available_dps()
-                    )
-                else:
-                    raise
-
-            return detected_dps or {}
-
-    finally:
-        if interface is not None:
-            try:
-                await interface.close()
-            except Exception as ex:
-                _LOGGER.debug(
-                    "Error closing protocol %s probe: %s",
-                    protocol_version,
-                    type(ex).__name__,
-                )
-
-
-def _reset_ids_from_data(data) -> list[int]:
-    """Parse optional reset DPIDs without retaining other device data."""
-    reset_ids_value = data.get(CONF_RESET_DPIDS)
-    if not reset_ids_value:
-        return []
-
-    return [
-        int(value.strip())
-        for value in reset_ids_value.split(",")
-        if value.strip()
-    ]
-
-
-async def async_device_preflight(
-    hass: core.HomeAssistant,
-    data,
-) -> DeviceHealthReport:
-    """Run a structured, privacy-safe LAN/protocol/DPS preflight."""
-    del hass
-
-    requested_protocol = data.get(
-        CONF_PROTOCOL_VERSION,
-        PROTOCOL_AUTO,
-    )
-
-    try:
-        reset_ids = _reset_ids_from_data(data)
-    except (TypeError, ValueError):
-        report = DeviceHealthReport(
-            requested_protocol=str(requested_protocol),
-            stage=DeviceHealthStage.CONFIGURATION,
-            failure=DeviceHealthFailure.INVALID_CONFIGURATION,
-        )
-        _LOGGER.debug("LocalTuya preflight result: %s", report.as_dict())
-        return report
-
-    async def probe(protocol_version: str):
-        return await _async_probe_protocol(
-            data,
-            protocol_version,
-            reset_ids,
-        )
-
-    report = await async_run_device_preflight(
-        requested_protocol=str(requested_protocol),
-        supported_protocols=SUPPORTED_PROTOCOL_VERSIONS,
-        probe=probe,
-        auto_protocol=PROTOCOL_AUTO,
-        auth_or_protocol_error_types=(
-            pytuya.DecodeError,
-            ValueError,
-        ),
-    )
-
-    _LOGGER.debug("LocalTuya preflight result: %s", report.as_dict())
-    return report
-
-
 async def validate_input(
     hass: core.HomeAssistant,
     data,
@@ -907,7 +774,7 @@ async def validate_input(
         raise CannotConnect
 
     try:
-        reset_ids = _reset_ids_from_data(data)
+        reset_ids = reset_ids_from_data(data)
     except (TypeError, ValueError) as ex:
         raise InvalidAuth from ex
 

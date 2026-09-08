@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from custom_components.localtuya import config_flow
+from custom_components.localtuya import config_flow, device_probe
 from custom_components.localtuya.device_health import (
     DeviceHealthFailure,
     DeviceHealthStage,
@@ -36,7 +36,7 @@ class TestConfigFlowDeviceHealth(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch.object(
-            config_flow,
+            device_probe,
             "_async_probe_protocol",
             probe,
         ):
@@ -64,7 +64,7 @@ class TestConfigFlowDeviceHealth(unittest.IsolatedAsyncioTestCase):
         probe = AsyncMock(side_effect=TimeoutError("offline"))
 
         with patch.object(
-            config_flow,
+            device_probe,
             "_async_probe_protocol",
             probe,
         ):
@@ -83,7 +83,7 @@ class TestConfigFlowDeviceHealth(unittest.IsolatedAsyncioTestCase):
         probe = AsyncMock(return_value={})
 
         with patch.object(
-            config_flow,
+            device_probe,
             "_async_probe_protocol",
             probe,
         ):
@@ -111,7 +111,7 @@ class TestConfigFlowDeviceHealth(unittest.IsolatedAsyncioTestCase):
         probe = AsyncMock(side_effect=ValueError("wrong key detail"))
 
         with patch.object(
-            config_flow,
+            device_probe,
             "_async_probe_protocol",
             probe,
         ):
@@ -127,7 +127,7 @@ class TestConfigFlowDeviceHealth(unittest.IsolatedAsyncioTestCase):
         probe = AsyncMock(return_value={})
 
         with patch.object(
-            config_flow,
+            device_probe,
             "_async_probe_protocol",
             probe,
         ):
@@ -149,7 +149,7 @@ class TestConfigFlowDeviceHealth(unittest.IsolatedAsyncioTestCase):
         probe = AsyncMock()
 
         with patch.object(
-            config_flow,
+            device_probe,
             "_async_probe_protocol",
             probe,
         ):
