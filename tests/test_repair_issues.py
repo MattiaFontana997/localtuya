@@ -5,10 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from custom_components.localtuya.host_recovery import (
-    HostRecoveryOutcome,
-    HostRecoveryResult,
-)
+from custom_components.localtuya.host_recovery import HostRecoveryOutcome
 from custom_components.localtuya.repair_issues import (
     async_clear_host_recovery_issue,
     async_sync_host_recovery_issue,
@@ -38,16 +35,12 @@ class RepairIssueTests(unittest.TestCase):
     ):
         hass = object()
         device_id = "private-device-id"
-        result = HostRecoveryResult(
-            HostRecoveryOutcome.VALIDATION_FAILED,
-            validation_error_type="TimeoutError",
-        )
 
         async_sync_host_recovery_issue(
             hass,
             device_id=device_id,
             device_name="Kitchen light",
-            result=result,
+            outcome=HostRecoveryOutcome.VALIDATION_FAILED,
         )
 
         delete_issue.assert_not_called()
@@ -89,7 +82,7 @@ class RepairIssueTests(unittest.TestCase):
                     hass,
                     device_id="device-1",
                     device_name="Device",
-                    result=HostRecoveryResult(outcome),
+                    outcome=outcome,
                 )
                 delete_issue.assert_called_once()
 
@@ -114,7 +107,7 @@ class RepairIssueTests(unittest.TestCase):
                     hass,
                     device_id="device-1",
                     device_name="Device",
-                    result=HostRecoveryResult(outcome),
+                    outcome=outcome,
                 )
 
         create_issue.assert_not_called()
