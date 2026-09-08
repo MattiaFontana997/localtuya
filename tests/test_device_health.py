@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from custom_components.localtuya.device_health import (
+    DeviceHealthAction,
     DeviceHealthFailure,
     DeviceHealthStage,
     ProtocolProbeOutcome,
@@ -35,6 +36,8 @@ class DeviceHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(report.ok)
         self.assertEqual(report.stage, DeviceHealthStage.READY)
         self.assertIsNone(report.failure)
+        self.assertIsNone(report.recommended_action)
+        self.assertIsNone(report.repair_key)
         self.assertEqual(report.resolved_protocol, "3.5")
         self.assertEqual(report.dp_ids, [1, 20])
         self.assertEqual(len(report.attempts), 1)
@@ -58,6 +61,14 @@ class DeviceHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             report.failure,
             DeviceHealthFailure.HOST_UNREACHABLE,
+        )
+        self.assertEqual(
+            report.recommended_action,
+            DeviceHealthAction.REDISCOVER_HOST,
+        )
+        self.assertEqual(
+            report.repair_key,
+            "device_health_rediscover_host",
         )
         self.assertEqual(len(report.attempts), len(_PROTOCOLS))
         self.assertTrue(
@@ -85,6 +96,10 @@ class DeviceHealthTests(unittest.IsolatedAsyncioTestCase):
             DeviceHealthFailure.AUTH_OR_PROTOCOL,
         )
         self.assertEqual(
+            report.recommended_action,
+            DeviceHealthAction.VERIFY_CREDENTIALS_OR_PROTOCOL,
+        )
+        self.assertEqual(
             {attempt.error_type for attempt in report.attempts},
             {"FakeDecodeError"},
         )
@@ -100,6 +115,10 @@ class DeviceHealthTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(report.stage, DeviceHealthStage.DATAPOINTS)
         self.assertEqual(report.failure, DeviceHealthFailure.EMPTY_DPS)
+        self.assertEqual(
+            report.recommended_action,
+            DeviceHealthAction.REVIEW_DATAPOINTS,
+        )
         self.assertEqual(len(report.attempts), len(_PROTOCOLS))
         self.assertTrue(
             all(
@@ -122,6 +141,10 @@ class DeviceHealthTests(unittest.IsolatedAsyncioTestCase):
             report.failure,
             DeviceHealthFailure.INVALID_CONFIGURATION,
         )
+        self.assertEqual(
+            report.recommended_action,
+            DeviceHealthAction.REVIEW_CONFIGURATION,
+        )
         probe.assert_not_awaited()
 
     async def test_safe_diagnostics_do_not_expose_raw_values_or_secrets(self):
@@ -140,6 +163,8 @@ class DeviceHealthTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(exported["dp_ids"], [1, 2, 3])
         self.assertEqual(exported["dps_count"], 3)
+        self.assertIsNone(exported["recommended_action"])
+        self.assertIsNone(exported["repair_key"])
         self.assertNotIn(secret, serialized)
         self.assertNotIn(device_id, serialized)
         self.assertNotIn(host, serialized)
@@ -157,8 +182,40 @@ class DeviceHealthTests(unittest.IsolatedAsyncioTestCase):
         exported = report.as_dict()
 
         self.assertEqual(report.failure, DeviceHealthFailure.PROBE_ERROR)
+        self.assertEqual(report.recommended_action, DeviceHealthAction.RETRY)
+        self.assertEqual(exported["recommended_action"], "retry")
         self.assertEqual(exported["attempts"][0]["error_type"], "RuntimeError")
         self.assertNotIn(secret_message, repr(exported))
+
+    async def test_every_failure_has_stable_repair_guidance(self):
+        expected = {
+            DeviceHealthFailure.INVALID_CONFIGURATION:
+                DeviceHealthAction.REVIEW_CONFIGURATION,
+            DeviceHealthFailure.HOST_UNREACHABLE:
+                DeviceHealthAction.REDISCOVER_HOST,
+            DeviceHealthFailure.AUTH_OR_PROTOCOL:
+                DeviceHealthAction.VERIFY_CREDENTIALS_OR_PROTOCOL,
+            DeviceHealthFailure.PROTOCOL_NOT_DETECTED:
+                DeviceHealthAction.SELECT_PROTOCOL,
+            DeviceHealthFailure.EMPTY_DPS:
+                DeviceHealthAction.REVIEW_DATAPOINTS,
+            DeviceHealthFailure.PROBE_ERROR:
+                DeviceHealthAction.RETRY,
+        }
+
+        from custom_components.localtuya.device_health import DeviceHealthReport
+
+        for failure, action in expected.items():
+            report = DeviceHealthReport(
+                requested_protocol="auto",
+                stage=DeviceHealthStage.PROTOCOL,
+                failure=failure,
+            )
+            self.assertEqual(report.recommended_action, action)
+            self.assertEqual(
+                report.repair_key,
+                f"device_health_{action.value}",
+            )
 
 
 if __name__ == "__main__":
