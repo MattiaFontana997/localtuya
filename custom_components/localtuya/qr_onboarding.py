@@ -630,7 +630,13 @@ class QrConfigFlowMixin:
         except QrProvisioningError as exc:
             error, placeholders = exc.reason, {"msg": exc.detail}
         except Exception as exc:
-            _LOGGER.exception("Unexpected imported-device validation failure: %s", exc)
+            # Never log exception text here: an underlying library could include
+            # device credentials in its message. The exception class is enough
+            # for diagnostics while keeping imported secrets private.
+            _LOGGER.error(
+                "Unexpected imported-device validation failure (%s)",
+                type(exc).__name__,
+            )
             error, placeholders = "unknown", {}
         return self.async_show_form(
             step_id="import_existing",
