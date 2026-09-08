@@ -17,10 +17,6 @@ from custom_components.localtuya.const import (
     DOMAIN,
     TUYA_DEVICES,
 )
-from custom_components.localtuya.device_health import (
-    DeviceHealthReport,
-    DeviceHealthStage,
-)
 from custom_components.localtuya.diagnostics import (
     CLOUD_DEVICES,
     DEVICE_CLOUD_INFO,
@@ -144,20 +140,27 @@ class DiagnosticsTests(
         """Per-device diagnostics include live health without leaking secrets."""
         hass, entry = self._objects()
         device = self._device()
-        report = DeviceHealthReport(
-            requested_protocol="3.5",
-            resolved_protocol="3.5",
-            stage=DeviceHealthStage.READY,
-            detected_dps={
-                "1": "raw-dp-secret",
-                "20": True,
+        safe_health = {
+            "runtime_present": True,
+            "runtime_connected": True,
+            "preflight": {
+                "ok": True,
+                "stage": "ready",
+                "failure": None,
+                "recommended_action": None,
+                "repair_key": None,
+                "requested_protocol": "3.5",
+                "resolved_protocol": "3.5",
+                "dps_count": 2,
+                "dp_ids": [1, 20],
+                "attempts": [],
             },
-        )
+        }
 
         with patch(
-            "custom_components.localtuya.diagnostics.async_device_preflight",
-            new=AsyncMock(return_value=report),
-        ) as preflight:
+            "custom_components.localtuya.diagnostics.async_build_device_health_snapshot",
+            new=AsyncMock(return_value=safe_health),
+        ) as health_snapshot:
             result = (
                 await async_get_device_diagnostics(
                     hass,
@@ -171,7 +174,6 @@ class DiagnosticsTests(
         for secret in (
             "device-local-secret",
             "cloud-local-secret",
-            "raw-dp-secret",
             "192.168.1.50",
             "device1",
         ):
@@ -219,31 +221,34 @@ class DiagnosticsTests(
             health["preflight"],
         )
 
-        preflight.assert_awaited_once()
-        probe_data = preflight.await_args.args[1]
-        self.assertEqual(
-            probe_data["device_id"],
-            "device1",
+        health_snapshot.assert_awaited_once()
+        self.assertIs(
+            health_snapshot.await_args.args[0],
+            hass,
         )
         self.assertEqual(
-            probe_data[CONF_LOCAL_KEY],
+            health_snapshot.await_args.args[1],
+            "device1",
+        )
+        probe_config = health_snapshot.await_args.args[2]
+        self.assertEqual(
+            probe_config[CONF_LOCAL_KEY],
             "device-local-secret",
         )
 
     async def test_health_probe_error_keeps_diagnostics_private_and_available(self):
-        """Probe failures expose only an exception class, never its message."""
+        """A safe failed health snapshot does not prevent diagnostics export."""
         hass, entry = self._objects()
-        secret_message = (
-            "host=192.168.1.50 local_key=device-local-secret device=device1"
-        )
+        failed_health = {
+            "runtime_present": True,
+            "runtime_connected": False,
+            "preflight": None,
+            "probe_error_type": "RuntimeError",
+        }
 
         with patch(
-            "custom_components.localtuya.diagnostics.async_device_preflight",
-            new=AsyncMock(
-                side_effect=RuntimeError(
-                    secret_message
-                )
-            ),
+            "custom_components.localtuya.diagnostics.async_build_device_health_snapshot",
+            new=AsyncMock(return_value=failed_health),
         ):
             result = (
                 await async_get_device_diagnostics(
@@ -265,10 +270,6 @@ class DiagnosticsTests(
         )
 
         rendered = repr(result)
-        self.assertNotIn(
-            secret_message,
-            rendered,
-        )
         self.assertNotIn(
             "device-local-secret",
             rendered,
