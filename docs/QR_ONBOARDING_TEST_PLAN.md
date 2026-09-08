@@ -14,7 +14,9 @@ Before merge into `develop`, validate these scenarios on Home Assistant:
 10. Disconnect account and confirm configured LAN devices remain present and operational.
 11. Manual Device ID + local_key setup remains available.
 12. Import of an existing configuration/local_key validates credentials and LAN connectivity before saving.
-13. HACS validation, Hassfest, translation coverage and the complete LocalTuya test suite remain green.
+13. Upgrade an existing LocalTuya 6.5.x entry and link Smart Life/Tuya by QR without deleting the integration; confirm configured devices remain intact.
+14. For an entry that previously used the Tuya Developer Platform, confirm QR linking sets `no_cloud: true` and clears the legacy Client ID, Client Secret and User ID while preserving devices.
+15. HACS validation, Hassfest, translation coverage and the complete LocalTuya test suite remain green.
 
 ## Existing configuration import
 - Import a LocalTuya root `devices` object and confirm Device ID/local_key normalization.
