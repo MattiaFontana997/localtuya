@@ -141,7 +141,10 @@ class QrCloudClient:
         """Generate a Smart Life/Tuya QR token for the supplied User Code."""
         user_code = str(user_code or "").strip()
         if not user_code:
-            self.last_error = {"msg": "User Code is required", "code": "missing_user_code"}
+            self.last_error = {
+                "msg": "User Code is required",
+                "code": "missing_user_code",
+            }
             return None
 
         response = await self.hass.async_add_executor_job(
@@ -153,7 +156,12 @@ class QrCloudClient:
 
         if not isinstance(response, dict) or not response.get("success", False):
             self.last_error = {
-                "msg": str((response or {}).get("msg", "Unable to generate QR code")),
+                "msg": str(
+                    (response or {}).get(
+                        "msg",
+                        "Unable to generate QR code",
+                    )
+                ),
                 "code": str((response or {}).get("code", "qr_failed")),
             }
             return None
@@ -161,7 +169,10 @@ class QrCloudClient:
         result = response.get("result")
         token = result.get("qrcode") if isinstance(result, dict) else None
         if not isinstance(token, str) or not token:
-            self.last_error = {"msg": "Tuya returned an empty QR token", "code": "qr_failed"}
+            self.last_error = {
+                "msg": "Tuya returned an empty QR token",
+                "code": "qr_failed",
+            }
             return None
 
         self._user_code = user_code
@@ -172,7 +183,10 @@ class QrCloudClient:
     async def async_login(self) -> bool:
         """Exchange the scanned QR token for a renewable sharing session."""
         if not self._user_code or not self._qr_token:
-            self.last_error = {"msg": "Generate and scan the QR code first", "code": "qr_missing"}
+            self.last_error = {
+                "msg": "Generate and scan the QR code first",
+                "code": "qr_missing",
+            }
             return False
 
         success, info = await self.hass.async_add_executor_job(
@@ -210,7 +224,10 @@ class QrCloudClient:
     def _build_manager(self) -> Manager:
         """Create the sharing Manager from the persisted renewable session."""
         if not self.is_authenticated:
-            raise QrProvisioningError("qr_reauth_required", "Tuya account authorization is incomplete")
+            raise QrProvisioningError(
+                "qr_reauth_required",
+                "Tuya account authorization is incomplete",
+            )
 
         token_listener = _TokenCapture(self._auth)
         return Manager(
@@ -229,7 +246,11 @@ class QrCloudClient:
             await self.hass.async_add_executor_job(manager.update_device_cache)
         except Exception as exc:
             message = str(exc)
-            reason = "qr_reauth_required" if "sign invalid" in message.lower() else "qr_cloud_unavailable"
+            reason = (
+                "qr_reauth_required"
+                if "sign invalid" in message.lower()
+                else "qr_cloud_unavailable"
+            )
             raise QrProvisioningError(reason, message) from exc
 
         self._manager = manager
@@ -249,7 +270,9 @@ class QrCloudClient:
                 CONF_NAME: str(getattr(device, "name", "") or "").strip(),
                 CONF_LOCAL_KEY: local_key,
                 "product_id": product_id,
-                "product_name": str(getattr(device, "product_name", "") or "").strip(),
+                "product_name": str(
+                    getattr(device, "product_name", "") or ""
+                ).strip(),
                 "category": str(getattr(device, "category", "") or "").strip(),
                 "online": bool(getattr(device, "online", False)),
                 "support_local": bool(getattr(device, "support_local", False)),
@@ -269,7 +292,11 @@ class QrCloudClient:
                 f"/v1.0/m/life/devices/{device_id}/status",
             )
         except Exception as exc:
-            _LOGGER.debug("QR datamodel request failed for %s: %s", device_id, exc)
+            _LOGGER.debug(
+                "QR datamodel request failed for %s: %s",
+                device_id,
+                exc,
+            )
             return []
 
         if not isinstance(response, dict):
@@ -375,40 +402,101 @@ def _find_discovered_device(
     return None
 
 
+def _qr_host_schema(default: str = "") -> vol.Schema:
+    """Build the manual LAN-address fallback schema."""
+    if default:
+        marker = vol.Required(CONF_HOST, default=default)
+    else:
+        marker = vol.Required(CONF_HOST)
+    return vol.Schema({marker: cv.string})
+
+
+def _qr_needs_host_fallback(reason: str) -> bool:
+    """Return whether an automatic LAN failure should ask for an address."""
+    return reason in {
+        "qr_device_host_required",
+        "cannot_connect",
+    }
+
+
 async def async_prepare_qr_device(
     hass,
     cloud: QrCloudClient,
     cloud_device: dict[str, Any],
+    *,
+    host_override: str | None = None,
 ) -> tuple[dict[str, Any], list[Any]]:
-    """Resolve cloud identity, LAN connectivity, protocol and automatic mapping."""
+    """Resolve identity, verify LAN access, detect protocol and map entities.
+
+    Automatic Tuya discovery is preferred. When it cannot determine a usable
+    address, callers can retry with ``host_override``. The override is never
+    trusted by itself: Device ID/local_key authentication, protocol probing and
+    datapoint retrieval must all succeed before the device can be stored.
+    """
     device_id = str(cloud_device.get("id") or "").strip()
     local_key = str(cloud_device.get(CONF_LOCAL_KEY) or "").strip()
 
     if not device_id or not local_key:
-        raise QrProvisioningError("qr_device_not_local", "Device ID/local_key is not available")
-    if cloud_device.get("node_id"):
-        raise QrProvisioningError("qr_subdevice_not_supported", "The selected device is a hub child device")
-    if not cloud_device.get("support_local", True):
-        raise QrProvisioningError("qr_device_not_local", "Tuya marks this device as cloud-only")
-
-    discovered_devices = await _async_discovery_snapshot(hass)
-    discovered = _find_discovered_device(discovered_devices, device_id)
-    if discovered is None or not discovered.get("ip"):
         raise QrProvisioningError(
-            "qr_device_not_on_lan",
-            "The selected device was not found on the Home Assistant LAN",
+            "qr_device_not_local",
+            "Device ID/local_key is not available",
+        )
+    if cloud_device.get("node_id"):
+        raise QrProvisioningError(
+            "qr_subdevice_not_supported",
+            "The selected device is a hub child device",
+        )
+    if not cloud_device.get("support_local", True):
+        raise QrProvisioningError(
+            "qr_device_not_local",
+            "Tuya marks this device as cloud-only",
         )
 
-    model = await cloud.async_get_datamodel(device_id)
-    merged_discovery = {
-        **discovered,
-        **cloud_device,
-        "mapping": _datamodel_mapping(model),
-    }
-    merged_discovery["ip"] = discovered.get("ip")
-    merged_discovery["gwId"] = device_id
+    discovered_devices: dict[str, dict[str, Any]] = {}
+    discovered: dict[str, Any] = {}
 
-    from .config_flow import PROTOCOL_AUTO, validate_input
+    if host_override is None:
+        try:
+            discovered_devices = await _async_discovery_snapshot(hass)
+        except QrProvisioningError as exc:
+            # Broadcast/multicast discovery is an optimization, not a hard
+            # requirement. Docker, VLANs and some APs can block it while direct
+            # LAN access still works perfectly.
+            _LOGGER.debug(
+                "QR discovery unavailable; manual LAN address fallback enabled (%s)",
+                exc.reason,
+            )
+            discovered_devices = {}
+
+        found = _find_discovered_device(discovered_devices, device_id)
+        if isinstance(found, dict):
+            discovered = found
+
+        host = str(discovered.get("ip") or "").strip()
+        if not host:
+            raise QrProvisioningError(
+                "qr_device_host_required",
+                "Automatic LAN discovery could not determine the device address",
+            )
+    else:
+        host = str(host_override or "").strip()
+        if not host:
+            raise QrProvisioningError(
+                "qr_device_host_required",
+                "Enter the current device IP address or hostname",
+            )
+        discovered = {
+            "gwId": device_id,
+            "ip": host,
+        }
+
+    from .config_flow import (
+        CannotConnect,
+        EmptyDpsList,
+        InvalidAuth,
+        PROTOCOL_AUTO,
+        validate_input,
+    )
 
     device_data: dict[str, Any] = {
         CONF_FRIENDLY_NAME: (
@@ -416,7 +504,7 @@ async def async_prepare_qr_device(
             or cloud_device.get("product_name")
             or device_id
         ),
-        CONF_HOST: discovered["ip"],
+        CONF_HOST: host,
         CONF_DEVICE_ID: device_id,
         CONF_LOCAL_KEY: local_key,
         CONF_PROTOCOL_VERSION: PROTOCOL_AUTO,
@@ -428,9 +516,48 @@ async def async_prepare_qr_device(
     if product_key:
         device_data[CONF_PRODUCT_KEY] = str(product_key)
 
-    dps_strings, resolved_protocol = await validate_input(hass, device_data)
+    try:
+        dps_strings, resolved_protocol = await validate_input(hass, device_data)
+    except CannotConnect as exc:
+        raise QrProvisioningError(
+            "cannot_connect",
+            "The device did not answer at the selected LAN address",
+        ) from exc
+    except InvalidAuth as exc:
+        raise QrProvisioningError(
+            "invalid_auth",
+            "The device rejected the Device ID/local key returned by Tuya",
+        ) from exc
+    except EmptyDpsList as exc:
+        raise QrProvisioningError(
+            "empty_dps",
+            "The LAN connection succeeded but the device returned no datapoints",
+        ) from exc
+    except Exception as exc:
+        # Do not include exception text: lower-level libraries may include
+        # credentials in exceptions. The class is enough for diagnostics.
+        _LOGGER.error(
+            "Unexpected QR LAN validation failure (%s)",
+            type(exc).__name__,
+        )
+        raise QrProvisioningError(
+            "unknown",
+            "Unexpected error while validating the device over LAN",
+        ) from exc
+
     device_data[CONF_PROTOCOL_VERSION] = resolved_protocol
     device_data[CONF_DPS_STRINGS] = list(dps_strings)
+
+    # Cloud metadata is enrichment only and is fetched after LAN validation.
+    # This keeps the save decision authoritative to the actual local device.
+    model = await cloud.async_get_datamodel(device_id)
+    merged_discovery = {
+        **discovered,
+        **cloud_device,
+        "mapping": _datamodel_mapping(model),
+    }
+    merged_discovery["ip"] = host
+    merged_discovery["gwId"] = device_id
 
     detected_ids: set[int] = set()
     for raw in dps_strings:
@@ -487,17 +614,44 @@ def _base_entry_data(auth: dict[str, Any] | None = None) -> dict[str, Any]:
     }
 
 
-def _normalize_import_device(raw: dict[str, Any], device_id_hint: str | None = None) -> dict[str, Any]:
+def _normalize_import_device(
+    raw: dict[str, Any],
+    device_id_hint: str | None = None,
+) -> dict[str, Any]:
     """Normalize supported LocalTuya/Tuya/TinyTuya device export shapes."""
     if not isinstance(raw, dict):
         raise ValueError("device must be an object")
-    device_id = str(raw.get(CONF_DEVICE_ID) or raw.get("id") or raw.get("dev_id") or device_id_hint or "").strip()
-    local_key = str(raw.get(CONF_LOCAL_KEY) or raw.get("localKey") or raw.get("key") or "").strip()
+    device_id = str(
+        raw.get(CONF_DEVICE_ID)
+        or raw.get("id")
+        or raw.get("dev_id")
+        or device_id_hint
+        or ""
+    ).strip()
+    local_key = str(
+        raw.get(CONF_LOCAL_KEY)
+        or raw.get("localKey")
+        or raw.get("key")
+        or ""
+    ).strip()
     if not device_id or not local_key:
-        raise QrProvisioningError("import_missing_credentials", "Device ID and local_key are required")
+        raise QrProvisioningError(
+            "import_missing_credentials",
+            "Device ID and local_key are required",
+        )
     host = str(raw.get(CONF_HOST) or raw.get("ip") or "").strip()
-    name = str(raw.get(CONF_FRIENDLY_NAME) or raw.get(CONF_NAME) or raw.get("product_name") or device_id).strip()
-    protocol = str(raw.get(CONF_PROTOCOL_VERSION) or raw.get("version") or raw.get("protocol") or "auto").strip()
+    name = str(
+        raw.get(CONF_FRIENDLY_NAME)
+        or raw.get(CONF_NAME)
+        or raw.get("product_name")
+        or device_id
+    ).strip()
+    protocol = str(
+        raw.get(CONF_PROTOCOL_VERSION)
+        or raw.get("version")
+        or raw.get("protocol")
+        or "auto"
+    ).strip()
     if protocol not in {"auto", "3.1", "3.2", "3.3", "3.4", "3.5"}:
         protocol = "auto"
     result: dict[str, Any] = {
@@ -508,7 +662,12 @@ def _normalize_import_device(raw: dict[str, Any], device_id_hint: str | None = N
         CONF_PROTOCOL_VERSION: protocol,
         CONF_ENABLE_DEBUG: bool(raw.get(CONF_ENABLE_DEBUG, False)),
     }
-    product_key = raw.get(CONF_PRODUCT_KEY) or raw.get("productKey") or raw.get("product_id") or raw.get("productId")
+    product_key = (
+        raw.get(CONF_PRODUCT_KEY)
+        or raw.get("productKey")
+        or raw.get("product_id")
+        or raw.get("productId")
+    )
     if product_key:
         result[CONF_PRODUCT_KEY] = str(product_key)
     product_id = raw.get("product_id") or raw.get("productId")
@@ -519,7 +678,11 @@ def _normalize_import_device(raw: dict[str, Any], device_id_hint: str | None = N
             result[key] = copy.deepcopy(raw[key])
     entities = raw.get(CONF_ENTITIES)
     if isinstance(entities, list):
-        result[CONF_ENTITIES] = [copy.deepcopy(entity) for entity in entities if isinstance(entity, dict)]
+        result[CONF_ENTITIES] = [
+            copy.deepcopy(entity)
+            for entity in entities
+            if isinstance(entity, dict)
+        ]
     return result
 
 
@@ -530,11 +693,13 @@ def _parse_import_payload(value: str) -> dict[str, dict[str, Any]]:
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
         raise ValueError("invalid JSON") from exc
     records: dict[str, dict[str, Any]] = {}
+
     def add(raw: Any, hint: str | None = None) -> None:
         if not isinstance(raw, dict):
             return
         device = _normalize_import_device(raw, hint)
         records[device[CONF_DEVICE_ID]] = device
+
     if isinstance(payload, dict) and isinstance(payload.get(CONF_DEVICES), dict):
         for device_id, raw in payload[CONF_DEVICES].items():
             add(raw, str(device_id))
@@ -555,7 +720,16 @@ class QrConfigFlowMixin:
 
     def _import_schema(self):
         source = getattr(self, "_import_source", "")
-        return vol.Schema({vol.Required(CONF_IMPORT_JSON, default=source): TextSelector(TextSelectorConfig(multiline=True))})
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_IMPORT_JSON,
+                    default=source,
+                ): TextSelector(
+                    TextSelectorConfig(multiline=True)
+                )
+            }
+        )
 
     async def async_step_import_existing(self, user_input=None):
         """Import existing Device ID/local_key configuration without Tuya login."""
@@ -572,27 +746,50 @@ class QrConfigFlowMixin:
                 errors["base"] = "import_invalid"
             else:
                 if len(self._import_devices) == 1:
-                    return await self._async_start_import_device(next(iter(self._import_devices.values())))
+                    return await self._async_start_import_device(
+                        next(iter(self._import_devices.values()))
+                    )
                 return await self.async_step_import_choose_device()
-        return self.async_show_form(step_id="import_existing", data_schema=self._import_schema(), errors=errors, description_placeholders=placeholders)
+        return self.async_show_form(
+            step_id="import_existing",
+            data_schema=self._import_schema(),
+            errors=errors,
+            description_placeholders=placeholders,
+        )
 
     async def async_step_import_choose_device(self, user_input=None):
         devices = getattr(self, "_import_devices", {})
         if not devices:
             return await self.async_step_import_existing()
         labels = {
-            device_id: f"{device.get(CONF_FRIENDLY_NAME) or device_id} ({device.get(CONF_HOST) or 'LAN discovery'})"
+            device_id: (
+                f"{device.get(CONF_FRIENDLY_NAME) or device_id} "
+                f"({device.get(CONF_HOST) or 'LAN discovery'})"
+            )
             for device_id, device in devices.items()
         }
         if user_input is not None:
-            return await self._async_start_import_device(devices[user_input[CONF_IMPORT_DEVICE_ID]])
+            return await self._async_start_import_device(
+                devices[user_input[CONF_IMPORT_DEVICE_ID]]
+            )
         return self.async_show_form(
             step_id="import_choose_device",
-            data_schema=vol.Schema({vol.Required(CONF_IMPORT_DEVICE_ID): vol.In(labels)}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_IMPORT_DEVICE_ID): vol.In(labels)
+                }
+            ),
         )
 
     async def _async_start_import_device(self, imported: dict[str, Any]):
-        from .config_flow import CannotConnect, EmptyDpsList, InvalidAuth, async_get_entity_candidates, validate_input
+        from .config_flow import (
+            CannotConnect,
+            EmptyDpsList,
+            InvalidAuth,
+            async_get_entity_candidates,
+            validate_input,
+        )
+
         device_data = copy.deepcopy(imported)
         device_id = device_data[CONF_DEVICE_ID]
         try:
@@ -601,7 +798,10 @@ class QrConfigFlowMixin:
                 discovery = await _async_discovery_snapshot(self.hass)
                 discovered = _find_discovered_device(discovery, device_id)
                 if discovered is None or not discovered.get("ip"):
-                    raise QrProvisioningError("import_device_not_on_lan", "The imported device was not found on the Home Assistant LAN")
+                    raise QrProvisioningError(
+                        "import_device_not_on_lan",
+                        "The imported device was not found on the Home Assistant LAN",
+                    )
                 device_data[CONF_HOST] = discovered["ip"]
             dps_strings, resolved = await validate_input(self.hass, device_data)
             device_data[CONF_PROTOCOL_VERSION] = resolved
@@ -609,7 +809,11 @@ class QrConfigFlowMixin:
             existing_entities = device_data.get(CONF_ENTITIES)
             self._manual_device_data = device_data
             self._manual_dps_strings = list(dps_strings)
-            self._manual_entities = copy.deepcopy(existing_entities) if isinstance(existing_entities, list) else []
+            self._manual_entities = (
+                copy.deepcopy(existing_entities)
+                if isinstance(existing_entities, list)
+                else []
+            )
             if self._manual_entities:
                 return self._finish_manual_initial_device()
             if not discovery:
@@ -617,7 +821,14 @@ class QrConfigFlowMixin:
                     discovery = await _async_discovery_snapshot(self.hass)
                 except QrProvisioningError:
                     discovery = {}
-            self._manual_candidates = list(await async_get_entity_candidates(self.hass, device_data, discovery, dps_strings))
+            self._manual_candidates = list(
+                await async_get_entity_candidates(
+                    self.hass,
+                    device_data,
+                    discovery,
+                    dps_strings,
+                )
+            )
             if self._manual_candidates:
                 return await self.async_step_manual_mapping_review()
             return await self.async_step_manual_pick_entity_type()
@@ -630,9 +841,6 @@ class QrConfigFlowMixin:
         except QrProvisioningError as exc:
             error, placeholders = exc.reason, {"msg": exc.detail}
         except Exception as exc:
-            # Never log exception text here: an underlying library could include
-            # device credentials in its message. The exception class is enough
-            # for diagnostics while keeping imported secrets private.
             _LOGGER.error(
                 "Unexpected imported-device validation failure (%s)",
                 type(exc).__name__,
@@ -651,7 +859,9 @@ class QrConfigFlowMixin:
         placeholders = {}
         if user_input is not None:
             self._qr_cloud = QrCloudClient(self.hass)
-            token = await self._qr_cloud.async_generate_qr(user_input[CONF_QR_USER_CODE])
+            token = await self._qr_cloud.async_generate_qr(
+                user_input[CONF_QR_USER_CODE]
+            )
             if token:
                 self._qr_token = token
                 return await self.async_step_qr_scan()
@@ -660,7 +870,9 @@ class QrConfigFlowMixin:
 
         return self.async_show_form(
             step_id="qr_login",
-            data_schema=vol.Schema({vol.Required(CONF_QR_USER_CODE): str}),
+            data_schema=vol.Schema(
+                {vol.Required(CONF_QR_USER_CODE): str}
+            ),
             errors=errors,
             description_placeholders=placeholders,
         )
@@ -681,7 +893,9 @@ class QrConfigFlowMixin:
                             config=QrCodeSelectorConfig(
                                 data=f"tuyaSmart--qrLogin?token={token}",
                                 scale=5,
-                                error_correction_level=QrErrorCorrectionLevel.QUARTILE,
+                                error_correction_level=(
+                                    QrErrorCorrectionLevel.QUARTILE
+                                ),
                             )
                         )
                     }
@@ -698,9 +912,14 @@ class QrConfigFlowMixin:
                     {
                         vol.Optional("QR"): QrCodeSelector(
                             config=QrCodeSelectorConfig(
-                                data=f"tuyaSmart--qrLogin?token={self._qr_token}",
+                                data=(
+                                    "tuyaSmart--qrLogin?token="
+                                    f"{self._qr_token}"
+                                ),
                                 scale=5,
-                                error_correction_level=QrErrorCorrectionLevel.QUARTILE,
+                                error_correction_level=(
+                                    QrErrorCorrectionLevel.QUARTILE
+                                ),
                             )
                         )
                     }
@@ -732,13 +951,20 @@ class QrConfigFlowMixin:
         if user_input is not None:
             selected = user_input[CONF_DEVICE_ID]
             cloud_device = eligible[selected]
+            self._qr_selected_device = copy.deepcopy(cloud_device)
             try:
-                self._qr_device_data, self._qr_medium_candidates = await async_prepare_qr_device(
+                (
+                    self._qr_device_data,
+                    self._qr_medium_candidates,
+                ) = await async_prepare_qr_device(
                     self.hass,
                     self._qr_cloud,
                     cloud_device,
                 )
             except QrProvisioningError as exc:
+                if _qr_needs_host_fallback(exc.reason):
+                    self._qr_manual_host = ""
+                    return await self.async_step_qr_device_host()
                 return self.async_show_form(
                     step_id="qr_choose_device",
                     data_schema=self._qr_device_schema(eligible),
@@ -757,6 +983,53 @@ class QrConfigFlowMixin:
             data_schema=self._qr_device_schema(eligible),
         )
 
+    async def async_step_qr_device_host(self, user_input=None):
+        """Fallback to a user-supplied LAN address and validate it end-to-end."""
+        cloud_device = getattr(self, "_qr_selected_device", None)
+        cloud = getattr(self, "_qr_cloud", None)
+        if not isinstance(cloud_device, dict) or cloud is None:
+            return await self.async_step_qr_choose_device()
+
+        errors = {}
+        placeholders = {}
+        if user_input is not None:
+            host = str(user_input.get(CONF_HOST, "") or "").strip()
+            self._qr_manual_host = host
+            if not host:
+                errors["base"] = "qr_device_host_required"
+                placeholders = {
+                    "msg": "Enter the current device IP address or hostname"
+                }
+            else:
+                try:
+                    (
+                        self._qr_device_data,
+                        self._qr_medium_candidates,
+                    ) = await async_prepare_qr_device(
+                        self.hass,
+                        cloud,
+                        cloud_device,
+                        host_override=host,
+                    )
+                except QrProvisioningError as exc:
+                    errors["base"] = exc.reason
+                    placeholders = {"msg": exc.detail}
+                else:
+                    if self._qr_medium_candidates:
+                        return await self.async_step_qr_mapping_review()
+                    if not self._qr_device_data.get(CONF_ENTITIES):
+                        return self.async_abort(reason="qr_mapping_not_found")
+                    return await self._async_finish_initial_qr()
+
+        return self.async_show_form(
+            step_id="qr_device_host",
+            data_schema=_qr_host_schema(
+                getattr(self, "_qr_manual_host", "")
+            ),
+            errors=errors,
+            description_placeholders=placeholders,
+        )
+
     @staticmethod
     def _qr_device_schema(devices: dict[str, dict[str, Any]]):
         labels = {
@@ -766,7 +1039,9 @@ class QrConfigFlowMixin:
             )
             for device_id, device in devices.items()
         }
-        return vol.Schema({vol.Required(CONF_DEVICE_ID): vol.In(labels)})
+        return vol.Schema(
+            {vol.Required(CONF_DEVICE_ID): vol.In(labels)}
+        )
 
     async def async_step_qr_mapping_review(self, user_input=None):
         """Review only mappings that are not high-confidence."""
@@ -782,12 +1057,19 @@ class QrConfigFlowMixin:
                     candidate = candidates[int(index)]
                 except (ValueError, IndexError):
                     continue
-                device_data[CONF_ENTITIES].append(copy.deepcopy(candidate.config))
+                device_data[CONF_ENTITIES].append(
+                    copy.deepcopy(candidate.config)
+                )
             if not device_data[CONF_ENTITIES]:
                 return self.async_show_form(
                     step_id="qr_mapping_review",
                     data_schema=vol.Schema(
-                        {vol.Required("qr_mapping_selection", default=list(options)): cv.multi_select(options)}
+                        {
+                            vol.Required(
+                                "qr_mapping_selection",
+                                default=list(options),
+                            ): cv.multi_select(options)
+                        }
                     ),
                     errors={"base": "qr_mapping_required"},
                 )
@@ -796,7 +1078,12 @@ class QrConfigFlowMixin:
         return self.async_show_form(
             step_id="qr_mapping_review",
             data_schema=vol.Schema(
-                {vol.Required("qr_mapping_selection", default=list(options)): cv.multi_select(options)}
+                {
+                    vol.Required(
+                        "qr_mapping_selection",
+                        default=list(options),
+                    ): cv.multi_select(options)
+                }
             ),
         )
 
@@ -841,8 +1128,6 @@ class QrConfigFlowMixin:
                 try:
                     discovery = await _async_discovery_snapshot(self.hass)
                 except QrProvisioningError:
-                    # Manual credentials may still be valid even when broadcast
-                    # discovery is unavailable or blocked by the network.
                     discovery = {}
 
                 candidates = await async_get_entity_candidates(
@@ -1064,13 +1349,21 @@ class QrOptionsFlowMixin:
 
         if user_input is not None:
             selected = user_input[CONF_DEVICE_ID]
+            cloud_device = eligible[selected]
+            self._qr_selected_device = copy.deepcopy(cloud_device)
             try:
-                self._qr_device_data, self._qr_medium_candidates = await async_prepare_qr_device(
+                (
+                    self._qr_device_data,
+                    self._qr_medium_candidates,
+                ) = await async_prepare_qr_device(
                     self.hass,
                     self._qr_cloud,
-                    eligible[selected],
+                    cloud_device,
                 )
             except QrProvisioningError as exc:
+                if _qr_needs_host_fallback(exc.reason):
+                    self._qr_manual_host = ""
+                    return await self.async_step_qr_add_device_host()
                 return self.async_show_form(
                     step_id="qr_add_device",
                     data_schema=QrConfigFlowMixin._qr_device_schema(eligible),
@@ -1089,6 +1382,53 @@ class QrOptionsFlowMixin:
             data_schema=QrConfigFlowMixin._qr_device_schema(eligible),
         )
 
+    async def async_step_qr_add_device_host(self, user_input=None):
+        """Fallback to an explicit LAN address for a newly synced device."""
+        cloud_device = getattr(self, "_qr_selected_device", None)
+        cloud = getattr(self, "_qr_cloud", None)
+        if not isinstance(cloud_device, dict) or cloud is None:
+            return await self.async_step_qr_add_device()
+
+        errors = {}
+        placeholders = {}
+        if user_input is not None:
+            host = str(user_input.get(CONF_HOST, "") or "").strip()
+            self._qr_manual_host = host
+            if not host:
+                errors["base"] = "qr_device_host_required"
+                placeholders = {
+                    "msg": "Enter the current device IP address or hostname"
+                }
+            else:
+                try:
+                    (
+                        self._qr_device_data,
+                        self._qr_medium_candidates,
+                    ) = await async_prepare_qr_device(
+                        self.hass,
+                        cloud,
+                        cloud_device,
+                        host_override=host,
+                    )
+                except QrProvisioningError as exc:
+                    errors["base"] = exc.reason
+                    placeholders = {"msg": exc.detail}
+                else:
+                    if self._qr_medium_candidates:
+                        return await self.async_step_qr_add_mapping_review()
+                    if not self._qr_device_data.get(CONF_ENTITIES):
+                        return self.async_abort(reason="qr_mapping_not_found")
+                    return self._finish_qr_added_device()
+
+        return self.async_show_form(
+            step_id="qr_add_device_host",
+            data_schema=_qr_host_schema(
+                getattr(self, "_qr_manual_host", "")
+            ),
+            errors=errors,
+            description_placeholders=placeholders,
+        )
+
     async def async_step_qr_add_mapping_review(self, user_input=None):
         """Review medium-confidence mappings before saving a newly synced device."""
         candidates = getattr(self, "_qr_medium_candidates", [])
@@ -1103,12 +1443,19 @@ class QrOptionsFlowMixin:
                     candidate = candidates[int(index)]
                 except (ValueError, IndexError):
                     continue
-                device_data[CONF_ENTITIES].append(copy.deepcopy(candidate.config))
+                device_data[CONF_ENTITIES].append(
+                    copy.deepcopy(candidate.config)
+                )
             if not device_data[CONF_ENTITIES]:
                 return self.async_show_form(
                     step_id="qr_add_mapping_review",
                     data_schema=vol.Schema(
-                        {vol.Required("qr_mapping_selection", default=list(options)): cv.multi_select(options)}
+                        {
+                            vol.Required(
+                                "qr_mapping_selection",
+                                default=list(options),
+                            ): cv.multi_select(options)
+                        }
                     ),
                     errors={"base": "qr_mapping_required"},
                 )
@@ -1117,7 +1464,12 @@ class QrOptionsFlowMixin:
         return self.async_show_form(
             step_id="qr_add_mapping_review",
             data_schema=vol.Schema(
-                {vol.Required("qr_mapping_selection", default=list(options)): cv.multi_select(options)}
+                {
+                    vol.Required(
+                        "qr_mapping_selection",
+                        default=list(options),
+                    ): cv.multi_select(options)
+                }
             ),
         )
 
@@ -1125,10 +1477,17 @@ class QrOptionsFlowMixin:
         """Persist a QR-provisioned device; its runtime is fully LAN-based."""
         new_data = copy.deepcopy(dict(self.config_entry.data))
         device_data = copy.deepcopy(self._qr_device_data)
-        new_data.setdefault(CONF_DEVICES, {})[device_data[CONF_DEVICE_ID]] = device_data
+        new_data.setdefault(CONF_DEVICES, {})[
+            device_data[CONF_DEVICE_ID]
+        ] = device_data
         new_data[CONF_QR_AUTH] = self._qr_cloud.auth
-        new_data[ATTR_UPDATED_AT] = str(int(__import__("time").time() * 1000))
-        self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+        new_data[ATTR_UPDATED_AT] = str(
+            int(__import__("time").time() * 1000)
+        )
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            data=new_data,
+        )
         return self.async_create_entry(title="", data={})
 
     def _persist_qr_auth(self, auth: dict[str, Any]) -> None:
@@ -1136,11 +1495,6 @@ class QrOptionsFlowMixin:
         new_data = copy.deepcopy(dict(self.config_entry.data))
         new_data[CONF_QR_AUTH] = copy.deepcopy(auth)
 
-        # Choosing the QR account link is an explicit migration away from the
-        # legacy Tuya Developer Platform. Keep all configured LAN devices, but
-        # remove credentials that could otherwise keep the old cloud runtime
-        # active. The sharing authorization is used only on explicit provisioning
-        # actions such as device sync/add.
         new_data[CONF_NO_CLOUD] = True
         new_data[CONF_CLIENT_ID] = ""
         new_data[CONF_CLIENT_SECRET] = ""
