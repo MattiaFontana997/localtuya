@@ -1,6 +1,6 @@
 """Privacy-safe device health model for LocalTuya LAN preflight checks.
 
-This module intentionally contains no Home Assistant flow/UI code.  It provides
+This module intentionally contains no Home Assistant flow/UI code. It provides
 one small, deterministic model that can be reused by onboarding, repairs and
 diagnostics without ever storing device credentials or exception messages.
 """
@@ -34,6 +34,17 @@ class DeviceHealthFailure(str, Enum):
     PROBE_ERROR = "probe_error"
 
 
+class DeviceHealthAction(str, Enum):
+    """User-facing recovery action suitable for diagnostics and Repairs."""
+
+    REVIEW_CONFIGURATION = "review_configuration"
+    REDISCOVER_HOST = "rediscover_host"
+    VERIFY_CREDENTIALS_OR_PROTOCOL = "verify_credentials_or_protocol"
+    SELECT_PROTOCOL = "select_protocol"
+    REVIEW_DATAPOINTS = "review_datapoints"
+    RETRY = "retry"
+
+
 class ProtocolProbeOutcome(str, Enum):
     """Result of one protocol-version attempt."""
 
@@ -44,11 +55,27 @@ class ProtocolProbeOutcome(str, Enum):
     ERROR = "error"
 
 
+_FAILURE_ACTIONS = {
+    DeviceHealthFailure.INVALID_CONFIGURATION:
+        DeviceHealthAction.REVIEW_CONFIGURATION,
+    DeviceHealthFailure.HOST_UNREACHABLE:
+        DeviceHealthAction.REDISCOVER_HOST,
+    DeviceHealthFailure.AUTH_OR_PROTOCOL:
+        DeviceHealthAction.VERIFY_CREDENTIALS_OR_PROTOCOL,
+    DeviceHealthFailure.PROTOCOL_NOT_DETECTED:
+        DeviceHealthAction.SELECT_PROTOCOL,
+    DeviceHealthFailure.EMPTY_DPS:
+        DeviceHealthAction.REVIEW_DATAPOINTS,
+    DeviceHealthFailure.PROBE_ERROR:
+        DeviceHealthAction.RETRY,
+}
+
+
 @dataclass(slots=True, frozen=True)
 class ProtocolProbeHealth:
     """Safe summary of a single protocol probe.
 
-    ``error_type`` contains only the exception class name.  Exception text is
+    ``error_type`` contains only the exception class name. Exception text is
     deliberately discarded because lower-level networking/protocol libraries
     can include device identifiers or credentials in their messages.
     """
@@ -73,7 +100,7 @@ class DeviceHealthReport:
     """Structured result of a complete LocalTuya LAN preflight.
 
     Raw datapoint values are retained only for the caller that needs to finish
-    configuration.  They are excluded from ``repr`` and from ``as_dict()``.
+    configuration. They are excluded from ``repr`` and from ``as_dict()``.
     The report never receives/stores host, Device ID, local_key, account data or
     QR authorization material.
     """
@@ -101,12 +128,28 @@ class DeviceHealthReport:
                 continue
         return sorted(result)
 
+    @property
+    def recommended_action(self) -> DeviceHealthAction | None:
+        """Return the stable recovery action associated with this failure."""
+        if self.failure is None:
+            return None
+        return _FAILURE_ACTIONS.get(self.failure, DeviceHealthAction.RETRY)
+
+    @property
+    def repair_key(self) -> str | None:
+        """Return a stable translation/repair key without device identifiers."""
+        action = self.recommended_action
+        return f"device_health_{action.value}" if action is not None else None
+
     def as_dict(self) -> dict[str, Any]:
         """Return a privacy-safe diagnostic representation."""
+        action = self.recommended_action
         return {
             "ok": self.ok,
             "stage": self.stage.value,
             "failure": self.failure.value if self.failure else None,
+            "recommended_action": action.value if action else None,
+            "repair_key": self.repair_key,
             "requested_protocol": self.requested_protocol,
             "resolved_protocol": self.resolved_protocol,
             "dps_count": len(self.detected_dps),
@@ -136,7 +179,7 @@ async def async_run_device_preflight(
 
     Protocol auto-detection deliberately tries incompatible versions, so a
     decryption/authentication-looking failure on one attempt is *not* treated
-    as definitive invalid credentials.  We record it as ``auth_or_protocol``
+    as definitive invalid credentials. We record it as ``auth_or_protocol``
     and decide only after every candidate protocol has been attempted.
     """
     requested = str(requested_protocol or auto_protocol)
