@@ -103,6 +103,50 @@ class TranslationCoverageTests(
             "Custom integrations must not ship strings.json; use translations/en.json",
         )
 
+    def test_host_recovery_repair_translation_contract(
+        self,
+    ):
+        """The fixable host-recovery issue must keep its complete HA repair UI."""
+        issue = (
+            self.english.get("issues", {})
+            .get("host_recovery_failed")
+        )
+
+        self.assertIsInstance(issue, dict)
+        self.assertIn("{device_name}", issue["title"])
+        self.assertIn("{device_name}", issue["description"])
+
+        fix_flow = issue.get("fix_flow", {})
+        errors = fix_flow.get("error", {})
+        self.assertEqual(
+            set(errors),
+            {
+                "cannot_connect",
+                "invalid_auth",
+                "empty_dps",
+                "invalid_host",
+                "unknown",
+                "stale",
+                "device_not_found",
+                "discovery_unavailable",
+                "discovery_failed",
+            },
+        )
+
+        steps = fix_flow.get("step", {})
+        self.assertEqual(
+            set(steps),
+            {"init", "manual_host"},
+        )
+        self.assertEqual(
+            set(steps["init"]["menu_options"]),
+            {"rediscover", "manual_host"},
+        )
+        self.assertEqual(
+            set(steps["manual_host"]["data"]),
+            {"host"},
+        )
+
     def test_supported_languages_have_all_keys(
         self,
     ):
