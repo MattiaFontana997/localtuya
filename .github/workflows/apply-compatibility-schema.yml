@@ -18,6 +18,11 @@ jobs:
         with:
           ref: develop
           fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: requirements_test.txt
       - name: Apply final 6.7 patch
         run: python scripts/_compat_catalog_patch.py
       - name: Install test dependencies
