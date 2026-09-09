@@ -1033,6 +1033,12 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         self.dps_cache = {}
         self.local_nonce = b""
         self.remote_nonce = b""
+        # Some protocol 3.5 devices reject the normal empty DP_QUERY
+        # even though TCP/session-key negotiation succeeds. Remember
+        # the compatibility mode only after the device explicitly asks
+        # for it, so known-working 3.5 devices keep their old payload.
+        self._v35_query_fallback = False
+        self._v35_query_fallback_needed = False
 
     def set_version(self, protocol_version):
         """Set the device version and eventually start available DPs detection."""
@@ -1261,6 +1267,18 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
     async def status(self):
         """Return device status."""
         status = await self.exchange(DP_QUERY)
+
+        if (
+            status is None
+            and self.version >= 3.5
+            and not self.cid
+            and self._v35_query_fallback_needed
+            and not self._v35_query_fallback
+        ):
+            self._v35_query_fallback = True
+            self._v35_query_fallback_needed = False
+            status = await self.exchange(DP_QUERY)
+
         if status and "dps" in status:
             self.dps_cache.update(status["dps"])
         return self.dps_cache
@@ -1410,6 +1428,26 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                     # return self.error_json(ERR_JSON, payload)
 
             if "data unvalid" in payload:
+                # TinyTuya documents that some real protocol 3.5
+                # devices reject the otherwise valid empty DP_QUERY and
+                # require {"data":{"dps":{}}}. Device22 detection is
+                # not valid for 3.5, so retry the query shape instead.
+                if self.version >= 3.5:
+                    if (
+                        not self.cid
+                        and not self._v35_query_fallback
+                    ):
+                        self._v35_query_fallback_needed = True
+                        self.debug(
+                            "Protocol 3.5 rejected the empty DP query; "
+                            "retrying with an explicit data/dps object"
+                        )
+                    else:
+                        self.debug(
+                            "Protocol 3.5 returned data unvalid"
+                        )
+                    return None
+
                 self.dev_type = "type_0d"
                 self.debug(
                     "'data unvalid' error detected: switching to dev_type %r",
@@ -1760,6 +1798,25 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             # complain about missing attribs, so just include them all unless otherwise specified
             json_data = {"gwId": "", "devId": "", "uid": "", "t": ""}
 
+        if (
+            self.version >= 3.5
+            and not self.cid
+            and command in (DP_QUERY, DP_QUERY_NEW)
+            and self._v35_query_fallback
+        ):
+            command_override = DP_QUERY_NEW
+            json_data = {"data": {"dps": {}}}
+
+        # Gateway children use Tuya's dedicated Zigbee/BLE payload
+        # shape on legacy LAN protocols. Keeping devId/gwId in these
+        # requests makes some gateways ignore the child completely.
+        if (
+            self.cid
+            and self.version < 3.4
+            and command in (CONTROL, DP_QUERY)
+        ):
+            json_data = {"t": "int", "cid": self.cid}
+
         if "gwId" in json_data:
             if gwId is not None:
                 json_data["gwId"] = gwId
@@ -1780,12 +1837,13 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             if self.gateway_id and "gwId" in json_data:
                 json_data["gwId"] = self.gateway_id
             if self.version >= 3.4:
+                # Only commands whose Tuya template already contains
+                # a data object use nested cid/ctype. DP_QUERY and
+                # heartbeat keep cid at top level, matching TinyTuya.
                 nested = json_data.get("data")
-                if not isinstance(nested, dict):
-                    nested = {}
-                    json_data["data"] = nested
-                nested["cid"] = self.cid
-                nested["ctype"] = 0
+                if isinstance(nested, dict):
+                    nested["cid"] = self.cid
+                    nested["ctype"] = 0
 
         if "t" in json_data:
             if json_data["t"] == "int":
