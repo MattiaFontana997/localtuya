@@ -1,0 +1,34 @@
+name: Harden Tuya status dispatch
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - .github/workflows/harden-pytuya-status-dispatch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+
+      - name: Guard decoded status payload
+        run: >-
+          python -c 'from pathlib import Path; p=Path("custom_components/localtuya/pytuya/__init__.py"); s=p.read_text(); old="if \"dps\" in decoded_message:"; new="if isinstance(decoded_message, dict) and \"dps\" in decoded_message:"; assert s.count(old) == 1; p.write_text(s.replace(old, new, 1))'
+
+      - name: Remove temporary workflow and push
+        run: |
+          git rm .github/workflows/harden-pytuya-status-dispatch.yml
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/localtuya/pytuya/__init__.py
+          git commit -m "Harden Tuya status dispatch against empty decode"
+          git push origin HEAD:develop
