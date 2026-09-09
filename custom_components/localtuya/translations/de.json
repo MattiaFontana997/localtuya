@@ -240,7 +240,8 @@
             "qr_subdevice_not_supported": "Hub-Untergeräte werden von diesem QR-Ablauf noch nicht unterstützt. {msg}",
             "qr_mapping_required": "Wähle mindestens eine Zuordnung aus, bevor du fortfährst.",
             "qr_login_error": "QR-Anmeldung konnte nicht abgeschlossen werden. {msg}",
-            "health_device_not_found": "Das ausgewählte LocalTuya-Gerät ist nicht mehr konfiguriert."
+            "health_device_not_found": "Das ausgewählte LocalTuya-Gerät ist nicht mehr konfiguriert.",
+            "select_at_least_one_device": "Wähle mindestens ein Gerät aus."
         },
         "step": {
             "yaml_import": {
@@ -468,13 +469,15 @@
                     "qr_add_device": "Aus Smart Life / Tuya",
                     "manual_add_device": "Manuelle / LAN-Einrichtung",
                     "qr_relink": "Smart-Life/Tuya-Konto erneut verknüpfen",
-                    "qr_disconnect": "Smart-Life/Tuya-Konto trennen"
+                    "qr_disconnect": "Smart-Life/Tuya-Konto trennen",
+                    "qr_bulk_choose_devices": "Mehrere Geräte aus dem verknüpften Konto hinzufügen"
                 },
                 "menu_option_descriptions": {
                     "qr_add_device": "Empfohlen — das verknüpfte Konto einmal aktualisieren und das gewählte Gerät für LAN-Steuerung konfigurieren.",
                     "manual_add_device": "Geräte-ID und local_key manuell eingeben.",
                     "qr_relink": "Neue QR-Autorisierung verwenden, wenn die gespeicherte Tuya-Sitzung abgelaufen oder widerrufen wurde.",
-                    "qr_disconnect": "Cloud-Autorisierung vergessen. Bereits konfigurierte Geräte funktionieren weiter über LAN."
+                    "qr_disconnect": "Cloud-Autorisierung vergessen. Bereits konfigurierte Geräte funktionieren weiter über LAN.",
+                    "qr_bulk_choose_devices": "Mehrere verknüpfte Tuya-Geräte auswählen und nacheinander im LAN prüfen."
                 }
             },
             "qr_add_device": {
@@ -522,6 +525,18 @@
             "check_device_health_result": {
                 "title": "Ergebnis der Geräteprüfung",
                 "description": "Gerät: **{device}**\n\nRuntime geladen: {runtime_present} · verbunden: {runtime_connected}\n\nLAN-Prüfung: {preflight_ok} · Phase: `{stage}` · Fehler: `{failure}`\n\nEmpfohlene Aktion: `{action}`\n\nProtokoll: angefordert `{requested_protocol}` · erkannt `{resolved_protocol}`\n\nDatenpunkte: {dps_count} (`{dp_ids}`) · Versuche: {attempts}\n\nPrüffehler: `{probe_error}`\n\nGeräte-ID, Local Key, IP-Adresse und Rohwerte der Datenpunkte werden nicht angezeigt."
+            },
+            "qr_bulk_choose_devices": {
+                "title": "Mehrere Geräte hinzufügen",
+                "description": "Wähle ein oder mehrere Tuya-Geräte. LocalTuya prüft sie nacheinander; Geräte mit erforderlicher Zuordnungsprüfung werden nicht automatisch gespeichert.",
+                "data": {
+                    "qr_bulk_device_ids": "Tuya-Geräte"
+                }
+            },
+            "qr_bulk_summary": {
+                "title": "Zusammenfassung der Mehrfach-Einrichtung",
+                "description": "Automatisch hinzugefügt: {added_count}. Zuordnung prüfen: {review_count}. Prüfung fehlgeschlagen: {failed_count}. Geräte mit Prüfbedarf wurden nicht automatisch gespeichert.",
+                "data": {}
             }
         }
     },

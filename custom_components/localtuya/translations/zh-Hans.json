@@ -240,7 +240,8 @@
             "qr_subdevice_not_supported": "此二维码流程暂不支持网关子设备。{msg}",
             "qr_mapping_required": "继续前请至少选择一个映射。",
             "qr_login_error": "无法完成二维码登录。{msg}",
-            "health_device_not_found": "所选 LocalTuya 设备已不再配置。"
+            "health_device_not_found": "所选 LocalTuya 设备已不再配置。",
+            "select_at_least_one_device": "请至少选择一个设备。"
         },
         "step": {
             "yaml_import": {
@@ -468,13 +469,15 @@
                     "qr_add_device": "从 Smart Life / Tuya 添加",
                     "manual_add_device": "手动 / 局域网配置",
                     "qr_relink": "重新连接 Smart Life / Tuya 账户",
-                    "qr_disconnect": "断开 Smart Life / Tuya 账户"
+                    "qr_disconnect": "断开 Smart Life / Tuya 账户",
+                    "qr_bulk_choose_devices": "从已关联账户批量添加设备"
                 },
                 "menu_option_descriptions": {
                     "qr_add_device": "推荐 — 按需刷新一次已连接账户，然后将所选设备配置为局域网控制。",
                     "manual_add_device": "手动输入 Device ID 和 local_key。",
                     "qr_relink": "如果保存的 Tuya 会话已过期或被撤销，请使用新的二维码授权。",
-                    "qr_disconnect": "清除云端授权。已配置的设备仍会继续通过局域网工作。"
+                    "qr_disconnect": "清除云端授权。已配置的设备仍会继续通过局域网工作。",
+                    "qr_bulk_choose_devices": "选择多个已关联的 Tuya 设备，并在局域网上依次验证。"
                 }
             },
             "qr_add_device": {
@@ -522,6 +525,18 @@
             "check_device_health_result": {
                 "title": "设备健康检查结果",
                 "description": "设备：**{device}**\n\n运行时已加载：{runtime_present} · 已连接：{runtime_connected}\n\nLAN 预检：{preflight_ok} · 阶段：`{stage}` · 故障：`{failure}`\n\n建议操作：`{action}`\n\n协议：请求 `{requested_protocol}` · 检测到 `{resolved_protocol}`\n\n数据点：{dps_count}（`{dp_ids}`）· 尝试次数：{attempts}\n\n检查错误：`{probe_error}`\n\n不会显示设备 ID、local key、IP 地址或原始数据点值。"
+            },
+            "qr_bulk_choose_devices": {
+                "title": "批量添加设备",
+                "description": "选择一个或多个 Tuya 设备。LocalTuya 会依次验证；需要映射确认的设备绝不会被自动保存。",
+                "data": {
+                    "qr_bulk_device_ids": "Tuya 设备"
+                }
+            },
+            "qr_bulk_summary": {
+                "title": "批量添加摘要",
+                "description": "自动添加：{added_count}。需要映射确认：{review_count}。验证失败：{failed_count}。需要确认的设备未被自动保存。",
+                "data": {}
             }
         }
     },

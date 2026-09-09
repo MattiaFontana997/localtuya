@@ -240,7 +240,8 @@
             "qr_subdevice_not_supported": "Hub child devices are not supported by this QR flow yet. {msg}",
             "qr_mapping_required": "Select at least one mapping before continuing.",
             "qr_login_error": "Unable to complete QR login. {msg}",
-            "health_device_not_found": "The selected LocalTuya device is no longer configured."
+            "health_device_not_found": "The selected LocalTuya device is no longer configured.",
+            "select_at_least_one_device": "Select at least one device."
         },
         "step": {
             "yaml_import": {
@@ -468,13 +469,15 @@
                     "qr_add_device": "From Smart Life / Tuya",
                     "manual_add_device": "Manual / LAN setup",
                     "qr_relink": "Re-link Smart Life / Tuya account",
-                    "qr_disconnect": "Disconnect Smart Life / Tuya account"
+                    "qr_disconnect": "Disconnect Smart Life / Tuya account",
+                    "qr_bulk_choose_devices": "Add multiple devices from linked account"
                 },
                 "menu_option_descriptions": {
                     "qr_add_device": "Recommended — refresh the linked account once, then configure the selected device for LAN control.",
                     "manual_add_device": "Enter Device ID and local_key manually.",
                     "qr_relink": "Use a new QR authorization if the saved Tuya session has expired or been revoked.",
-                    "qr_disconnect": "Forget cloud authorization. Already configured devices continue to work over LAN."
+                    "qr_disconnect": "Forget cloud authorization. Already configured devices continue to work over LAN.",
+                    "qr_bulk_choose_devices": "Select several linked Tuya devices and validate them sequentially over LAN."
                 }
             },
             "qr_add_device": {
@@ -522,6 +525,18 @@
             "check_device_health_result": {
                 "title": "Device health result",
                 "description": "Device: **{device}**\n\nRuntime loaded: {runtime_present} · connected: {runtime_connected}\n\nLAN preflight: {preflight_ok} · stage: `{stage}` · failure: `{failure}`\n\nRecommended action: `{action}`\n\nProtocol: requested `{requested_protocol}` · resolved `{resolved_protocol}`\n\nDatapoints: {dps_count} (`{dp_ids}`) · attempts: {attempts}\n\nProbe error: `{probe_error}`\n\nNo Device ID, local key, IP address or raw datapoint values are displayed."
+            },
+            "qr_bulk_choose_devices": {
+                "title": "Add multiple devices",
+                "description": "Select one or more Tuya devices. LocalTuya validates each device sequentially; devices needing mapping review are never saved automatically.",
+                "data": {
+                    "qr_bulk_device_ids": "Tuya devices"
+                }
+            },
+            "qr_bulk_summary": {
+                "title": "Bulk onboarding summary",
+                "description": "Added automatically: {added_count}. Needs mapping review: {review_count}. Failed validation: {failed_count}. Devices needing review were not saved automatically.",
+                "data": {}
             }
         }
     },

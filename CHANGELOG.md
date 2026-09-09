@@ -1,5 +1,40 @@
 # Changelog
 
+## 6.7.0 — In development
+
+Reliability, repair, gateway-child and zero-config onboarding development release. Stable `master` remains unchanged until explicit release approval.
+
+### Reliability & Repair
+
+- Added structured, privacy-safe Device Health checks and actionable Home Assistant Repairs.
+- Added validated automatic host recovery, active LAN rediscovery, race protection and manual repair fallback.
+- Added gateway-aware child host recovery without overwriting child identity or routing metadata.
+
+### Gateway and Tuya protocol reliability
+
+- Added gateway-child routing through parent IP/local key while preserving child `node_id` / CID and `gateway_id`.
+- Added UUID-to-CID fallback only for explicitly marked subdevices with a known gateway.
+- Added shared gateway transport so multiple children reuse one physical gateway connection and unsolicited status is routed by CID.
+- Hardened Tuya 3.5 framing, fallback status queries and empty-decode handling.
+
+### Zero-config and bulk onboarding
+
+- Added fail-closed zero-config decisions: only deterministic prepared mappings are persisted without review.
+- Added reachable linked-account bulk onboarding with multi-select, sequential LAN validation, per-device failure isolation and an explicit summary.
+- Devices requiring mapping review or manual mapping are never silently written by bulk onboarding.
+- Linked-account single-device onboarding now uses the same centralized zero-config decision and supports validated gateway children.
+
+### Compatibility matrix
+
+- Added bounded catalog `compatibility` metadata for protocol, transport, Home Assistant/LocalTuya version and hardware-test evidence.
+- Added generated public JSON/Markdown compatibility matrices containing product-level evidence only, never Device IDs, hosts, local keys, account IDs or tokens.
+- `verified` requires explicit hardware evidence; untested verified catalog confidence is downgraded in the public matrix.
+
+### Validation
+
+- Python 3.14 / Home Assistant 2026.9 regression suite and HACS validation are release gates for the final development SHA.
+
+
 ## 6.6.0 — 2026-09-08
 
 QR onboarding and provisioning release.

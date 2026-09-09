@@ -52,7 +52,7 @@ from .mapping_resolver import resolve_entity_candidates
 from .device_mapper import MappingConfidence
 from .zero_config import (
     ZeroConfigDecision,
-    evaluate_zero_config,
+    evaluate_prepared_zero_config,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -456,6 +456,19 @@ def _qr_host_schema(default: str = "") -> vol.Schema:
     else:
         marker = vol.Required(CONF_HOST)
     return vol.Schema({marker: cv.string})
+
+
+def _qr_is_locally_eligible(device: dict[str, Any]) -> bool:
+    """Return whether Tuya supplied enough routing metadata for LAN validation."""
+    if not isinstance(device, dict):
+        return False
+    node_id = str(device.get("node_id") or "").strip()
+    if node_id:
+        return bool(
+            str(device.get("gateway_id") or "").strip()
+            and str(device.get("gateway_local_key") or "").strip()
+        )
+    return bool(str(device.get(CONF_LOCAL_KEY) or "").strip())
 
 
 def _qr_needs_host_fallback(reason: str) -> bool:
@@ -1009,178 +1022,13 @@ class QrConfigFlowMixin:
         self._qr_auth = cloud.auth
         return await self.async_step_qr_choose_device()
 
-    def _bulk_eligible_devices(self):
-        """Return QR devices not already configured in this LocalTuya entry."""
-        devices = getattr(self, "_qr_devices", {})
-        configured = set()
-        entry = getattr(self, "config_entry", None)
-        entry_data = getattr(entry, "data", {}) if entry is not None else {}
-        current = entry_data.get(CONF_DEVICES, {}) if isinstance(entry_data, dict) else {}
-        if isinstance(current, dict):
-            configured = {str(device_id) for device_id in current}
-
-        return {
-            str(device_id): device
-            for device_id, device in devices.items()
-            if str(device_id) not in configured
-        }
-
-    async def _async_bulk_prepare_devices(self, device_ids):
-        """Provision selected devices sequentially while isolating failures."""
-        devices = getattr(self, "_qr_devices", {})
-        cloud = getattr(self, "_qr_cloud", None)
-        successes = []
-        failures = []
-
-        for raw_device_id in device_ids:
-            device_id = str(raw_device_id)
-            cloud_device = devices.get(device_id)
-            if not isinstance(cloud_device, dict):
-                failures.append({"device_id": device_id, "reason": "device_not_found"})
-                continue
-
-            try:
-                device_data, candidates = await async_prepare_qr_device(
-                    self.hass,
-                    cloud,
-                    cloud_device,
-                )
-            except QrProvisioningError as exc:
-                failures.append({"device_id": device_id, "reason": exc.reason})
-                continue
-            except Exception as exc:  # noqa: BLE001 - isolate one device in bulk mode.
-                _LOGGER.debug(
-                    "Bulk QR provisioning failed for one device: %s",
-                    type(exc).__name__,
-                )
-                failures.append({"device_id": device_id, "reason": "probe_error"})
-                continue
-
-            successes.append(
-                {
-                    "device_id": device_id,
-                    "device_data": device_data,
-                    "candidates": candidates,
-                }
-            )
-
-        return {"successes": successes, "failures": failures}
-
-    async def async_step_qr_bulk_choose_devices(self, user_input=None):
-        """Select multiple QR devices for sequential onboarding."""
-        eligible = self._bulk_eligible_devices()
-        if not eligible:
-            return self.async_abort(reason="no_new_devices")
-
-        if user_input is not None:
-            selected = [
-                str(device_id)
-                for device_id in user_input.get(CONF_QR_BULK_DEVICE_IDS, [])
-                if str(device_id) in eligible
-            ]
-            if not selected:
-                return self.async_show_form(
-                    step_id="qr_bulk_choose_devices",
-                    data_schema=self._qr_bulk_schema(eligible),
-                    errors={"base": "select_at_least_one_device"},
-                )
-            self._qr_bulk_result = await self._async_bulk_prepare_devices(selected)
-            return await self.async_step_qr_bulk_summary()
-
-        return self.async_show_form(
-            step_id="qr_bulk_choose_devices",
-            data_schema=self._qr_bulk_schema(eligible),
-        )
-
-    @staticmethod
-    def _qr_bulk_schema(eligible):
-        """Build the translated multi-select schema for eligible devices."""
-        options = [
-            {
-                "value": str(device_id),
-                "label": str(device.get(CONF_NAME) or device_id),
-            }
-            for device_id, device in eligible.items()
-        ]
-        return vol.Schema(
-            {
-                vol.Required(CONF_QR_BULK_DEVICE_IDS): SelectSelector(
-                    SelectSelectorConfig(
-                        options=options,
-                        multiple=True,
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                )
-            }
-        )
-
-    async def async_step_qr_bulk_summary(self, user_input=None):
-        """Persist successful bulk devices and summarize per-device failures."""
-        result = getattr(self, "_qr_bulk_result", {"successes": [], "failures": []})
-        successes = result.get("successes", [])
-        failures = result.get("failures", [])
-
-        entry = getattr(self, "config_entry", None)
-        entry_data = copy.deepcopy(dict(getattr(entry, "data", {}) or {}))
-        devices = entry_data.setdefault(CONF_DEVICES, {})
-        if not isinstance(devices, dict):
-            devices = {}
-            entry_data[CONF_DEVICES] = devices
-
-        added = []
-        review_required = []
-        for item in successes:
-            device_data = copy.deepcopy(item["device_data"])
-            candidates = item.get("candidates", [])
-            zero_config = evaluate_zero_config(candidates)
-            entities = (
-                copy.deepcopy(zero_config.entities)
-                if zero_config.decision is ZeroConfigDecision.AUTO_CONFIGURE
-                else []
-            )
-            if zero_config.decision is not ZeroConfigDecision.AUTO_CONFIGURE:
-                review_required.append(str(item["device_id"]))
-            device_data[CONF_ENTITIES] = entities
-            devices[str(item["device_id"])] = device_data
-            added.append(str(item["device_id"]))
-
-        if added and entry is not None and hasattr(self.hass, "config_entries"):
-            entry_data[ATTR_UPDATED_AT] = str(int(time.time() * 1000))
-            self.hass.config_entries.async_update_entry(entry, data=entry_data)
-
-        self._qr_bulk_summary = {
-            "added": added,
-            "review_required": review_required,
-            "failures": failures,
-        }
-
-        return self.async_create_entry(
-            title="",
-            data={},
-            description_placeholders={
-                "added_count": str(len(added)),
-                "failed_count": str(len(failures)),
-                "review_count": str(len(review_required)),
-            },
-        )
-
     async def async_step_qr_choose_device(self, user_input=None):
         """Choose a locally controllable device from the linked Tuya account."""
         devices = getattr(self, "_qr_devices", {})
         eligible = {
             device_id: device
             for device_id, device in devices.items()
-            if (
-                (
-                    not device.get("node_id")
-                    and device.get(CONF_LOCAL_KEY)
-                )
-                or (
-                    device.get("node_id")
-                    and device.get("gateway_id")
-                    and device.get("gateway_local_key")
-                )
-            )
+            if _qr_is_locally_eligible(device)
         }
         if not eligible:
             return self.async_abort(reason="qr_no_local_devices")
@@ -1209,10 +1057,15 @@ class QrConfigFlowMixin:
                     description_placeholders={"msg": exc.detail},
                 )
 
-            if self._qr_medium_candidates:
+            decision = evaluate_prepared_zero_config(
+                self._qr_device_data,
+                self._qr_medium_candidates,
+            )
+            if decision.decision is ZeroConfigDecision.REVIEW_REQUIRED:
                 return await self.async_step_qr_mapping_review()
-            if not self._qr_device_data.get(CONF_ENTITIES):
+            if decision.decision is not ZeroConfigDecision.AUTO_CONFIGURE:
                 return self.async_abort(reason="qr_mapping_not_found")
+            self._qr_device_data[CONF_ENTITIES] = copy.deepcopy(decision.entities)
             return await self._async_finish_initial_qr()
 
         return self.async_show_form(
@@ -1252,10 +1105,15 @@ class QrConfigFlowMixin:
                     errors["base"] = exc.reason
                     placeholders = {"msg": exc.detail}
                 else:
-                    if self._qr_medium_candidates:
+                    decision = evaluate_prepared_zero_config(
+                        self._qr_device_data,
+                        self._qr_medium_candidates,
+                    )
+                    if decision.decision is ZeroConfigDecision.REVIEW_REQUIRED:
                         return await self.async_step_qr_mapping_review()
-                    if not self._qr_device_data.get(CONF_ENTITIES):
+                    if decision.decision is not ZeroConfigDecision.AUTO_CONFIGURE:
                         return self.async_abort(reason="qr_mapping_not_found")
+                    self._qr_device_data[CONF_ENTITIES] = copy.deepcopy(decision.entities)
                     return await self._async_finish_initial_qr()
 
         return self.async_show_form(
@@ -1541,12 +1399,182 @@ class QrConfigFlowMixin:
 class QrOptionsFlowMixin:
     """Options-flow steps for future device sync without repeating QR login."""
 
+    async def _async_load_linked_qr_devices(self):
+        """Refresh linked devices once and persist any refreshed QR token."""
+        if getattr(self, "_qr_devices", None) and getattr(self, "_qr_cloud", None):
+            return None
+        auth = self.config_entry.data.get(CONF_QR_AUTH)
+        if not isinstance(auth, dict) or not auth:
+            return "qr_not_linked"
+        self._qr_cloud = QrCloudClient(self.hass, auth)
+        try:
+            self._qr_devices = await self._qr_cloud.async_get_devices()
+        except QrProvisioningError as exc:
+            return exc.reason
+        self._persist_qr_auth(self._qr_cloud.auth)
+        return None
+
+    def _bulk_eligible_devices(self):
+        """Return linked devices not already configured in this entry."""
+        devices = getattr(self, "_qr_devices", {})
+        configured = set(self.config_entry.data.get(CONF_DEVICES, {}))
+        return {
+            str(device_id): device
+            for device_id, device in devices.items()
+            if str(device_id) not in configured
+        }
+
+    async def _async_bulk_prepare_devices(self, device_ids):
+        """Provision selected devices sequentially while isolating failures."""
+        devices = getattr(self, "_qr_devices", {})
+        cloud = getattr(self, "_qr_cloud", None)
+        successes = []
+        failures = []
+        for raw_device_id in device_ids:
+            device_id = str(raw_device_id)
+            cloud_device = devices.get(device_id)
+            if not isinstance(cloud_device, dict):
+                failures.append({"device_id": device_id, "reason": "device_not_found"})
+                continue
+            try:
+                device_data, candidates = await async_prepare_qr_device(
+                    self.hass,
+                    cloud,
+                    cloud_device,
+                )
+            except QrProvisioningError as exc:
+                failures.append({"device_id": device_id, "reason": exc.reason})
+                continue
+            except Exception as exc:  # noqa: BLE001 - isolate one device in bulk mode.
+                _LOGGER.debug(
+                    "Bulk QR provisioning failed for one device: %s",
+                    type(exc).__name__,
+                )
+                failures.append({"device_id": device_id, "reason": "probe_error"})
+                continue
+            successes.append(
+                {
+                    "device_id": device_id,
+                    "device_data": device_data,
+                    "candidates": candidates,
+                }
+            )
+        return {"successes": successes, "failures": failures}
+
+    @staticmethod
+    def _qr_bulk_schema(eligible):
+        """Build the privacy-safe multi-select schema for linked devices."""
+        options = [
+            {
+                "value": str(device_id),
+                "label": str(device.get(CONF_NAME) or device_id),
+            }
+            for device_id, device in eligible.items()
+        ]
+        return vol.Schema(
+            {
+                vol.Required(CONF_QR_BULK_DEVICE_IDS): SelectSelector(
+                    SelectSelectorConfig(
+                        options=options,
+                        multiple=True,
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                )
+            }
+        )
+
+    async def async_step_qr_bulk_choose_devices(self, user_input=None):
+        """Select multiple linked Tuya devices for sequential LAN onboarding."""
+        load_error = await self._async_load_linked_qr_devices()
+        if load_error:
+            return self.async_abort(reason=load_error)
+        eligible = self._bulk_eligible_devices()
+        if not eligible:
+            return self.async_abort(reason="qr_no_new_local_devices")
+        if user_input is not None:
+            selected = [
+                str(device_id)
+                for device_id in user_input.get(CONF_QR_BULK_DEVICE_IDS, [])
+                if str(device_id) in eligible
+            ]
+            if not selected:
+                return self.async_show_form(
+                    step_id="qr_bulk_choose_devices",
+                    data_schema=self._qr_bulk_schema(eligible),
+                    errors={"base": "select_at_least_one_device"},
+                )
+            self._qr_bulk_result = await self._async_bulk_prepare_devices(selected)
+            self._qr_bulk_summary = None
+            return await self.async_step_qr_bulk_summary()
+        return self.async_show_form(
+            step_id="qr_bulk_choose_devices",
+            data_schema=self._qr_bulk_schema(eligible),
+        )
+
+    async def async_step_qr_bulk_summary(self, user_input=None):
+        """Persist deterministic devices only and show a count-only summary."""
+        if getattr(self, "_qr_bulk_summary", None) is None:
+            result = getattr(
+                self,
+                "_qr_bulk_result",
+                {"successes": [], "failures": []},
+            )
+            successes = result.get("successes", [])
+            failures = result.get("failures", [])
+            entry_data = copy.deepcopy(dict(self.config_entry.data))
+            devices = entry_data.setdefault(CONF_DEVICES, {})
+            if not isinstance(devices, dict):
+                devices = {}
+                entry_data[CONF_DEVICES] = devices
+
+            added = []
+            review_required = []
+            for item in successes:
+                device_data = copy.deepcopy(item["device_data"])
+                decision = evaluate_prepared_zero_config(
+                    device_data,
+                    item.get("candidates", []),
+                )
+                if decision.decision is not ZeroConfigDecision.AUTO_CONFIGURE:
+                    review_required.append(str(item["device_id"]))
+                    continue
+                device_data[CONF_ENTITIES] = copy.deepcopy(decision.entities)
+                devices[str(item["device_id"])] = device_data
+                added.append(str(item["device_id"]))
+
+            if added and hasattr(self.hass, "config_entries"):
+                entry_data[ATTR_UPDATED_AT] = str(int(time.time() * 1000))
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data=entry_data,
+                )
+
+            self._qr_bulk_summary = {
+                "added": added,
+                "review_required": review_required,
+                "failures": failures,
+            }
+
+        summary = self._qr_bulk_summary
+        if user_input is not None:
+            return self.async_create_entry(title="", data={})
+        return self.async_show_form(
+            step_id="qr_bulk_summary",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "added_count": str(len(summary["added"])),
+                "failed_count": str(len(summary["failures"])),
+                "review_count": str(len(summary["review_required"])),
+            },
+        )
+
     async def async_step_add_device_method(self, user_input=None):
         """Choose linked-account provisioning or account-management actions."""
         return self.async_show_menu(
             step_id="add_device_method",
             menu_options=[
                 "qr_add_device",
+                "qr_bulk_choose_devices",
                 "manual_add_device",
                 "qr_relink",
                 "qr_disconnect",
@@ -1577,9 +1605,7 @@ class QrOptionsFlowMixin:
             device_id: device
             for device_id, device in self._qr_devices.items()
             if device_id not in configured
-            and device.get(CONF_LOCAL_KEY)
-            and not device.get("node_id")
-            and device.get("support_local", True)
+            and _qr_is_locally_eligible(device)
         }
         if not eligible:
             return self.async_abort(reason="qr_no_new_local_devices")
@@ -1608,10 +1634,15 @@ class QrOptionsFlowMixin:
                     description_placeholders={"msg": exc.detail},
                 )
 
-            if self._qr_medium_candidates:
+            decision = evaluate_prepared_zero_config(
+                self._qr_device_data,
+                self._qr_medium_candidates,
+            )
+            if decision.decision is ZeroConfigDecision.REVIEW_REQUIRED:
                 return await self.async_step_qr_add_mapping_review()
-            if not self._qr_device_data.get(CONF_ENTITIES):
+            if decision.decision is not ZeroConfigDecision.AUTO_CONFIGURE:
                 return self.async_abort(reason="qr_mapping_not_found")
+            self._qr_device_data[CONF_ENTITIES] = copy.deepcopy(decision.entities)
             return self._finish_qr_added_device()
 
         return self.async_show_form(
@@ -1651,10 +1682,15 @@ class QrOptionsFlowMixin:
                     errors["base"] = exc.reason
                     placeholders = {"msg": exc.detail}
                 else:
-                    if self._qr_medium_candidates:
+                    decision = evaluate_prepared_zero_config(
+                        self._qr_device_data,
+                        self._qr_medium_candidates,
+                    )
+                    if decision.decision is ZeroConfigDecision.REVIEW_REQUIRED:
                         return await self.async_step_qr_add_mapping_review()
-                    if not self._qr_device_data.get(CONF_ENTITIES):
+                    if decision.decision is not ZeroConfigDecision.AUTO_CONFIGURE:
                         return self.async_abort(reason="qr_mapping_not_found")
+                    self._qr_device_data[CONF_ENTITIES] = copy.deepcopy(decision.entities)
                     return self._finish_qr_added_device()
 
         return self.async_show_form(

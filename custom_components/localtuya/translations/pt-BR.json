@@ -240,7 +240,8 @@
             "qr_subdevice_not_supported": "Dispositivos filhos de hub ainda não são suportados por este fluxo QR. {msg}",
             "qr_mapping_required": "Selecione pelo menos um mapeamento antes de continuar.",
             "qr_login_error": "Não foi possível concluir o login por QR. {msg}",
-            "health_device_not_found": "O dispositivo LocalTuya selecionado não está mais configurado."
+            "health_device_not_found": "O dispositivo LocalTuya selecionado não está mais configurado.",
+            "select_at_least_one_device": "Selecione pelo menos um dispositivo."
         },
         "step": {
             "yaml_import": {
@@ -468,13 +469,15 @@
                     "qr_add_device": "Do Smart Life / Tuya",
                     "manual_add_device": "Configuração manual / LAN",
                     "qr_relink": "Vincular novamente a conta Smart Life / Tuya",
-                    "qr_disconnect": "Desconectar conta Smart Life / Tuya"
+                    "qr_disconnect": "Desconectar conta Smart Life / Tuya",
+                    "qr_bulk_choose_devices": "Adicionar vários dispositivos da conta vinculada"
                 },
                 "menu_option_descriptions": {
                     "qr_add_device": "Recomendado — atualize a conta vinculada uma vez e configure o dispositivo escolhido para controle pela LAN.",
                     "manual_add_device": "Informe Device ID e local_key manualmente.",
                     "qr_relink": "Use uma nova autorização QR se a sessão Tuya salva tiver expirado ou sido revogada.",
-                    "qr_disconnect": "Esquece a autorização na nuvem. Dispositivos já configurados continuam funcionando pela LAN."
+                    "qr_disconnect": "Esquece a autorização na nuvem. Dispositivos já configurados continuam funcionando pela LAN.",
+                    "qr_bulk_choose_devices": "Selecione vários dispositivos Tuya vinculados e valide-os em sequência pela LAN."
                 }
             },
             "qr_add_device": {
@@ -522,6 +525,18 @@
             "check_device_health_result": {
                 "title": "Resultado da verificação do dispositivo",
                 "description": "Dispositivo: **{device}**\n\nRuntime carregado: {runtime_present} · conectado: {runtime_connected}\n\nVerificação LAN: {preflight_ok} · estágio: `{stage}` · falha: `{failure}`\n\nAção recomendada: `{action}`\n\nProtocolo: solicitado `{requested_protocol}` · detectado `{resolved_protocol}`\n\nDatapoints: {dps_count} (`{dp_ids}`) · tentativas: {attempts}\n\nErro da verificação: `{probe_error}`\n\nID do dispositivo, local key, endereço IP e valores brutos dos datapoints não são exibidos."
+            },
+            "qr_bulk_choose_devices": {
+                "title": "Adicionar vários dispositivos",
+                "description": "Selecione um ou mais dispositivos Tuya. O LocalTuya valida cada um em sequência; dispositivos que exigem revisão do mapeamento nunca são salvos automaticamente.",
+                "data": {
+                    "qr_bulk_device_ids": "Dispositivos Tuya"
+                }
+            },
+            "qr_bulk_summary": {
+                "title": "Resumo da adição em lote",
+                "description": "Adicionados automaticamente: {added_count}. Precisam de revisão: {review_count}. Falha na validação: {failed_count}. Dispositivos que precisam de revisão não foram salvos automaticamente.",
+                "data": {}
             }
         }
     },
