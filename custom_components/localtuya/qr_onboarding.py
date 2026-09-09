@@ -70,6 +70,27 @@ CONF_QR_BULK_MODE = "qr_bulk_mode"
 TUYA_CLIENT_ID = "HA_3y9q4ak7g4ephrvke"
 TUYA_SCHEMA = "haauthorize"
 
+# Tuya hub categories mirrored from the proven tuya-local onboarding model.
+# These are transport/infrastructure devices, not entity platform guesses.
+TUYA_HUB_CATEGORIES = frozenset(
+    {
+        "wgsxj",
+        "lyqwg",
+        "bywg",
+        "zigbee",
+        "wg2",
+        "dgnzk",
+        "videohub",
+        "xnwg",
+        "qtyycp",
+        "alexa_yywg",
+        "gywg",
+        "cnwg",
+        "wnykq",
+        "wfcon",
+    }
+)
+
 _QR_TOKEN_FIELDS = (
     "t",
     "uid",
@@ -106,6 +127,55 @@ def _is_subdevice_flag(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes"}
     return False
+
+
+def _enrich_gateway_routes(
+    devices: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Resolve Tuya child -> gateway transport metadata conservatively.
+
+    Device Sharing does not consistently expose gateway_id on BLE/Zigbee
+    children.  tuya-local works around that by treating known hub categories as
+    parent candidates and using the child node_id/uuid as the CID.  We follow
+    the same proven routing model while remaining fail-closed when more than one
+    possible hub exists.
+
+    Some Tuya accounts expose the *gateway* LAN key on the child record.  When
+    present, prefer it over the hub record key, matching tuya-local's behavior.
+    """
+    hubs = {
+        str(device_id): device
+        for device_id, device in devices.items()
+        if isinstance(device, dict) and device.get("is_hub")
+    }
+
+    for device in devices.values():
+        if not isinstance(device, dict) or not device.get("node_id"):
+            continue
+
+        gateway_id = str(device.get("gateway_id") or "").strip()
+        gateway = devices.get(gateway_id) if gateway_id else None
+
+        if not isinstance(gateway, dict) and len(hubs) == 1:
+            gateway_id, gateway = next(iter(hubs.items()))
+            device["gateway_id"] = gateway_id
+
+        if isinstance(gateway, dict):
+            child_key = str(device.get(CONF_LOCAL_KEY) or "").strip()
+            gateway_key = str(gateway.get(CONF_LOCAL_KEY) or "").strip()
+            device["gateway_local_key"] = child_key or gateway_key
+            device["gateway_ip"] = str(gateway.get("ip") or "").strip()
+            device["gateway_name"] = (
+                gateway.get(CONF_NAME) or gateway_id
+            )
+            device.pop("gateway_candidates", None)
+        elif len(hubs) > 1:
+            # Do not guess between multiple hubs.  Keep the candidates available
+            # for diagnostics/future UI selection, but do not mark the child as
+            # locally eligible until a parent is unambiguous.
+            device["gateway_candidates"] = sorted(hubs)
+
+    return devices
 
 
 class _TokenCapture(SharingTokenListener):
@@ -284,6 +354,7 @@ class QrCloudClient:
 
             local_key = str(getattr(device, "local_key", "") or "").strip()
             product_id = str(getattr(device, "product_id", "") or "").strip()
+            category = str(getattr(device, "category", "") or "").strip()
             node_id = str(getattr(device, "node_id", "") or "").strip()
             gateway_id = str(
                 getattr(device, "gateway_id", "")
@@ -293,9 +364,9 @@ class QrCloudClient:
             ).strip()
             is_subdevice = _is_subdevice_flag(getattr(device, "sub", False))
             device_uuid = str(getattr(device, "uuid", "") or "").strip()
-            if not node_id and is_subdevice and gateway_id and device_uuid:
-                # Some Tuya subdevice records omit node_id. For an explicitly
-                # marked child with a known gateway, UUID is the local CID.
+            if not node_id and is_subdevice and device_uuid:
+                # Tuya frequently omits gateway_id while still providing the
+                # child's UUID.  For an explicit sub-device, UUID is the CID.
                 node_id = device_uuid
             device_ip = str(getattr(device, "ip", "") or "").strip()
 
@@ -307,26 +378,18 @@ class QrCloudClient:
                 "product_name": str(
                     getattr(device, "product_name", "") or ""
                 ).strip(),
-                "category": str(getattr(device, "category", "") or "").strip(),
+                "category": category,
                 "online": bool(getattr(device, "online", False)),
                 "support_local": bool(getattr(device, "support_local", False)),
+                "sub": is_subdevice,
+                "uuid": device_uuid,
                 "node_id": node_id,
                 "gateway_id": gateway_id,
+                "is_hub": category in TUYA_HUB_CATEGORIES,
                 "ip": device_ip,
             }
 
-        for device in devices.values():
-            gateway_id = device.get("gateway_id")
-            if not device.get("node_id") or not gateway_id:
-                continue
-            gateway = devices.get(gateway_id)
-            if not isinstance(gateway, dict):
-                continue
-            device["gateway_local_key"] = gateway.get(CONF_LOCAL_KEY) or ""
-            device["gateway_ip"] = gateway.get("ip") or ""
-            device["gateway_name"] = gateway.get(CONF_NAME) or gateway_id
-
-        return devices
+        return _enrich_gateway_routes(devices)
 
     async def async_get_datamodel(self, device_id: str) -> list[dict[str, Any]]:
         """Fetch local-capable DP metadata for one selected device."""
@@ -449,6 +512,45 @@ def _find_discovered_device(
     return None
 
 
+async def _async_find_lan_device(
+    hass,
+    device_id: str,
+) -> dict[str, Any] | None:
+    """Find a specific Tuya device on LAN without trusting its cloud IP.
+
+    tuya-local deliberately scans for the real LAN address instead of using the
+    IP returned by Device Sharing.  Do the same here, with a few active 6699
+    discovery requests before a bounded one-shot listener fallback.
+    """
+    domain_data = hass.data.get(DOMAIN, {})
+    discovery = domain_data.get(DATA_DISCOVERY)
+
+    if discovery is not None:
+        for _attempt in range(3):
+            try:
+                await discovery.async_request_discovery()
+            except Exception as exc:
+                _LOGGER.debug("Targeted Tuya LAN discovery request failed: %s", exc)
+            await asyncio.sleep(1.25)
+            devices = getattr(discovery, "devices", {})
+            if isinstance(devices, dict):
+                found = _find_discovered_device(devices, device_id)
+                if found is not None:
+                    return found
+
+    from .discovery import discover
+
+    try:
+        devices = await discover(timeout=6.0, hass=hass)
+    except Exception as exc:
+        _LOGGER.debug("Targeted Tuya LAN discovery fallback failed: %s", exc)
+        return None
+
+    if not isinstance(devices, dict):
+        return None
+    return _find_discovered_device(devices, device_id)
+
+
 def _qr_host_schema(default: str = "") -> vol.Schema:
     """Build the manual LAN-address fallback schema."""
     if default:
@@ -466,7 +568,10 @@ def _qr_is_locally_eligible(device: dict[str, Any]) -> bool:
     if node_id:
         return bool(
             str(device.get("gateway_id") or "").strip()
-            and str(device.get("gateway_local_key") or "").strip()
+            and (
+                str(device.get("gateway_local_key") or "").strip()
+                or str(device.get(CONF_LOCAL_KEY) or "").strip()
+            )
         )
     return bool(str(device.get(CONF_LOCAL_KEY) or "").strip())
 
@@ -513,32 +618,18 @@ async def async_prepare_qr_device(
             "Tuya returned a child device without its parent gateway ID",
         )
 
-    discovered_devices: dict[str, dict[str, Any]] = {}
     discovered: dict[str, Any] = {}
 
     if host_override is None:
-        try:
-            discovered_devices = await _async_discovery_snapshot(hass)
-        except QrProvisioningError as exc:
-            # Broadcast/multicast discovery is an optimization, not a hard
-            # requirement. Docker, VLANs and some APs can block it while direct
-            # LAN access still works perfectly.
-            _LOGGER.debug(
-                "QR discovery unavailable; manual LAN address fallback enabled (%s)",
-                exc.reason,
-            )
-            discovered_devices = {}
-
         discovery_id = gateway_id if node_id else device_id
-        found = _find_discovered_device(discovered_devices, discovery_id)
+        found = await _async_find_lan_device(hass, discovery_id)
         if isinstance(found, dict):
             discovered = found
 
-        host = str(
-            discovered.get("ip")
-            or (cloud_device.get("gateway_ip") if node_id else cloud_device.get("ip"))
-            or ""
-        ).strip()
+        # Device Sharing may expose a WAN/cached IP.  Never accept that field as
+        # proof of the local endpoint: only LAN discovery or a user-supplied
+        # address that subsequently passes the full protocol probe is trusted.
+        host = str(discovered.get("ip") or "").strip()
         if not host:
             raise QrProvisioningError(
                 "qr_device_host_required",

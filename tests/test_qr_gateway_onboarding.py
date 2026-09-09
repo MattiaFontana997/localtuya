@@ -13,7 +13,10 @@ from custom_components.localtuya.const import (
     CONF_LOCAL_KEY,
     CONF_PROTOCOL_VERSION,
 )
-from custom_components.localtuya.qr_onboarding import async_prepare_qr_device
+from custom_components.localtuya.qr_onboarding import (
+    QrProvisioningError,
+    async_prepare_qr_device,
+)
 
 
 class QrGatewayOnboardingTests(unittest.IsolatedAsyncioTestCase):
@@ -29,8 +32,8 @@ class QrGatewayOnboardingTests(unittest.IsolatedAsyncioTestCase):
             async_get_datamodel=AsyncMock(return_value=[]),
         )
 
-    async def test_sdk_ip_is_validated_when_udp_discovery_misses(self):
-        """SDK-reported IP avoids a false host prompt but is never trusted blindly."""
+    async def test_sdk_ip_is_not_trusted_when_lan_discovery_misses(self):
+        """Cloud/SDK IP is only a hint; a missing LAN discovery asks for host."""
         cloud_device = {
             "id": "device-1",
             "name": "Thermostat",
@@ -38,37 +41,29 @@ class QrGatewayOnboardingTests(unittest.IsolatedAsyncioTestCase):
             "product_id": "product-1",
             "category": "wk",
             "node_id": "",
-            "ip": "192.168.1.55",
+            "ip": "198.51.100.55",
         }
-        validate = AsyncMock(
-            return_value=(["1 (value: True)"], "3.3")
-        )
+        validate = AsyncMock()
 
         with (
             patch(
-                "custom_components.localtuya.qr_onboarding._async_discovery_snapshot",
-                new=AsyncMock(return_value={}),
+                "custom_components.localtuya.qr_onboarding._async_find_lan_device",
+                new=AsyncMock(return_value=None),
             ),
             patch(
                 "custom_components.localtuya.config_flow.validate_input",
                 new=validate,
             ),
-            patch(
-                "custom_components.localtuya.qr_onboarding.resolve_entity_candidates",
-                return_value=[],
-            ),
         ):
-            device_data, _ = await async_prepare_qr_device(
-                self._hass(),
-                self._cloud(),
-                cloud_device,
-            )
+            with self.assertRaises(QrProvisioningError) as context:
+                await async_prepare_qr_device(
+                    self._hass(),
+                    self._cloud(),
+                    cloud_device,
+                )
 
-        self.assertEqual(device_data[CONF_HOST], "192.168.1.55")
-        self.assertEqual(device_data[CONF_PROTOCOL_VERSION], "3.3")
-        validated = validate.await_args.args[1]
-        self.assertEqual(validated[CONF_HOST], "192.168.1.55")
-        self.assertEqual(validated[CONF_LOCAL_KEY], "local-secret")
+        self.assertEqual(context.exception.reason, "qr_device_host_required")
+        validate.assert_not_awaited()
 
     async def test_child_uses_gateway_transport_and_keeps_child_identity(self):
         """A hub child connects through the gateway IP/key with its own node ID."""
@@ -89,8 +84,13 @@ class QrGatewayOnboardingTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "custom_components.localtuya.qr_onboarding._async_discovery_snapshot",
-                new=AsyncMock(return_value={}),
+                "custom_components.localtuya.qr_onboarding._async_find_lan_device",
+                new=AsyncMock(
+                    return_value={
+                        "gwId": "gateway-device-1",
+                        "ip": "192.168.1.80",
+                    }
+                ),
             ),
             patch(
                 "custom_components.localtuya.config_flow.validate_input",
@@ -150,8 +150,8 @@ class QrGatewayOnboardingTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "custom_components.localtuya.qr_onboarding._async_discovery_snapshot",
-                new=AsyncMock(return_value=discovered),
+                "custom_components.localtuya.qr_onboarding._async_find_lan_device",
+                new=AsyncMock(return_value=discovered["gateway-device-1"]),
             ),
             patch(
                 "custom_components.localtuya.config_flow.validate_input",

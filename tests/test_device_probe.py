@@ -30,9 +30,8 @@ class DeviceProbeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_child_routing_metadata_is_forwarded_to_pytuya(self):
         interface = unittest.mock.MagicMock()
-        interface.detect_available_dps = AsyncMock(
-            return_value={"1": True, "20": 42}
-        )
+        interface.status = AsyncMock(return_value={"1": True, "20": 42})
+        interface.detect_available_dps = AsyncMock()
         interface.close = AsyncMock()
         connect = AsyncMock(return_value=interface)
 
@@ -53,12 +52,14 @@ class DeviceProbeTests(unittest.IsolatedAsyncioTestCase):
             cid="node-123",
             gateway_id="gateway-device-1",
         )
-        interface.detect_available_dps.assert_awaited_once_with()
+        interface.status.assert_awaited_once_with()
+        interface.detect_available_dps.assert_not_awaited()
         interface.close.assert_awaited_once_with()
 
     async def test_transient_connect_failure_is_retried_once(self):
         interface = unittest.mock.MagicMock()
-        interface.detect_available_dps = AsyncMock(return_value={"1": True})
+        interface.status = AsyncMock(return_value={"1": True})
+        interface.detect_available_dps = AsyncMock()
         interface.close = AsyncMock()
         connect = AsyncMock(
             side_effect=[
@@ -81,6 +82,26 @@ class DeviceProbeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, {"1": True})
         self.assertEqual(connect.await_count, 2)
         sleep.assert_awaited_once_with(0.35)
+        interface.status.assert_awaited_once_with()
+        interface.detect_available_dps.assert_not_awaited()
+        interface.close.assert_awaited_once_with()
+
+    async def test_empty_status_falls_back_to_extended_dps_detection(self):
+        interface = unittest.mock.MagicMock()
+        interface.status = AsyncMock(return_value={})
+        interface.detect_available_dps = AsyncMock(return_value={"1": True})
+        interface.close = AsyncMock()
+        connect = AsyncMock(return_value=interface)
+
+        with patch.object(device_probe.pytuya, "connect", connect):
+            result = await device_probe._async_probe_protocol(
+                self._child_data(),
+                "3.3",
+                [],
+            )
+
+        self.assertEqual(result, {"1": True})
+        interface.status.assert_awaited_once_with()
         interface.detect_available_dps.assert_awaited_once_with()
         interface.close.assert_awaited_once_with()
 

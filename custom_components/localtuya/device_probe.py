@@ -82,7 +82,12 @@ async def _async_probe_protocol(
                 raise last_connect_error
 
             try:
-                detected_dps = await interface.detect_available_dps()
+                # Match the proven tuya-local connection test: first ask for a
+                # normal device state.  Several real firmwares answer status()
+                # correctly but reject the broader DPS detection scan.
+                detected_dps = await interface.status()
+                if not detected_dps:
+                    detected_dps = await interface.detect_available_dps()
             except Exception as ex:
                 if protocol_version == "3.3" and reset_ids:
                     _LOGGER.debug(
@@ -93,7 +98,9 @@ async def _async_probe_protocol(
                         reset_ids,
                     )
                     await interface.reset(reset_ids)
-                    detected_dps = await interface.detect_available_dps()
+                    detected_dps = await interface.status()
+                    if not detected_dps:
+                        detected_dps = await interface.detect_available_dps()
                 else:
                     raise
 
