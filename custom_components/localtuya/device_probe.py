@@ -55,13 +55,31 @@ async def _async_probe_protocol(
 
     try:
         async with asyncio.timeout(PROTOCOL_PROBE_TIMEOUT):
-            interface = await pytuya.connect(
-                data[CONF_HOST],
-                data[CONF_DEVICE_ID],
-                data[CONF_LOCAL_KEY],
-                float(protocol_version),
-                data.get(CONF_ENABLE_DEBUG, False),
-            )
+            last_connect_error = None
+            for attempt in range(2):
+                try:
+                    interface = await pytuya.connect(
+                        data[CONF_HOST],
+                        data[CONF_DEVICE_ID],
+                        data[CONF_LOCAL_KEY],
+                        float(protocol_version),
+                        data.get(CONF_ENABLE_DEBUG, False),
+                        cid=data.get("node_id"),
+                        gateway_id=data.get("gateway_id"),
+                    )
+                    break
+                except (
+                    ConnectionRefusedError,
+                    ConnectionResetError,
+                    OSError,
+                    TimeoutError,
+                ) as ex:
+                    last_connect_error = ex
+                    if attempt == 0:
+                        await asyncio.sleep(0.35)
+
+            if interface is None and last_connect_error is not None:
+                raise last_connect_error
 
             try:
                 detected_dps = await interface.detect_available_dps()
