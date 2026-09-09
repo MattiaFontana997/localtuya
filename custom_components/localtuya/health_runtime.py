@@ -6,10 +6,10 @@ import asyncio
 import copy
 from typing import Any
 
-from homeassistant.const import CONF_DEVICE_ID
+from homeassistant.const import CONF_DEVICE_ID, CONF_FRIENDLY_NAME
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_FRIENDLY_NAME, CONF_PROTOCOL_VERSION, DOMAIN, TUYA_DEVICES
+from .const import CONF_PROTOCOL_VERSION, DOMAIN, TUYA_DEVICES
 from .device_health import DeviceHealthFailure, DeviceHealthReport, DeviceHealthStage
 from .device_probe import async_device_preflight
 from .repair_issues import async_sync_device_health_issue
@@ -71,7 +71,6 @@ async def async_build_device_health_snapshot(
         result["probe_error_type"] = "TimeoutError"
     except Exception as ex:  # noqa: BLE001 - health reporting must fail closed.
         report = _failure_report(device_config)
-        # Only the class name is safe. Exception text may contain private data.
         result["probe_error_type"] = type(ex).__name__
 
     async_sync_device_health_issue(
