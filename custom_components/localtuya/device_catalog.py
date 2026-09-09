@@ -514,6 +514,66 @@ def _validate_entity(entity):
     return result
 
 
+
+_ALLOWED_COMPATIBILITY_KEYS = {
+    "hardware_tested",
+    "protocols",
+    "transport",
+    "home_assistant",
+    "localtuya",
+    "tested_at",
+}
+_COMPATIBILITY_PROTOCOLS = {"3.1", "3.2", "3.3", "3.4", "3.5", "unknown"}
+_COMPATIBILITY_TRANSPORTS = {"direct", "gateway_child"}
+
+
+def _validate_compatibility(value):
+    """Validate bounded, privacy-safe real-device compatibility evidence."""
+    if not isinstance(value, dict) or not value:
+        return None
+    if set(value) - _ALLOWED_COMPATIBILITY_KEYS:
+        return None
+
+    hardware_tested = value.get("hardware_tested", False)
+    if not isinstance(hardware_tested, bool):
+        return None
+
+    raw_protocols = value.get("protocols", ["unknown"])
+    if isinstance(raw_protocols, str):
+        raw_protocols = [raw_protocols]
+    if not isinstance(raw_protocols, list) or not raw_protocols or len(raw_protocols) > 5:
+        return None
+    protocols = []
+    for raw_protocol in raw_protocols:
+        if not isinstance(raw_protocol, str):
+            return None
+        protocol = raw_protocol.strip()
+        if protocol not in _COMPATIBILITY_PROTOCOLS:
+            return None
+        if protocol not in protocols:
+            protocols.append(protocol)
+
+    transport = value.get("transport", "direct")
+    if not isinstance(transport, str) or transport not in _COMPATIBILITY_TRANSPORTS:
+        return None
+
+    result = {
+        "hardware_tested": hardware_tested,
+        "protocols": protocols,
+        "transport": transport,
+    }
+    for key in ("home_assistant", "localtuya", "tested_at"):
+        raw = value.get(key)
+        if raw is None:
+            continue
+        if not isinstance(raw, str):
+            return None
+        item = raw.strip()
+        if not item or len(item) > 64:
+            return None
+        result[key] = item
+    return result
+
 def validate_catalog(payload):
     if not isinstance(payload, dict):
         raise ValueError("Catalog root must be an object")
@@ -582,6 +642,10 @@ def validate_catalog(payload):
             continue
         if not required:
             continue
+        raw_compatibility = raw_mapping.get("compatibility")
+        compatibility = _validate_compatibility(raw_compatibility)
+        if raw_compatibility is not None and compatibility is None:
+            continue
         confidence = raw_mapping.get("confidence", "experimental")
         if not isinstance(confidence, str):
             continue
@@ -595,6 +659,8 @@ def validate_catalog(payload):
         if fingerprint is not None:
             normalized_match["fingerprint"] = fingerprint
         normalized_mapping = {"id": mapping_id, "match": normalized_match, "confidence": confidence, "entities": normalized_entities}
+        if compatibility is not None:
+            normalized_mapping["compatibility"] = compatibility
         if provenance is not None:
             normalized_mapping["provenance"] = provenance
         validated.append(normalized_mapping)
@@ -807,6 +873,11 @@ class DeviceCatalog:
         self._catalog = None
         self._etag = None
         self._cache_loaded = False
+
+    @staticmethod
+    def _validate_catalog(payload):
+        """Backward-compatible validation entry point used by tooling/tests."""
+        return validate_catalog(payload)
 
     async def async_load_builtin_catalog(self):
         try:
