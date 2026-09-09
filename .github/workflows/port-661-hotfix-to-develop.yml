@@ -1,0 +1,121 @@
+name: Port 6.6.1 gateway fixes to develop
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - .github/workflows/port-661-hotfix-to-develop.yml
+
+permissions:
+  contents: write
+
+jobs:
+  port:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Port tested gateway and Tuya 3.5 fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin fix/6.6.0-gateway-lan-onboarding
+
+          git diff \
+            6355258e3f6368211af20c40de15f34a8191a01e \
+            8f8b750f16223d1515bdba040623992320d33b5b \
+            -- \
+            custom_components/localtuya/common.py \
+            custom_components/localtuya/pytuya/__init__.py \
+            custom_components/localtuya/qr_onboarding.py \
+            tests/test_gateway_subdevice_support.py \
+            tests/test_qr_gateway_onboarding.py \
+            > /tmp/gateway-hotfix.patch
+
+          git apply --3way /tmp/gateway-hotfix.patch
+
+          python - <<'PY'
+          from pathlib import Path
+
+          probe = Path("custom_components/localtuya/device_probe.py")
+          text = probe.read_text(encoding="utf-8")
+          old = '''            interface = await pytuya.connect(
+                data[CONF_HOST],
+                data[CONF_DEVICE_ID],
+                data[CONF_LOCAL_KEY],
+                float(protocol_version),
+                data.get(CONF_ENABLE_DEBUG, False),
+            )
+'''
+          new = '''            last_connect_error = None
+            for attempt in range(2):
+                try:
+                    interface = await pytuya.connect(
+                        data[CONF_HOST],
+                        data[CONF_DEVICE_ID],
+                        data[CONF_LOCAL_KEY],
+                        float(protocol_version),
+                        data.get(CONF_ENABLE_DEBUG, False),
+                        cid=data.get("node_id"),
+                        gateway_id=data.get("gateway_id"),
+                    )
+                    break
+                except (
+                    ConnectionRefusedError,
+                    ConnectionResetError,
+                    OSError,
+                    TimeoutError,
+                ) as ex:
+                    last_connect_error = ex
+                    if attempt == 0:
+                        await asyncio.sleep(0.35)
+
+            if interface is None and last_connect_error is not None:
+                raise last_connect_error
+'''
+          if old not in text:
+              raise SystemExit("device_probe connect block no longer matches expected develop state")
+          probe.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          pytuya = Path("custom_components/localtuya/pytuya/__init__.py")
+          text = pytuya.read_text(encoding="utf-8")
+          old = '''            decoded_message = self._decode_payload(msg.payload)
+            if "dps" in decoded_message:
+                self.dps_cache.update(decoded_message["dps"])
+'''
+          new = '''            decoded_message = self._decode_payload(msg.payload)
+            if isinstance(decoded_message, dict) and "dps" in decoded_message:
+                self.dps_cache.update(decoded_message["dps"])
+'''
+          if old not in text:
+              raise SystemExit("pytuya dispatcher block no longer matches expected state")
+          pytuya.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+          python -m compileall -q \
+            custom_components/localtuya/common.py \
+            custom_components/localtuya/device_probe.py \
+            custom_components/localtuya/pytuya \
+            custom_components/localtuya/qr_onboarding.py \
+            tests/test_gateway_subdevice_support.py \
+            tests/test_qr_gateway_onboarding.py
+
+          git rm .github/workflows/port-661-hotfix-to-develop.yml
+          git diff --check
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            custom_components/localtuya/common.py \
+            custom_components/localtuya/device_probe.py \
+            custom_components/localtuya/pytuya/__init__.py \
+            custom_components/localtuya/qr_onboarding.py \
+            tests/test_gateway_subdevice_support.py \
+            tests/test_qr_gateway_onboarding.py \
+            .github/workflows/port-661-hotfix-to-develop.yml
+          git commit -m "Port gateway child and Tuya 3.5 fixes to develop"
+          git push origin HEAD:develop
