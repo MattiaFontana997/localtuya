@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from custom_components.localtuya import config_flow
+from custom_components.localtuya import config_flow, device_probe
 
 
 class TestConfigFlowProtocol35(unittest.IsolatedAsyncioTestCase):
@@ -46,7 +46,7 @@ class TestConfigFlowProtocol35(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch.object(
-            config_flow,
+            device_probe,
             "_async_probe_protocol",
             probe,
         ):
@@ -84,7 +84,7 @@ class TestConfigFlowProtocol35(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch.object(
-            config_flow,
+            device_probe,
             "_async_probe_protocol",
             probe,
         ):
