@@ -6,6 +6,26 @@ Local control of Tuya devices in Home Assistant, with a modern onboarding flow a
 
 This repository is a maintained modernization fork of the original [LocalTuya project](https://github.com/rospogrigio/localtuya), focused on current Home Assistant releases, safer Tuya protocol handling, easier device setup and predictable local-first behavior.
 
+## In development: 6.7.0 Reliability & Repair
+
+The `develop` branch is building a reliability layer around LocalTuya's existing LAN-first runtime. It is not a stable release yet.
+
+Current development highlights:
+
+- Structured, privacy-safe LAN/protocol/datapoint health checks
+- **Check device health** from the LocalTuya options flow
+- `localtuya.check_device_health` admin service with response data suitable for diagnostics
+- Active rediscovery before reconnecting offline devices
+- Automatic host recovery when a device receives a new DHCP address; a discovered address is never persisted until the existing LocalTuya credentials validate it over the LAN
+- Home Assistant **Repairs** issues when a discovered replacement host cannot be validated
+- Interactive Repairs flow with automatic rediscovery or a manually supplied host, both validated before save
+- Gateway-aware host recovery: when a BLE/Zigbee gateway changes IP, configured child devices can inherit the new gateway transport address after child-level validation
+- Gateway child recoveries are serialized per gateway instead of opening a recovery connection for every child simultaneously
+- Tuya 3.5 query compatibility fallback and hardened handling of devices that reply with `data unvalid`
+- Diagnostics and repair reports exclude local keys, device IDs, IP addresses, QR authorization material, exception messages and raw datapoint values
+
+`master` remains the stable line until the 6.7.0 work is completed and validated.
+
 ## What's new in 6.6.0
 
 LocalTuya 6.6.0 introduces the recommended **Smart Life / Tuya QR onboarding flow**.
@@ -47,6 +67,8 @@ A device is not saved merely because it appears in the Tuya account. LocalTuya m
 5. Resolve a safe entity mapping or let the user review/configure one.
 
 If those checks fail, the device is not partially saved.
+
+Gateway-backed BLE/Zigbee children keep their own Tuya Device ID and `node_id`/`cid`, while their local transport uses the parent gateway IP and local key. The gateway address is still validated before it is accepted.
 
 ## Requirements
 
@@ -168,6 +190,25 @@ If automatic discovery cannot determine a usable address, the QR flow can ask fo
 
 This is **not** a trust bypass: the address is accepted only if LocalTuya can authenticate to the selected device locally and successfully read its datapoints.
 
+## Device health, recovery and Repairs
+
+On the 6.7 development line, LocalTuya uses the same bounded LAN preflight for onboarding, manual health checks and repair validation.
+
+From the LocalTuya integration options, **Check device health** reports the useful stage reached by the device — LAN, protocol, datapoints or ready — without exposing the host, Device ID, `local_key` or raw datapoint values.
+
+For administrative troubleshooting, `localtuya.check_device_health` returns the same privacy-safe structured snapshot.
+
+When an already configured device is rediscovered at a different address, LocalTuya first authenticates against the candidate address with the existing credentials. Only a successful protocol/datapoint validation can update the stored host. If validation fails, the previous host remains untouched and Home Assistant can create a fixable **Repair** issue.
+
+The Repair flow offers:
+
+- automatic rediscovery and validation
+- manual IP/hostname entry followed by the same validation path
+
+A failed candidate is never persisted merely because it appeared in a UDP discovery packet.
+
+For gateway-backed children, discovery of the parent gateway can recover the transport host for all configured children. Child identities and Product IDs remain unchanged, and child validation is performed sequentially to avoid unnecessarily exhausting gateway connection limits.
+
 ## Automatic mapping
 
 LocalTuya combines observed LAN datapoints with safe metadata and the Community Device Catalog.
@@ -232,10 +273,13 @@ LocalTuya also exposes:
 
 - `localtuya.export_device_mapping`
 - `localtuya.refresh_device_catalog`
+- `localtuya.check_device_health`
 
 ## Privacy and diagnostics
 
 LocalTuya redacts device secrets and QR authorization material from diagnostics.
+
+Health and Repair results are designed to remain privacy-safe: they can report protocol attempts, failure categories and observed datapoint IDs/counts, but not local keys, device IDs, IP addresses, QR authorization material, exception messages or raw datapoint values.
 
 QR access/refresh tokens and device `local_key` values must not be copied into issues, screenshots or logs posted publicly.
 
@@ -249,15 +293,19 @@ Confirm that Home Assistant can reach the device network directly. If discovery 
 
 ### Device IP changed
 
-Use a DHCP reservation when possible. A stable address makes local integrations more reliable.
+On the 6.7 development line, LocalTuya actively rediscovers offline devices and can validate a replacement host before saving it. If automatic validation fails, open the Home Assistant Repair issue and choose automatic rediscovery or enter the current IP/hostname manually.
+
+A DHCP reservation is still recommended where practical because stable addresses reduce reconnect latency and network ambiguity.
 
 ### Device cannot be authenticated
 
-A reachable IP is not enough. The Device ID / `local_key` pair must match the device. Re-link or reprovision if the Tuya credentials changed.
+A reachable IP is not enough. The Device ID / `local_key` pair must match the device. Re-link or reprovision if the Tuya credentials changed. On Tuya 3.5 devices, LocalTuya also handles the known query-shape case where the device establishes a LAN session but initially responds with `data unvalid`.
 
 ### Hub child device is not shown / cannot be added
 
-The initial QR flow intentionally rejects unsupported hub child devices until LocalTuya has an explicit and tested local child-device transport model.
+The QR onboarding path supports gateway-backed children when Tuya exposes the child `node_id`/`cid`, parent gateway identity and usable gateway transport credentials. The child keeps its own Device ID while LocalTuya connects through the parent gateway IP/local key.
+
+If a child still does not appear, collect the LocalTuya diagnostics/logs for the provisioning step without posting account tokens or local keys. Some device families expose different relationship metadata and may need an additional compatibility mapping.
 
 ### QR authorization expired
 
@@ -288,8 +336,12 @@ The modernization fork includes regression coverage for areas such as:
 - Tuya protocol framing and authentication
 - Tuya 3.1 through 3.5 payload handling
 - Tuya 3.4 / 3.5 session-key negotiation
+- Tuya 3.5 query compatibility and error handling
 - passive and active LAN discovery
 - 55AA and 6699 discovery frames
+- validated host recovery after DHCP address changes
+- Home Assistant Repairs and privacy-safe device-health reporting
+- gateway child onboarding, routing and gateway-host recovery
 - config-entry migration and lifecycle
 - QR account linking and provisioning
 - LAN validation before save
