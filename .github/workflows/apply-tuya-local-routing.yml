@@ -1,0 +1,53 @@
+name: Apply Tuya-local Routing Compatibility
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - scripts/_apply_tuya_local_routing.py
+      - .github/workflows/apply-tuya-local-routing.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Apply compatibility patch
+        run: python scripts/_apply_tuya_local_routing.py
+
+      - name: Syntax check
+        run: python -m compileall -q custom_components/localtuya tests
+
+      - name: Check diff
+        run: |
+          git diff --check
+          git status --short
+
+      - name: Commit functional changes and remove temporary patch machinery
+        run: |
+          rm -f scripts/_apply_tuya_local_routing.py .github/workflows/apply-tuya-local-routing.yml
+          git add custom_components/localtuya/qr_onboarding.py \
+                  custom_components/localtuya/device_probe.py \
+                  tests/test_qr_gateway_onboarding.py \
+                  tests/test_device_probe.py \
+                  tests/test_tuya_local_gateway_metadata.py \
+                  scripts/_apply_tuya_local_routing.py \
+                  .github/workflows/apply-tuya-local-routing.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Align gateway onboarding and LAN probe with tuya-local"
+          git push origin HEAD:develop
