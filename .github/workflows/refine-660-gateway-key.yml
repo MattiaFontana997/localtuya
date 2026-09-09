@@ -1,0 +1,44 @@
+name: Refine 6.6.0 gateway credentials
+
+on:
+  push:
+    branches:
+      - "fix/6.6.0-gateway-lan-onboarding"
+    paths:
+      - ".github/workflows/refine-660-gateway-key.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/6.6.0-gateway-lan-onboarding
+      - name: Prefer parent gateway transport credentials for child devices
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("custom_components/localtuya/qr_onboarding.py")
+          text = p.read_text(encoding="utf-8")
+          old = '''    local_key = str(\n        cloud_device.get(CONF_LOCAL_KEY)\n        or cloud_device.get("gateway_local_key")\n        or ""\n    ).strip()'''
+          new = '''    local_key = str(\n        (cloud_device.get("gateway_local_key") if node_id else None)\n        or cloud_device.get(CONF_LOCAL_KEY)\n        or ""\n    ).strip()'''
+          if old not in text:
+              raise SystemExit("local_key selection pattern not found")
+          text = text.replace(old, new, 1)
+
+          old = '''        eligible = {\n            device_id: device\n            for device_id, device in devices.items()\n            if (\n                device.get(CONF_LOCAL_KEY)\n                or (\n                    device.get("node_id")\n                    and device.get("gateway_id")\n                    and device.get("gateway_local_key")\n                )\n            )\n        }'''
+          new = '''        eligible = {\n            device_id: device\n            for device_id, device in devices.items()\n            if (\n                (\n                    not device.get("node_id")\n                    and device.get(CONF_LOCAL_KEY)\n                )\n                or (\n                    device.get("node_id")\n                    and device.get("gateway_id")\n                    and device.get("gateway_local_key")\n                )\n            )\n        }'''
+          if old not in text:
+              raise SystemExit("eligible device pattern not found")
+          p.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+      - name: Commit refinement
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/localtuya/qr_onboarding.py
+          git commit -m "Prefer gateway credentials for child devices"
+          git push origin HEAD:fix/6.6.0-gateway-lan-onboarding
