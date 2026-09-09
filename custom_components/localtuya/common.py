@@ -283,13 +283,31 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     async def _make_connection(self):
         self.info("Trying to connect to %s...", self._dev_config_entry[CONF_HOST])
         try:
-            self._interface = await pytuya.connect(
-                self._dev_config_entry[CONF_HOST], self._dev_config_entry[CONF_DEVICE_ID],
-                self._local_key, float(self._dev_config_entry[CONF_PROTOCOL_VERSION]),
-                self._dev_config_entry.get(CONF_ENABLE_DEBUG, False), self,
-                cid=self._dev_config_entry.get("node_id"),
-                gateway_id=self._dev_config_entry.get("gateway_id"),
-            )
+            node_id = self._dev_config_entry.get("node_id")
+            gateway_id = self._dev_config_entry.get("gateway_id")
+            if node_id and gateway_id:
+                from .gateway_transport import async_acquire_gateway_child
+
+                self._interface = await async_acquire_gateway_child(
+                    self._hass,
+                    host=self._dev_config_entry[CONF_HOST],
+                    gateway_id=gateway_id,
+                    local_key=self._local_key,
+                    protocol_version=float(self._dev_config_entry[CONF_PROTOCOL_VERSION]),
+                    enable_debug=self._dev_config_entry.get(CONF_ENABLE_DEBUG, False),
+                    device_id=self._dev_config_entry[CONF_DEVICE_ID],
+                    cid=node_id,
+                    listener=self,
+                )
+            else:
+                self._interface = await pytuya.connect(
+                    self._dev_config_entry[CONF_HOST],
+                    self._dev_config_entry[CONF_DEVICE_ID],
+                    self._local_key,
+                    float(self._dev_config_entry[CONF_PROTOCOL_VERSION]),
+                    self._dev_config_entry.get(CONF_ENABLE_DEBUG, False),
+                    self,
+                )
             self._interface.add_dps_to_request(self.dps_to_request)
             self._install_raw_status_listener()
         except Exception as ex:  # pylint: disable=broad-except
