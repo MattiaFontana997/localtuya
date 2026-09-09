@@ -457,8 +457,8 @@ async def async_prepare_qr_device(
     node_id = str(cloud_device.get("node_id") or "").strip()
     gateway_id = str(cloud_device.get("gateway_id") or "").strip()
     local_key = str(
-        cloud_device.get(CONF_LOCAL_KEY)
-        or cloud_device.get("gateway_local_key")
+        (cloud_device.get("gateway_local_key") if node_id else None)
+        or cloud_device.get(CONF_LOCAL_KEY)
         or ""
     ).strip()
 
@@ -971,7 +971,10 @@ class QrConfigFlowMixin:
             device_id: device
             for device_id, device in devices.items()
             if (
-                device.get(CONF_LOCAL_KEY)
+                (
+                    not device.get("node_id")
+                    and device.get(CONF_LOCAL_KEY)
+                )
                 or (
                     device.get("node_id")
                     and device.get("gateway_id")
