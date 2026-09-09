@@ -1,43 +1,32 @@
-name: Catalog Snapshot
+name: Catalog snapshot
 
 on:
-  push:
-    paths:
-      - "custom_components/localtuya/builtin_catalog.json"
-      - "tools/sync_builtin_catalog.py"
-      - ".github/workflows/catalog-snapshot.yml"
-
-  pull_request:
-    paths:
-      - "custom_components/localtuya/builtin_catalog.json"
-      - "tools/sync_builtin_catalog.py"
-      - ".github/workflows/catalog-snapshot.yml"
-
-  schedule:
-    - cron: "17 4 * * 1"
-
   workflow_dispatch:
+  push:
+    branches: [develop]
+    paths:
+      - custom_components/localtuya/builtin_catalog.json
+      - custom_components/localtuya/compatibility_matrix.py
+      - scripts/build_catalog_snapshot.py
+      - scripts/generate_compatibility_matrix.py
+      - .github/workflows/catalog-snapshot.yml
 
 permissions:
   contents: read
 
-concurrency:
-  group: catalog-snapshot-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  check:
-    name: Bundled catalog is current
+  snapshot:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Python 3.14
-        uses: actions/setup-python@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
-
-      - name: Check bundled device catalog
-        run: python tools/sync_builtin_catalog.py --check
+          python-version: '3.14'
+      - name: Validate compatibility matrix generator
+        run: |
+          python scripts/generate_compatibility_matrix.py \
+            --catalog custom_components/localtuya/builtin_catalog.json \
+            --json-out /tmp/compatibility_matrix.json \
+            --markdown-out /tmp/COMPATIBILITY_MATRIX.md
+          diff -u docs/compatibility_matrix.json /tmp/compatibility_matrix.json
+          diff -u docs/COMPATIBILITY_MATRIX.md /tmp/COMPATIBILITY_MATRIX.md
