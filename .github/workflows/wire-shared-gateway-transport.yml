@@ -2,31 +2,36 @@ name: Wire shared gateway transport
 
 on:
   push:
-    branches: [develop]
-    paths: [.github/workflows/wire-shared-gateway-transport.yml]
+    branches:
+      - develop
+    paths:
+      - ".github/workflows/wire-shared-gateway-transport.yml"
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout develop
+        uses: actions/checkout@v7
         with:
           ref: develop
+
       - name: Patch common runtime
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path('custom_components/localtuya/common.py')
-          s = p.read_text(encoding='utf-8')
-          method = s.index('    async def _make_connection(self):')
-          start = s.index('            self._interface = await pytuya.connect(', method)
+
+          path = Path("custom_components/localtuya/common.py")
+          text = path.read_text(encoding="utf-8")
+          method = text.index("    async def _make_connection(self):")
+          start = text.index("            self._interface = await pytuya.connect(", method)
           end_marker = '                gateway_id=self._dev_config_entry.get("gateway_id"),\n            )\n'
-          end = s.index(end_marker, start) + len(end_marker)
-          new = '''            node_id = self._dev_config_entry.get("node_id")
+          end = text.index(end_marker, start) + len(end_marker)
+          replacement = '''            node_id = self._dev_config_entry.get("node_id")
             gateway_id = self._dev_config_entry.get("gateway_id")
             if node_id and gateway_id:
                 from .gateway_transport import async_acquire_gateway_child
@@ -52,17 +57,18 @@ jobs:
                     self,
                 )
 '''
-          p.write_text(s[:start] + new + s[end:], encoding='utf-8')
+          path.write_text(text[:start] + replacement + text[end:], encoding="utf-8")
           PY
+
       - name: Validate and push
         shell: bash
         run: |
           python -m compileall -q custom_components/localtuya/common.py custom_components/localtuya/gateway_transport.py
-          git rm .github/workflows/wire-shared-gateway-transport.yml
           git diff --check
+          git rm .github/workflows/wire-shared-gateway-transport.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add custom_components/localtuya/common.py custom_components/localtuya/gateway_transport.py
+          git add custom_components/localtuya/common.py
           git commit -m "Share one LAN transport across gateway child devices"
           git pull --rebase origin develop
           git push origin HEAD:develop
