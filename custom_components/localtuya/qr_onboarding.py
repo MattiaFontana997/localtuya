@@ -264,6 +264,13 @@ class QrCloudClient:
             local_key = str(getattr(device, "local_key", "") or "").strip()
             product_id = str(getattr(device, "product_id", "") or "").strip()
             node_id = str(getattr(device, "node_id", "") or "").strip()
+            gateway_id = str(
+                getattr(device, "gateway_id", "")
+                or getattr(device, "gatewayId", "")
+                or getattr(device, "parent_id", "")
+                or ""
+            ).strip()
+            device_ip = str(getattr(device, "ip", "") or "").strip()
 
             devices[device_id] = {
                 "id": device_id,
@@ -277,7 +284,20 @@ class QrCloudClient:
                 "online": bool(getattr(device, "online", False)),
                 "support_local": bool(getattr(device, "support_local", False)),
                 "node_id": node_id,
+                "gateway_id": gateway_id,
+                "ip": device_ip,
             }
+
+        for device in devices.values():
+            gateway_id = device.get("gateway_id")
+            if not device.get("node_id") or not gateway_id:
+                continue
+            gateway = devices.get(gateway_id)
+            if not isinstance(gateway, dict):
+                continue
+            device["gateway_local_key"] = gateway.get(CONF_LOCAL_KEY) or ""
+            device["gateway_ip"] = gateway.get("ip") or ""
+            device["gateway_name"] = gateway.get(CONF_NAME) or gateway_id
 
         return devices
 
@@ -434,22 +454,23 @@ async def async_prepare_qr_device(
     datapoint retrieval must all succeed before the device can be stored.
     """
     device_id = str(cloud_device.get("id") or "").strip()
-    local_key = str(cloud_device.get(CONF_LOCAL_KEY) or "").strip()
+    node_id = str(cloud_device.get("node_id") or "").strip()
+    gateway_id = str(cloud_device.get("gateway_id") or "").strip()
+    local_key = str(
+        cloud_device.get(CONF_LOCAL_KEY)
+        or cloud_device.get("gateway_local_key")
+        or ""
+    ).strip()
 
     if not device_id or not local_key:
         raise QrProvisioningError(
             "qr_device_not_local",
             "Device ID/local_key is not available",
         )
-    if cloud_device.get("node_id"):
+    if node_id and not gateway_id:
         raise QrProvisioningError(
-            "qr_subdevice_not_supported",
-            "The selected device is a hub child device",
-        )
-    if not cloud_device.get("support_local", True):
-        raise QrProvisioningError(
-            "qr_device_not_local",
-            "Tuya marks this device as cloud-only",
+            "qr_subdevice_gateway_missing",
+            "Tuya returned a child device without its parent gateway ID",
         )
 
     discovered_devices: dict[str, dict[str, Any]] = {}
@@ -468,11 +489,16 @@ async def async_prepare_qr_device(
             )
             discovered_devices = {}
 
-        found = _find_discovered_device(discovered_devices, device_id)
+        discovery_id = gateway_id if node_id else device_id
+        found = _find_discovered_device(discovered_devices, discovery_id)
         if isinstance(found, dict):
             discovered = found
 
-        host = str(discovered.get("ip") or "").strip()
+        host = str(
+            discovered.get("ip")
+            or (cloud_device.get("gateway_ip") if node_id else cloud_device.get("ip"))
+            or ""
+        ).strip()
         if not host:
             raise QrProvisioningError(
                 "qr_device_host_required",
@@ -486,7 +512,7 @@ async def async_prepare_qr_device(
                 "Enter the current device IP address or hostname",
             )
         discovered = {
-            "gwId": device_id,
+            "gwId": gateway_id or device_id,
             "ip": host,
         }
 
@@ -511,6 +537,9 @@ async def async_prepare_qr_device(
         CONF_ENABLE_DEBUG: False,
         "product_id": cloud_device.get("product_id") or "",
     }
+    if node_id:
+        device_data["node_id"] = node_id
+        device_data["gateway_id"] = gateway_id
 
     product_key = discovered.get("productKey") or cloud_device.get("product_id")
     if product_key:
@@ -941,9 +970,14 @@ class QrConfigFlowMixin:
         eligible = {
             device_id: device
             for device_id, device in devices.items()
-            if device.get(CONF_LOCAL_KEY)
-            and not device.get("node_id")
-            and device.get("support_local", True)
+            if (
+                device.get(CONF_LOCAL_KEY)
+                or (
+                    device.get("node_id")
+                    and device.get("gateway_id")
+                    and device.get("gateway_local_key")
+                )
+            )
         }
         if not eligible:
             return self.async_abort(reason="qr_no_local_devices")

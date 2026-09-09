@@ -984,7 +984,15 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
     """Implementation of the Tuya protocol."""
 
     def __init__(
-        self, dev_id, local_key, protocol_version, enable_debug, on_connected, listener
+        self,
+        dev_id,
+        local_key,
+        protocol_version,
+        enable_debug,
+        on_connected,
+        listener,
+        cid=None,
+        gateway_id=None,
     ):
         """
         Initialize a new TuyaInterface.
@@ -1001,6 +1009,8 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         self.loop = asyncio.get_running_loop()
         self.set_logger(_LOGGER, dev_id, enable_debug)
         self.id = dev_id
+        self.cid = str(cid or "").strip() or None
+        self.gateway_id = str(gateway_id or "").strip() or None
         self.local_key = local_key.encode("latin1")
         self.real_local_key = self.local_key
         self.dev_type = "type_0a"
@@ -1425,9 +1435,18 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         if (
             "dps" not in json_payload
             and "data" in json_payload
+            and isinstance(json_payload["data"], dict)
             and "dps" in json_payload["data"]
         ):
             json_payload["dps"] = json_payload["data"]["dps"]
+
+        if self.cid:
+            received_cid = json_payload.get("cid")
+            nested = json_payload.get("data")
+            if not received_cid and isinstance(nested, dict):
+                received_cid = nested.get("cid")
+            if received_cid and str(received_cid) != self.cid:
+                json_payload.pop("dps", None)
 
         return json_payload
 
@@ -1756,6 +1775,18 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                 json_data["uid"] = uid
             else:
                 json_data["uid"] = self.id
+        if self.cid:
+            json_data["cid"] = self.cid
+            if self.gateway_id and "gwId" in json_data:
+                json_data["gwId"] = self.gateway_id
+            if self.version >= 3.4:
+                nested = json_data.get("data")
+                if not isinstance(nested, dict):
+                    nested = {}
+                    json_data["data"] = nested
+                nested["cid"] = self.cid
+                nested["ctype"] = 0
+
         if "t" in json_data:
             if json_data["t"] == "int":
                 json_data["t"] = int(time.time())
@@ -1766,7 +1797,9 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             if "dpId" in json_data:
                 json_data["dpId"] = data
             elif "data" in json_data:
-                json_data["data"] = {"dps": data}
+                if not isinstance(json_data["data"], dict):
+                    json_data["data"] = {}
+                json_data["data"]["dps"] = data
             else:
                 json_data["dps"] = data
         elif self.dev_type == "type_0d" and command == DP_QUERY:
@@ -1796,6 +1829,8 @@ async def connect(
     listener=None,
     port=6668,
     timeout=5,
+    cid=None,
+    gateway_id=None,
 ):
     """Connect to a device."""
     loop = asyncio.get_running_loop()
@@ -1808,6 +1843,8 @@ async def connect(
             enable_debug,
             on_connected,
             listener or EmptyListener(),
+            cid=cid,
+            gateway_id=gateway_id,
         ),
         address,
         port,
