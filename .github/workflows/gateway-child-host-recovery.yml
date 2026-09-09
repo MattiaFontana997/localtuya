@@ -24,13 +24,13 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          from textwrap import indent
 
           path = Path("custom_components/localtuya/__init__.py")
           text = path.read_text(encoding="utf-8")
 
           marker = "    def _device_discovered(device):\n"
-
-          helper = '''    def _gateway_child_targets(gateway_id):
+          helper_source = '''def _gateway_child_targets(gateway_id):
               """Return configured child devices routed through one gateway."""
               targets = []
 
@@ -150,6 +150,7 @@ jobs:
 
           def _device_discovered(device):
           '''
+          helper = indent(helper_source, "    ")
 
           if text.count(marker) != 1:
               raise SystemExit("device discovery marker no longer matches expected develop state")
