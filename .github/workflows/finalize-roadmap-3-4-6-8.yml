@@ -1,0 +1,51 @@
+name: Finalize roadmap 3 4 6 8
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - .github/workflows/finalize-roadmap-3-4-6-8.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+      - name: Apply final hardening
+        run: python .github/scripts/finalize_roadmap_348.py
+      - name: Compile changed Python
+        run: |
+          python -m compileall -q \
+            custom_components/localtuya/gateway_transport.py \
+            custom_components/localtuya/qr_onboarding.py \
+            custom_components/localtuya/mapping_export.py \
+            custom_components/localtuya/config_flow.py \
+            custom_components/localtuya/repairs.py \
+            custom_components/localtuya/repair_issues.py \
+            tests/test_gateway_shared_transport.py \
+            tests/test_qr_import_onboarding.py \
+            tests/test_mapping_export.py \
+            tests/test_repairs.py \
+            tests/test_repair_issues.py \
+            tests/test_translation_coverage.py
+      - name: Validate translation JSON
+        run: |
+          for file in custom_components/localtuya/translations/*.json; do
+            python -m json.tool "$file" >/dev/null
+          done
+      - name: Check whitespace
+        run: git diff --check
+      - name: Commit clean finalization
+        run: |
+          git rm .github/workflows/finalize-roadmap-3-4-6-8.yml .github/scripts/finalize_roadmap_348.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Finalize roadmap 3 4 6 8 hardening"
+          git push origin HEAD:develop
