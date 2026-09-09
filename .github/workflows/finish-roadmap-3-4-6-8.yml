@@ -1,0 +1,29 @@
+name: Finish roadmap 3 4 6 8
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - .github/workflows/finish-roadmap-3-4-6-8.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+      - run: python .github/scripts/finish_reliability_catalog_gateway_contribution.py
+      - run: python -m compileall -q custom_components/localtuya/qr_onboarding.py custom_components/localtuya/repairs.py custom_components/localtuya/config_flow.py custom_components/localtuya/mapping_export.py
+      - run: git diff --check
+      - run: |
+          git rm .github/workflows/finish-roadmap-3-4-6-8.yml .github/scripts/finish_reliability_catalog_gateway_contribution.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/localtuya/qr_onboarding.py custom_components/localtuya/repairs.py custom_components/localtuya/config_flow.py custom_components/localtuya/mapping_export.py
+          git commit -m "Finish repair gateway metadata and contribution flows"
+          git push origin HEAD:develop
