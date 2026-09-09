@@ -221,15 +221,13 @@ class QrProvisioningTests(unittest.IsolatedAsyncioTestCase):
         hass = self._hass()
         cloud = self._cloud()
         discovered = {
-            "device-1": {
-                "gwId": "device-1",
-                "ip": "192.168.1.50",
-                "productKey": "product-1",
-            }
+            "gwId": "device-1",
+            "ip": "192.168.1.50",
+            "productKey": "product-1",
         }
 
         with patch(
-            "custom_components.localtuya.qr_onboarding._async_discovery_snapshot",
+            "custom_components.localtuya.qr_onboarding._async_find_lan_device",
             new=AsyncMock(return_value=discovered),
         ), patch(
             "custom_components.localtuya.config_flow.validate_input",
@@ -258,13 +256,13 @@ class QrProvisioningTests(unittest.IsolatedAsyncioTestCase):
         cloud.async_get_datamodel.assert_awaited_once_with("device-1")
 
     async def test_missing_discovery_requests_manual_host(self):
-        """Broadcast failure must not masquerade as missing local credentials."""
+        """Missing LAN discovery must request a manual, validated host."""
         hass = self._hass()
         cloud = self._cloud()
 
         with patch(
-            "custom_components.localtuya.qr_onboarding._async_discovery_snapshot",
-            new=AsyncMock(return_value={}),
+            "custom_components.localtuya.qr_onboarding._async_find_lan_device",
+            new=AsyncMock(return_value=None),
         ):
             with self.assertRaises(QrProvisioningError) as ctx:
                 await async_prepare_qr_device(
@@ -277,18 +275,13 @@ class QrProvisioningTests(unittest.IsolatedAsyncioTestCase):
         cloud.async_get_datamodel.assert_not_awaited()
 
     async def test_discovery_error_still_allows_manual_host_fallback(self):
-        """A discovery subsystem error is recoverable with a direct LAN address."""
+        """A discovery subsystem failure still degrades to manual LAN address."""
         hass = self._hass()
         cloud = self._cloud()
 
         with patch(
-            "custom_components.localtuya.qr_onboarding._async_discovery_snapshot",
-            new=AsyncMock(
-                side_effect=QrProvisioningError(
-                    "discovery_failed",
-                    "UDP unavailable",
-                )
-            ),
+            "custom_components.localtuya.qr_onboarding._async_find_lan_device",
+            new=AsyncMock(return_value=None),
         ):
             with self.assertRaises(QrProvisioningError) as ctx:
                 await async_prepare_qr_device(
@@ -308,7 +301,7 @@ class QrProvisioningTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch(
-            "custom_components.localtuya.qr_onboarding._async_discovery_snapshot",
+            "custom_components.localtuya.qr_onboarding._async_find_lan_device",
             new=AsyncMock(
                 side_effect=AssertionError(
                     "manual host must not require UDP discovery"
