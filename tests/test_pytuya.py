@@ -243,6 +243,43 @@ class PyTuyaProtocolTests(
 
                 await protocol.close()
 
+    async def test_malformed_header_wakes_pending_request_immediately(self):
+        """Malformed wire headers must fail pending exchanges without timeout."""
+        protocol = self._protocol(3.3)
+        waiter = asyncio.create_task(
+            protocol.dispatcher.wait_for(1, DP_QUERY, timeout=5)
+        )
+        await asyncio.sleep(0)
+
+        malformed = struct.pack(
+            MESSAGE_HEADER_FMT,
+            PREFIX_VALUE,
+            1,
+            DP_QUERY,
+            1001,
+        )
+        protocol.data_received(malformed)
+
+        with self.assertRaises(DecodeError):
+            await asyncio.wait_for(waiter, timeout=0.2)
+
+        await protocol.close()
+
+    async def test_connection_loss_wakes_pending_request_immediately(self):
+        """A dropped device socket must abort waiters instead of timing out."""
+        protocol = self._protocol(3.3)
+        waiter = asyncio.create_task(
+            protocol.dispatcher.wait_for(1, DP_QUERY, timeout=5)
+        )
+        await asyncio.sleep(0)
+
+        protocol.connection_lost(None)
+
+        with self.assertRaises(ConnectionError):
+            await asyncio.wait_for(waiter, timeout=0.2)
+
+        await protocol.close()
+
     async def test_connection_loss_discards_34_session_key(self):
         """A temporary 3.4 session key must never survive reconnect."""
         protocol = self._protocol(3.4)

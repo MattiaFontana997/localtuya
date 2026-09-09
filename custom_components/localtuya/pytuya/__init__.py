@@ -760,7 +760,20 @@ class MessageDispatcher(ContextualLogger):
             if len(self.buffer) < header_len:
                 break
 
-            header = parse_header(self.buffer)
+            try:
+                header = parse_header(self.buffer)
+            except DecodeError as ex:
+                # A malformed header is a terminal failure for the current
+                # TCP stream. Wake every waiter immediately instead of letting
+                # asyncio.Protocol.data_received() raise while callers sit
+                # blocked until their request timeout expires.
+                self.debug(
+                    "Failed to decode Tuya frame header: %s",
+                    ex,
+                )
+                self.buffer = b""
+                self.abort(ex)
+                return
 
             # Do not attempt authentication/decryption until the
             # complete frame has arrived.
@@ -1129,6 +1142,15 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
         if self.dispatcher is not None:
             self.dispatcher.local_key = self.real_local_key
+            # A closed transport can never satisfy outstanding requests.
+            # Fail them now so device outages/reboots do not masquerade as
+            # ordinary command timeouts.
+            disconnect_error = (
+                exc
+                if isinstance(exc, BaseException)
+                else ConnectionError("Tuya device connection lost")
+            )
+            self.dispatcher.abort(disconnect_error)
         try:
             listener = self.listener and self.listener()
             if listener is not None:
