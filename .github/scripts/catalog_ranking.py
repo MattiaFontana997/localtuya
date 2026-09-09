@@ -1,0 +1,98 @@
+from pathlib import Path
+
+path = Path("custom_components/localtuya/device_catalog.py")
+text = path.read_text(encoding="utf-8")
+start = text.index("def _mapping_compatible(")
+end = text.index("\ndef load_builtin_catalog(", start)
+replacement = '''def _mapping_compatible(mapping, product_id, category, available_dps):
+    """Return a deterministic compatibility rank and adapted entities."""
+    match = mapping["match"]
+    product_ids = tuple(match.get("product_ids", ()))
+    fingerprint = match.get("fingerprint")
+    if product_ids:
+        if not product_id or product_id not in product_ids:
+            return None
+        kind = "product"
+    else:
+        if product_id or fingerprint != {"mode": "exact_dps"}:
+            return None
+        declared = set(match.get("required_dps", [])) | set(match.get("optional_dps", []))
+        if available_dps - declared:
+            return None
+        kind = "fingerprint"
+
+    expected_category = match.get("category")
+    if expected_category and category and category != expected_category:
+        return None
+    required = set(match.get("required_dps", []))
+    optional = set(match.get("optional_dps", []))
+    if not required.issubset(available_dps):
+        return None
+    entities = tuple(
+        adapted
+        for entity in mapping["entities"]
+        if (adapted := _adapt_entity_for_available_dps(entity, optional, available_dps)) is not None
+    )
+    if not entities:
+        return None
+
+    trust_rank = {"experimental": 0, "community": 1, "verified": 2}.get(
+        mapping.get("confidence", "experimental"), 0
+    )
+    category_rank = 1 if expected_category and category == expected_category else 0
+    optional_hits = len(optional & available_dps)
+    optional_missing = len(optional - available_dps)
+    rank = (
+        1 if kind == "product" else 0,
+        trust_rank,
+        category_rank,
+        len(required),
+        optional_hits,
+        -optional_missing,
+    )
+    return kind, rank, entities
+
+
+def match_catalog_mapping(catalog, device, available_dps, *, source="remote"):
+    """Return one unambiguous, highest-authority catalog match."""
+    if not catalog:
+        return None
+    product_id = _device_product_id(device)
+    category = _device_category(device)
+    candidates = []
+    for mapping in catalog.get("mappings", []):
+        compatible = _mapping_compatible(mapping, product_id, category, available_dps)
+        if compatible:
+            kind, rank, entities = compatible
+            candidates.append((rank, mapping, entities, kind))
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    best_rank = candidates[0][0]
+    best = [item for item in candidates if item[0] == best_rank]
+    if len(best) != 1:
+        _LOGGER.warning(
+            "Rejecting ambiguous LocalTuya catalog match: %s equally authoritative candidates",
+            len(best),
+        )
+        return None
+
+    _, mapping, entities, kind = best[0]
+    match = mapping["match"]
+    provenance = mapping.get("provenance")
+    return CatalogMatch(
+        mapping["id"],
+        product_id or "",
+        mapping["confidence"],
+        tuple(match["required_dps"]),
+        entities,
+        source,
+        tuple(match.get("product_ids", ())),
+        tuple(match.get("optional_dps", ())),
+        copy.deepcopy(provenance) if provenance else None,
+        kind,
+    )
+
+'''
+path.write_text(text[:start] + replacement + text[end:], encoding="utf-8")
