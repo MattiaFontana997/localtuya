@@ -1133,7 +1133,9 @@ class LocalTuyaOptionsFlowHandler(QrOptionsFlowMixin, config_entries.OptionsFlow
         errors = {}
         if user_input is not None:
             if user_input.get(CONTRIBUTION_CONFIRM, False):
-                return await self.async_step_submit_to_community_catalog()
+                if self.contribution_package.get("prefill_complete", False):
+                    return await self.async_step_community_contribution_actions()
+                return await self.async_step_prepare_contribution_result()
             errors["base"] = "contribution_confirmation_required"
 
         preview = self.contribution_package["preview"]

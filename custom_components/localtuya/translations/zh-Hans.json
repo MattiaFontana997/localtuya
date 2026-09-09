@@ -445,7 +445,7 @@
             },
             "prepare_contribution_result": {
                 "title": "社区贡献已准备好",
-                "description": "检查或复制下面经过清理的 JSON。建议文件：`{filename}`。使用下方按钮打开 GitHub，并预填建议的文件名；在可能的情况下，也会预填 JSON 内容。不会自动上传任何内容。",
+                "description": "此贡献内容过大，无法可靠地预填到 GitHub。请查看或复制下方已脱敏的 JSON，然后选择提交到社区目录。建议文件：`{filename}`。不会自动上传任何内容。",
                 "data": {
                     "contribution_json": "已清理的贡献 JSON"
                 },
@@ -619,6 +619,294 @@
                         "description": "请输入 {device_name} 当前的 IP 地址或主机名。只有通过 LocalTuya 的认证验证后才会保存该地址。",
                         "data": {
                             "host": "IP 地址 / 主机"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_host_unreachable": {
+            "title": "LocalTuya 无法连接 {device_name}",
+            "fix_flow": {
+                "error": {
+                    "cannot_connect": "设备在该地址没有响应。请确认设备已开机并且 Home Assistant 可以访问它。",
+                    "invalid_auth": "设备有响应，但拒绝了已保存的本地凭据。请先刷新或重新配置凭据再重试。",
+                    "empty_dps": "连接成功，但设备没有返回任何数据点。请在设备完全在线后重试。",
+                    "invalid_host": "请输入有效的局域网 IP 地址或主机名。",
+                    "unknown": "无法安全验证该地址。现有配置保持不变。",
+                    "stale": "验证期间设备地址再次发生变化。请重新发现或手动输入当前地址。",
+                    "device_not_found": "局域网发现中未找到已配置设备。你可以手动输入它的当前地址。",
+                    "discovery_unavailable": "当前无法使用自动局域网发现。请手动输入设备地址。",
+                    "discovery_failed": "自动局域网发现失败。请手动输入设备地址或稍后重试。"
+                },
+                "step": {
+                    "init": {
+                        "title": "修复 {device_name} 的局域网连接",
+                        "description": "设备无法通过已保存的局域网地址访问。请重新发现网关/设备或输入当前地址；LocalTuya 会先验证再保存。",
+                        "menu_options": {
+                            "rediscover": "重新尝试自动局域网发现",
+                            "manual_host": "手动输入 IP 地址 / 主机名"
+                        }
+                    },
+                    "manual_host": {
+                        "title": "输入当前局域网地址",
+                        "description": "请输入 {device_name} 当前的 IP 地址或主机名。只有通过 LocalTuya 身份验证后才会保存。",
+                        "data": {
+                            "host": "IP 地址 / 主机"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_auth_or_protocol": {
+            "title": "LocalTuya 无法验证 {device_name}",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "已配置的设备已不存在。"
+                },
+                "error": {
+                    "cannot_connect": "无法通过局域网访问设备。没有修改任何配置。",
+                    "invalid_auth": "设备拒绝了已保存的凭据。没有修改任何配置。",
+                    "empty_dps": "设备已连接，但没有返回数据点。没有修改任何配置。",
+                    "unknown": "验证安全失败。现有配置保持不变。",
+                    "qr_account_not_linked": "此 LocalTuya 条目没有关联 Smart Life/Tuya QR 账户。请手动输入本地密钥，或在 LocalTuya 选项中重新关联账户。",
+                    "qr_reauth_required": "已保存的 Tuya 授权已过期。请重新关联 Smart Life/Tuya 账户后重试。",
+                    "credential_refresh_failed": "LocalTuya 无法从已关联的 Tuya 账户获取可用的本地密钥。"
+                },
+                "step": {
+                    "init": {
+                        "title": "修复 {device_name}",
+                        "description": "局域网设备有响应，但身份验证或协议验证失败。请刷新/输入本地密钥、选择协议或重试。",
+                        "menu_options": {
+                            "refresh_credentials": "从已关联的 Tuya 账户刷新本地密钥",
+                            "manual_credentials": "手动输入本地密钥",
+                            "select_protocol": "选择协议版本",
+                            "retry": "重试当前配置"
+                        }
+                    },
+                    "retry": {
+                        "title": "重试 {device_name}",
+                        "description": "在不预先修改配置的情况下，再次验证已保存的局域网地址、凭据、协议和数据点。"
+                    },
+                    "manual_credentials": {
+                        "title": "更新 {device_name} 的本地密钥",
+                        "description": "请输入当前本地密钥。对于网关下的子设备，请使用网关本地密钥。只有局域网验证成功后才会保存。",
+                        "data": {
+                            "local_key": "本地密钥"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "刷新 {device_name} 的本地密钥",
+                        "description": "按需同步已关联的 Smart Life/Tuya 账户，并在保存前通过局域网验证刷新后的密钥。"
+                    },
+                    "select_protocol": {
+                        "title": "为 {device_name} 选择协议",
+                        "description": "请选择自动或明确的 Tuya 局域网协议。LocalTuya 会先验证选择再保存。",
+                        "data": {
+                            "protocol_version": "协议版本"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_protocol_not_detected": {
+            "title": "LocalTuya 无法检测 {device_name} 的协议",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "已配置的设备已不存在。"
+                },
+                "error": {
+                    "cannot_connect": "无法通过局域网访问设备。没有修改任何配置。",
+                    "invalid_auth": "设备拒绝了已保存的凭据。没有修改任何配置。",
+                    "empty_dps": "设备已连接，但没有返回数据点。没有修改任何配置。",
+                    "unknown": "验证安全失败。现有配置保持不变。",
+                    "qr_account_not_linked": "此 LocalTuya 条目没有关联 Smart Life/Tuya QR 账户。请手动输入本地密钥，或在 LocalTuya 选项中重新关联账户。",
+                    "qr_reauth_required": "已保存的 Tuya 授权已过期。请重新关联 Smart Life/Tuya 账户后重试。",
+                    "credential_refresh_failed": "LocalTuya 无法从已关联的 Tuya 账户获取可用的本地密钥。"
+                },
+                "step": {
+                    "init": {
+                        "title": "修复 {device_name}",
+                        "description": "自动检测未找到可用的 Tuya 局域网协议。请选择明确的协议版本或重试。",
+                        "menu_options": {
+                            "refresh_credentials": "从已关联的 Tuya 账户刷新本地密钥",
+                            "manual_credentials": "手动输入本地密钥",
+                            "select_protocol": "选择协议版本",
+                            "retry": "重试当前配置"
+                        }
+                    },
+                    "retry": {
+                        "title": "重试 {device_name}",
+                        "description": "在不预先修改配置的情况下，再次验证已保存的局域网地址、凭据、协议和数据点。"
+                    },
+                    "manual_credentials": {
+                        "title": "更新 {device_name} 的本地密钥",
+                        "description": "请输入当前本地密钥。对于网关下的子设备，请使用网关本地密钥。只有局域网验证成功后才会保存。",
+                        "data": {
+                            "local_key": "本地密钥"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "刷新 {device_name} 的本地密钥",
+                        "description": "按需同步已关联的 Smart Life/Tuya 账户，并在保存前通过局域网验证刷新后的密钥。"
+                    },
+                    "select_protocol": {
+                        "title": "为 {device_name} 选择协议",
+                        "description": "请选择自动或明确的 Tuya 局域网协议。LocalTuya 会先验证选择再保存。",
+                        "data": {
+                            "protocol_version": "协议版本"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_empty_dps": {
+            "title": "LocalTuya 未从 {device_name} 收到数据点",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "已配置的设备已不存在。"
+                },
+                "error": {
+                    "cannot_connect": "无法通过局域网访问设备。没有修改任何配置。",
+                    "invalid_auth": "设备拒绝了已保存的凭据。没有修改任何配置。",
+                    "empty_dps": "设备已连接，但没有返回数据点。没有修改任何配置。",
+                    "unknown": "验证安全失败。现有配置保持不变。",
+                    "qr_account_not_linked": "此 LocalTuya 条目没有关联 Smart Life/Tuya QR 账户。请手动输入本地密钥，或在 LocalTuya 选项中重新关联账户。",
+                    "qr_reauth_required": "已保存的 Tuya 授权已过期。请重新关联 Smart Life/Tuya 账户后重试。",
+                    "credential_refresh_failed": "LocalTuya 无法从已关联的 Tuya 账户获取可用的本地密钥。"
+                },
+                "step": {
+                    "init": {
+                        "title": "修复 {device_name}",
+                        "description": "设备已通过身份验证，但没有返回数据点。请重试或明确选择协议后再修改配置。",
+                        "menu_options": {
+                            "refresh_credentials": "从已关联的 Tuya 账户刷新本地密钥",
+                            "manual_credentials": "手动输入本地密钥",
+                            "select_protocol": "选择协议版本",
+                            "retry": "重试当前配置"
+                        }
+                    },
+                    "retry": {
+                        "title": "重试 {device_name}",
+                        "description": "在不预先修改配置的情况下，再次验证已保存的局域网地址、凭据、协议和数据点。"
+                    },
+                    "manual_credentials": {
+                        "title": "更新 {device_name} 的本地密钥",
+                        "description": "请输入当前本地密钥。对于网关下的子设备，请使用网关本地密钥。只有局域网验证成功后才会保存。",
+                        "data": {
+                            "local_key": "本地密钥"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "刷新 {device_name} 的本地密钥",
+                        "description": "按需同步已关联的 Smart Life/Tuya 账户，并在保存前通过局域网验证刷新后的密钥。"
+                    },
+                    "select_protocol": {
+                        "title": "为 {device_name} 选择协议",
+                        "description": "请选择自动或明确的 Tuya 局域网协议。LocalTuya 会先验证选择再保存。",
+                        "data": {
+                            "protocol_version": "协议版本"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_invalid_configuration": {
+            "title": "LocalTuya 检测到 {device_name} 的配置无效",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "已配置的设备已不存在。"
+                },
+                "error": {
+                    "cannot_connect": "无法通过局域网访问设备。没有修改任何配置。",
+                    "invalid_auth": "设备拒绝了已保存的凭据。没有修改任何配置。",
+                    "empty_dps": "设备已连接，但没有返回数据点。没有修改任何配置。",
+                    "unknown": "验证安全失败。现有配置保持不变。",
+                    "qr_account_not_linked": "此 LocalTuya 条目没有关联 Smart Life/Tuya QR 账户。请手动输入本地密钥，或在 LocalTuya 选项中重新关联账户。",
+                    "qr_reauth_required": "已保存的 Tuya 授权已过期。请重新关联 Smart Life/Tuya 账户后重试。",
+                    "credential_refresh_failed": "LocalTuya 无法从已关联的 Tuya 账户获取可用的本地密钥。"
+                },
+                "step": {
+                    "init": {
+                        "title": "修复 {device_name}",
+                        "description": "已保存的 LocalTuya 配置无法安全验证。请检查凭据/协议，或在保留当前配置的情况下重试。",
+                        "menu_options": {
+                            "refresh_credentials": "从已关联的 Tuya 账户刷新本地密钥",
+                            "manual_credentials": "手动输入本地密钥",
+                            "select_protocol": "选择协议版本",
+                            "retry": "重试当前配置"
+                        }
+                    },
+                    "retry": {
+                        "title": "重试 {device_name}",
+                        "description": "在不预先修改配置的情况下，再次验证已保存的局域网地址、凭据、协议和数据点。"
+                    },
+                    "manual_credentials": {
+                        "title": "更新 {device_name} 的本地密钥",
+                        "description": "请输入当前本地密钥。对于网关下的子设备，请使用网关本地密钥。只有局域网验证成功后才会保存。",
+                        "data": {
+                            "local_key": "本地密钥"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "刷新 {device_name} 的本地密钥",
+                        "description": "按需同步已关联的 Smart Life/Tuya 账户，并在保存前通过局域网验证刷新后的密钥。"
+                    },
+                    "select_protocol": {
+                        "title": "为 {device_name} 选择协议",
+                        "description": "请选择自动或明确的 Tuya 局域网协议。LocalTuya 会先验证选择再保存。",
+                        "data": {
+                            "protocol_version": "协议版本"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_probe_error": {
+            "title": "LocalTuya 无法完成 {device_name} 的健康检查",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "已配置的设备已不存在。"
+                },
+                "error": {
+                    "cannot_connect": "无法通过局域网访问设备。没有修改任何配置。",
+                    "invalid_auth": "设备拒绝了已保存的凭据。没有修改任何配置。",
+                    "empty_dps": "设备已连接，但没有返回数据点。没有修改任何配置。",
+                    "unknown": "验证安全失败。现有配置保持不变。",
+                    "qr_account_not_linked": "此 LocalTuya 条目没有关联 Smart Life/Tuya QR 账户。请手动输入本地密钥，或在 LocalTuya 选项中重新关联账户。",
+                    "qr_reauth_required": "已保存的 Tuya 授权已过期。请重新关联 Smart Life/Tuya 账户后重试。",
+                    "credential_refresh_failed": "LocalTuya 无法从已关联的 Tuya 账户获取可用的本地密钥。"
+                },
+                "step": {
+                    "init": {
+                        "title": "修复 {device_name}",
+                        "description": "LocalTuya 的限时健康检查意外失败。请重试当前配置或明确选择协议。",
+                        "menu_options": {
+                            "refresh_credentials": "从已关联的 Tuya 账户刷新本地密钥",
+                            "manual_credentials": "手动输入本地密钥",
+                            "select_protocol": "选择协议版本",
+                            "retry": "重试当前配置"
+                        }
+                    },
+                    "retry": {
+                        "title": "重试 {device_name}",
+                        "description": "在不预先修改配置的情况下，再次验证已保存的局域网地址、凭据、协议和数据点。"
+                    },
+                    "manual_credentials": {
+                        "title": "更新 {device_name} 的本地密钥",
+                        "description": "请输入当前本地密钥。对于网关下的子设备，请使用网关本地密钥。只有局域网验证成功后才会保存。",
+                        "data": {
+                            "local_key": "本地密钥"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "刷新 {device_name} 的本地密钥",
+                        "description": "按需同步已关联的 Smart Life/Tuya 账户，并在保存前通过局域网验证刷新后的密钥。"
+                    },
+                    "select_protocol": {
+                        "title": "为 {device_name} 选择协议",
+                        "description": "请选择自动或明确的 Tuya 局域网协议。LocalTuya 会先验证选择再保存。",
+                        "data": {
+                            "protocol_version": "协议版本"
                         }
                     }
                 }

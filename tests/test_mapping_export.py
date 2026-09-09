@@ -218,7 +218,8 @@ class TestMappingContributionPackage(unittest.TestCase):
 
         query = parse_qs(parsed.query)
         self.assertEqual(query["filename"], [package["suggested_filename"]])
-        self.assertEqual(query["value"], [package["submission_json"]])
+        self.assertEqual(json.loads(query["value"][0]), package["submission"])
+        self.assertTrue(package["prefill_complete"])
         self.assertFalse(package["privacy"]["automatic_upload"])
 
     def test_package_large_json_falls_back_to_filename_only(self):
@@ -230,6 +231,7 @@ class TestMappingContributionPackage(unittest.TestCase):
 
         self.assertEqual(query["filename"], [package["suggested_filename"]])
         self.assertNotIn("value", query)
+        self.assertFalse(package["prefill_complete"])
 
     def test_package_json_is_pretty_and_round_trips(self):
         package = build_mapping_contribution_package(self._device_data())

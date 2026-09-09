@@ -168,6 +168,34 @@ class SharedGatewayTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first_listener.disconnects, 1)
         self.assertEqual(second_listener.disconnects, 1)
 
+    async def test_dead_transport_is_replaced_on_next_acquire(self):
+        first = await self._acquire("child-1", "cid-1", FakeListener())
+        first_shared = first._shared
+        second_parent = FakeParent()
+        self.connect.side_effect = [second_parent]
+
+        first_shared.parent_disconnected()
+        second = await self._acquire("child-2", "cid-2", FakeListener())
+
+        self.assertIsNot(second._shared, first_shared)
+        self.assertIs(second._shared.parent, second_parent)
+        self.assertEqual(self.connect.await_count, 2)
+        self.parent.close.assert_awaited_once()
+
+    async def test_heartbeat_failure_invalidates_and_notifies_children(self):
+        first_listener = FakeListener()
+        second_listener = FakeListener()
+        first = await self._acquire("child-1", "cid-1", first_listener)
+        await self._acquire("child-2", "cid-2", second_listener)
+        self.parent.heartbeat = AsyncMock(side_effect=TimeoutError())
+
+        await first._shared._heartbeat_loop()
+
+        self.assertFalse(first._shared.alive)
+        self.assertEqual(first_listener.disconnects, 1)
+        self.assertEqual(second_listener.disconnects, 1)
+        self.parent.transport.close.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

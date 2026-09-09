@@ -445,7 +445,7 @@
             },
             "prepare_contribution_result": {
                 "title": "Community contribution ready",
-                "description": "Review or copy the sanitized JSON below. Suggested file: `{filename}`. Use the button below to open GitHub with the suggested filename and, when possible, the JSON already filled in. Nothing is uploaded automatically.",
+                "description": "This contribution is too large for a reliable GitHub prefill. Copy or review the sanitized JSON below, then choose Submit to Community Catalog. Suggested file: `{filename}`. Nothing is uploaded automatically.",
                 "data": {
                     "contribution_json": "Sanitized contribution JSON"
                 },
@@ -619,6 +619,294 @@
                         "description": "Enter the current IP address or hostname for {device_name}. The address will be saved only after a successful authenticated LocalTuya validation.",
                         "data": {
                             "host": "IP address / Host"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_host_unreachable": {
+            "title": "LocalTuya cannot reach {device_name}",
+            "fix_flow": {
+                "error": {
+                    "cannot_connect": "The device did not respond at that address. Check that it is powered on and reachable from Home Assistant.",
+                    "invalid_auth": "The device answered, but its saved local credentials were rejected. Refresh or reconfigure the credentials before retrying.",
+                    "empty_dps": "The device connection succeeded, but no datapoints were returned. Retry after the device is fully online.",
+                    "invalid_host": "Enter a valid LAN IP address or hostname.",
+                    "unknown": "The address could not be validated safely. The existing configuration was left unchanged.",
+                    "stale": "The device address changed again while validation was running. Retry discovery or enter the current address manually.",
+                    "device_not_found": "The configured device was not found during LAN discovery. You can enter its current address manually.",
+                    "discovery_unavailable": "Automatic LAN discovery is not available right now. Enter the device address manually.",
+                    "discovery_failed": "Automatic LAN discovery failed. Enter the device address manually or retry later."
+                },
+                "step": {
+                    "init": {
+                        "title": "Repair LAN connection for {device_name}",
+                        "description": "The device is not reachable at its saved LAN address. Rediscover the gateway/device or enter its current address manually; LocalTuya validates it before saving.",
+                        "menu_options": {
+                            "rediscover": "Retry automatic LAN discovery",
+                            "manual_host": "Enter IP address / hostname manually"
+                        }
+                    },
+                    "manual_host": {
+                        "title": "Enter the current LAN address",
+                        "description": "Enter the current IP address or hostname for {device_name}. The address will be saved only after a successful authenticated LocalTuya validation.",
+                        "data": {
+                            "host": "IP address / Host"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_auth_or_protocol": {
+            "title": "LocalTuya cannot authenticate {device_name}",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "The configured device no longer exists."
+                },
+                "error": {
+                    "cannot_connect": "The device could not be reached over LAN. No configuration was changed.",
+                    "invalid_auth": "The device rejected the saved credentials. No configuration was changed.",
+                    "empty_dps": "The device connected but returned no datapoints. No configuration was changed.",
+                    "unknown": "Validation failed safely. The existing configuration was left unchanged.",
+                    "qr_account_not_linked": "No Smart Life/Tuya QR account is linked to this LocalTuya entry. Enter the local key manually or re-link the account from LocalTuya options.",
+                    "qr_reauth_required": "The saved Tuya authorization expired. Re-link the Smart Life/Tuya account, then retry.",
+                    "credential_refresh_failed": "LocalTuya could not retrieve a usable local key from the linked Tuya account."
+                },
+                "step": {
+                    "init": {
+                        "title": "Repair {device_name}",
+                        "description": "The LAN device answered, but authentication or protocol validation failed. Refresh or enter the local key, select a protocol, or retry.",
+                        "menu_options": {
+                            "refresh_credentials": "Refresh local key from linked Tuya account",
+                            "manual_credentials": "Enter local key manually",
+                            "select_protocol": "Select protocol version",
+                            "retry": "Retry current configuration"
+                        }
+                    },
+                    "retry": {
+                        "title": "Retry {device_name}",
+                        "description": "Validate the currently saved LAN address, credentials, protocol and datapoints again without changing them first."
+                    },
+                    "manual_credentials": {
+                        "title": "Update local key for {device_name}",
+                        "description": "Enter the current local key. For a gateway-backed child, use the gateway local key. It is saved only after successful LAN validation.",
+                        "data": {
+                            "local_key": "Local key"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "Refresh local key for {device_name}",
+                        "description": "Synchronize the linked Smart Life/Tuya account on demand and validate the refreshed key over LAN before saving it."
+                    },
+                    "select_protocol": {
+                        "title": "Select protocol for {device_name}",
+                        "description": "Choose Auto or an explicit Tuya LAN protocol. LocalTuya validates the selection before saving it.",
+                        "data": {
+                            "protocol_version": "Protocol version"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_protocol_not_detected": {
+            "title": "LocalTuya could not detect the protocol for {device_name}",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "The configured device no longer exists."
+                },
+                "error": {
+                    "cannot_connect": "The device could not be reached over LAN. No configuration was changed.",
+                    "invalid_auth": "The device rejected the saved credentials. No configuration was changed.",
+                    "empty_dps": "The device connected but returned no datapoints. No configuration was changed.",
+                    "unknown": "Validation failed safely. The existing configuration was left unchanged.",
+                    "qr_account_not_linked": "No Smart Life/Tuya QR account is linked to this LocalTuya entry. Enter the local key manually or re-link the account from LocalTuya options.",
+                    "qr_reauth_required": "The saved Tuya authorization expired. Re-link the Smart Life/Tuya account, then retry.",
+                    "credential_refresh_failed": "LocalTuya could not retrieve a usable local key from the linked Tuya account."
+                },
+                "step": {
+                    "init": {
+                        "title": "Repair {device_name}",
+                        "description": "Automatic protocol detection did not find a working Tuya LAN protocol. Select a protocol explicitly or retry.",
+                        "menu_options": {
+                            "refresh_credentials": "Refresh local key from linked Tuya account",
+                            "manual_credentials": "Enter local key manually",
+                            "select_protocol": "Select protocol version",
+                            "retry": "Retry current configuration"
+                        }
+                    },
+                    "retry": {
+                        "title": "Retry {device_name}",
+                        "description": "Validate the currently saved LAN address, credentials, protocol and datapoints again without changing them first."
+                    },
+                    "manual_credentials": {
+                        "title": "Update local key for {device_name}",
+                        "description": "Enter the current local key. For a gateway-backed child, use the gateway local key. It is saved only after successful LAN validation.",
+                        "data": {
+                            "local_key": "Local key"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "Refresh local key for {device_name}",
+                        "description": "Synchronize the linked Smart Life/Tuya account on demand and validate the refreshed key over LAN before saving it."
+                    },
+                    "select_protocol": {
+                        "title": "Select protocol for {device_name}",
+                        "description": "Choose Auto or an explicit Tuya LAN protocol. LocalTuya validates the selection before saving it.",
+                        "data": {
+                            "protocol_version": "Protocol version"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_empty_dps": {
+            "title": "LocalTuya received no datapoints from {device_name}",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "The configured device no longer exists."
+                },
+                "error": {
+                    "cannot_connect": "The device could not be reached over LAN. No configuration was changed.",
+                    "invalid_auth": "The device rejected the saved credentials. No configuration was changed.",
+                    "empty_dps": "The device connected but returned no datapoints. No configuration was changed.",
+                    "unknown": "Validation failed safely. The existing configuration was left unchanged.",
+                    "qr_account_not_linked": "No Smart Life/Tuya QR account is linked to this LocalTuya entry. Enter the local key manually or re-link the account from LocalTuya options.",
+                    "qr_reauth_required": "The saved Tuya authorization expired. Re-link the Smart Life/Tuya account, then retry.",
+                    "credential_refresh_failed": "LocalTuya could not retrieve a usable local key from the linked Tuya account."
+                },
+                "step": {
+                    "init": {
+                        "title": "Repair {device_name}",
+                        "description": "The device authenticated but returned no datapoints. Retry or select a protocol explicitly before changing the configuration.",
+                        "menu_options": {
+                            "refresh_credentials": "Refresh local key from linked Tuya account",
+                            "manual_credentials": "Enter local key manually",
+                            "select_protocol": "Select protocol version",
+                            "retry": "Retry current configuration"
+                        }
+                    },
+                    "retry": {
+                        "title": "Retry {device_name}",
+                        "description": "Validate the currently saved LAN address, credentials, protocol and datapoints again without changing them first."
+                    },
+                    "manual_credentials": {
+                        "title": "Update local key for {device_name}",
+                        "description": "Enter the current local key. For a gateway-backed child, use the gateway local key. It is saved only after successful LAN validation.",
+                        "data": {
+                            "local_key": "Local key"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "Refresh local key for {device_name}",
+                        "description": "Synchronize the linked Smart Life/Tuya account on demand and validate the refreshed key over LAN before saving it."
+                    },
+                    "select_protocol": {
+                        "title": "Select protocol for {device_name}",
+                        "description": "Choose Auto or an explicit Tuya LAN protocol. LocalTuya validates the selection before saving it.",
+                        "data": {
+                            "protocol_version": "Protocol version"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_invalid_configuration": {
+            "title": "LocalTuya found an invalid configuration for {device_name}",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "The configured device no longer exists."
+                },
+                "error": {
+                    "cannot_connect": "The device could not be reached over LAN. No configuration was changed.",
+                    "invalid_auth": "The device rejected the saved credentials. No configuration was changed.",
+                    "empty_dps": "The device connected but returned no datapoints. No configuration was changed.",
+                    "unknown": "Validation failed safely. The existing configuration was left unchanged.",
+                    "qr_account_not_linked": "No Smart Life/Tuya QR account is linked to this LocalTuya entry. Enter the local key manually or re-link the account from LocalTuya options.",
+                    "qr_reauth_required": "The saved Tuya authorization expired. Re-link the Smart Life/Tuya account, then retry.",
+                    "credential_refresh_failed": "LocalTuya could not retrieve a usable local key from the linked Tuya account."
+                },
+                "step": {
+                    "init": {
+                        "title": "Repair {device_name}",
+                        "description": "The saved LocalTuya configuration cannot be validated safely. Review credentials/protocol or retry without losing the current configuration.",
+                        "menu_options": {
+                            "refresh_credentials": "Refresh local key from linked Tuya account",
+                            "manual_credentials": "Enter local key manually",
+                            "select_protocol": "Select protocol version",
+                            "retry": "Retry current configuration"
+                        }
+                    },
+                    "retry": {
+                        "title": "Retry {device_name}",
+                        "description": "Validate the currently saved LAN address, credentials, protocol and datapoints again without changing them first."
+                    },
+                    "manual_credentials": {
+                        "title": "Update local key for {device_name}",
+                        "description": "Enter the current local key. For a gateway-backed child, use the gateway local key. It is saved only after successful LAN validation.",
+                        "data": {
+                            "local_key": "Local key"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "Refresh local key for {device_name}",
+                        "description": "Synchronize the linked Smart Life/Tuya account on demand and validate the refreshed key over LAN before saving it."
+                    },
+                    "select_protocol": {
+                        "title": "Select protocol for {device_name}",
+                        "description": "Choose Auto or an explicit Tuya LAN protocol. LocalTuya validates the selection before saving it.",
+                        "data": {
+                            "protocol_version": "Protocol version"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_probe_error": {
+            "title": "LocalTuya could not complete the health check for {device_name}",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "The configured device no longer exists."
+                },
+                "error": {
+                    "cannot_connect": "The device could not be reached over LAN. No configuration was changed.",
+                    "invalid_auth": "The device rejected the saved credentials. No configuration was changed.",
+                    "empty_dps": "The device connected but returned no datapoints. No configuration was changed.",
+                    "unknown": "Validation failed safely. The existing configuration was left unchanged.",
+                    "qr_account_not_linked": "No Smart Life/Tuya QR account is linked to this LocalTuya entry. Enter the local key manually or re-link the account from LocalTuya options.",
+                    "qr_reauth_required": "The saved Tuya authorization expired. Re-link the Smart Life/Tuya account, then retry.",
+                    "credential_refresh_failed": "LocalTuya could not retrieve a usable local key from the linked Tuya account."
+                },
+                "step": {
+                    "init": {
+                        "title": "Repair {device_name}",
+                        "description": "The bounded LocalTuya health check failed unexpectedly. Retry the current configuration or select a protocol explicitly.",
+                        "menu_options": {
+                            "refresh_credentials": "Refresh local key from linked Tuya account",
+                            "manual_credentials": "Enter local key manually",
+                            "select_protocol": "Select protocol version",
+                            "retry": "Retry current configuration"
+                        }
+                    },
+                    "retry": {
+                        "title": "Retry {device_name}",
+                        "description": "Validate the currently saved LAN address, credentials, protocol and datapoints again without changing them first."
+                    },
+                    "manual_credentials": {
+                        "title": "Update local key for {device_name}",
+                        "description": "Enter the current local key. For a gateway-backed child, use the gateway local key. It is saved only after successful LAN validation.",
+                        "data": {
+                            "local_key": "Local key"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "Refresh local key for {device_name}",
+                        "description": "Synchronize the linked Smart Life/Tuya account on demand and validate the refreshed key over LAN before saving it."
+                    },
+                    "select_protocol": {
+                        "title": "Select protocol for {device_name}",
+                        "description": "Choose Auto or an explicit Tuya LAN protocol. LocalTuya validates the selection before saving it.",
+                        "data": {
+                            "protocol_version": "Protocol version"
                         }
                     }
                 }

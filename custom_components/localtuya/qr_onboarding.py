@@ -87,6 +87,17 @@ def _token_info(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _is_subdevice_flag(value: Any) -> bool:
+    """Normalize Tuya SDK/export sub-device flags without string truthiness."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value == 1
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes"}
+    return False
+
+
 class _TokenCapture(SharingTokenListener):
     """Capture refreshed sharing tokens without starting cloud polling."""
 
@@ -270,7 +281,7 @@ class QrCloudClient:
                 or getattr(device, "parent_id", "")
                 or ""
             ).strip()
-            is_subdevice = bool(getattr(device, "sub", False))
+            is_subdevice = _is_subdevice_flag(getattr(device, "sub", False))
             device_uuid = str(getattr(device, "uuid", "") or "").strip()
             if not node_id and is_subdevice and gateway_id and device_uuid:
                 # Some Tuya subdevice records omit node_id. For an explicitly
@@ -701,7 +712,7 @@ def _normalize_import_device(
         or raw.get("device_cid")
         or ""
     ).strip()
-    if not node_id and bool(raw.get("sub", False)) and gateway_id:
+    if not node_id and _is_subdevice_flag(raw.get("sub", False)) and gateway_id:
         node_id = str(raw.get("uuid") or "").strip()
     result: dict[str, Any] = {
         CONF_FRIENDLY_NAME: name or device_id,

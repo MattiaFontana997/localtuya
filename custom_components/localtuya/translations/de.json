@@ -445,7 +445,7 @@
             },
             "prepare_contribution_result": {
                 "title": "Community-Beitrag ist bereit",
-                "description": "Prüfe oder kopiere das bereinigte JSON unten. Vorgeschlagene Datei: `{filename}`. Verwende die Schaltfläche unten, um GitHub mit dem vorgeschlagenen Dateinamen und, wenn möglich, bereits ausgefülltem JSON zu öffnen. Es wird nichts automatisch hochgeladen.",
+                "description": "Dieser Beitrag ist für eine zuverlässige GitHub-Vorbelegung zu groß. Prüfe oder kopiere das bereinigte JSON unten und wähle anschließend An Community-Katalog senden. Vorgeschlagene Datei: `{filename}`. Es wird nichts automatisch hochgeladen.",
                 "data": {
                     "contribution_json": "Bereinigtes JSON des Beitrags"
                 },
@@ -619,6 +619,294 @@
                         "description": "Gib die aktuelle IP-Adresse oder den Hostnamen von {device_name} ein. Die Adresse wird erst nach einer erfolgreichen authentifizierten LocalTuya-Prüfung gespeichert.",
                         "data": {
                             "host": "IP-Adresse / Host"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_host_unreachable": {
+            "title": "LocalTuya kann {device_name} nicht erreichen",
+            "fix_flow": {
+                "error": {
+                    "cannot_connect": "Das Gerät antwortet unter dieser Adresse nicht. Prüfe, ob es eingeschaltet und von Home Assistant erreichbar ist.",
+                    "invalid_auth": "Das Gerät antwortet, lehnt aber die gespeicherten lokalen Zugangsdaten ab. Zugangsdaten aktualisieren oder neu konfigurieren.",
+                    "empty_dps": "Die Verbindung war erfolgreich, aber es wurden keine Datenpunkte zurückgegeben. Erneut versuchen, wenn das Gerät vollständig online ist.",
+                    "invalid_host": "Gib eine gültige LAN-IP-Adresse oder einen Hostnamen ein.",
+                    "unknown": "Die Adresse konnte nicht sicher validiert werden. Die bestehende Konfiguration wurde nicht geändert.",
+                    "stale": "Die Geräteadresse hat sich während der Prüfung erneut geändert. Erkennung wiederholen oder die aktuelle Adresse manuell eingeben.",
+                    "device_not_found": "Das konfigurierte Gerät wurde bei der LAN-Erkennung nicht gefunden. Die aktuelle Adresse kann manuell eingegeben werden.",
+                    "discovery_unavailable": "Die automatische LAN-Erkennung ist derzeit nicht verfügbar. Gib die Geräteadresse manuell ein.",
+                    "discovery_failed": "Die automatische LAN-Erkennung ist fehlgeschlagen. Geräteadresse manuell eingeben oder später erneut versuchen."
+                },
+                "step": {
+                    "init": {
+                        "title": "LAN-Verbindung für {device_name} reparieren",
+                        "description": "Das Gerät ist unter der gespeicherten LAN-Adresse nicht erreichbar. Gateway/Gerät erneut erkennen oder die aktuelle Adresse eingeben; LocalTuya prüft sie vor dem Speichern.",
+                        "menu_options": {
+                            "rediscover": "Automatische LAN-Erkennung erneut versuchen",
+                            "manual_host": "IP-Adresse / Hostnamen manuell eingeben"
+                        }
+                    },
+                    "manual_host": {
+                        "title": "Aktuelle LAN-Adresse eingeben",
+                        "description": "Gib die aktuelle IP-Adresse oder den Hostnamen für {device_name} ein. Die Adresse wird nur nach erfolgreicher authentifizierter LocalTuya-Prüfung gespeichert.",
+                        "data": {
+                            "host": "IP-Adresse / Host"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_auth_or_protocol": {
+            "title": "LocalTuya kann {device_name} nicht authentifizieren",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "Das konfigurierte Gerät existiert nicht mehr."
+                },
+                "error": {
+                    "cannot_connect": "Das Gerät konnte über LAN nicht erreicht werden. Die Konfiguration wurde nicht geändert.",
+                    "invalid_auth": "Das Gerät hat die gespeicherten Zugangsdaten abgelehnt. Die Konfiguration wurde nicht geändert.",
+                    "empty_dps": "Das Gerät verbindet sich, liefert aber keine Datenpunkte. Die Konfiguration wurde nicht geändert.",
+                    "unknown": "Die Validierung ist sicher fehlgeschlagen. Die bestehende Konfiguration blieb unverändert.",
+                    "qr_account_not_linked": "Mit diesem LocalTuya-Eintrag ist kein Smart-Life/Tuya-QR-Konto verknüpft. Lokalen Schlüssel manuell eingeben oder das Konto in den LocalTuya-Optionen neu verknüpfen.",
+                    "qr_reauth_required": "Die gespeicherte Tuya-Autorisierung ist abgelaufen. Smart-Life/Tuya-Konto neu verknüpfen und erneut versuchen.",
+                    "credential_refresh_failed": "LocalTuya konnte keinen verwendbaren lokalen Schlüssel aus dem verknüpften Tuya-Konto abrufen."
+                },
+                "step": {
+                    "init": {
+                        "title": "{device_name} reparieren",
+                        "description": "Das LAN-Gerät antwortet, aber Authentifizierung oder Protokollprüfung schlägt fehl. Lokalen Schlüssel aktualisieren/eingeben, Protokoll wählen oder erneut versuchen.",
+                        "menu_options": {
+                            "refresh_credentials": "Lokalen Schlüssel aus verknüpftem Tuya-Konto aktualisieren",
+                            "manual_credentials": "Lokalen Schlüssel manuell eingeben",
+                            "select_protocol": "Protokollversion auswählen",
+                            "retry": "Aktuelle Konfiguration erneut versuchen"
+                        }
+                    },
+                    "retry": {
+                        "title": "{device_name} erneut prüfen",
+                        "description": "Gespeicherte LAN-Adresse, Zugangsdaten, Protokoll und Datenpunkte erneut validieren, ohne sie vorher zu ändern."
+                    },
+                    "manual_credentials": {
+                        "title": "Lokalen Schlüssel für {device_name} aktualisieren",
+                        "description": "Gib den aktuellen lokalen Schlüssel ein. Für ein Gateway-Untergerät den lokalen Gateway-Schlüssel verwenden. Er wird nur nach erfolgreicher LAN-Prüfung gespeichert.",
+                        "data": {
+                            "local_key": "Lokaler Schlüssel"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "Lokalen Schlüssel für {device_name} aktualisieren",
+                        "description": "Das verknüpfte Smart-Life/Tuya-Konto bei Bedarf synchronisieren und den aktualisierten Schlüssel vor dem Speichern über LAN prüfen."
+                    },
+                    "select_protocol": {
+                        "title": "Protokoll für {device_name} auswählen",
+                        "description": "Automatisch oder ein bestimmtes Tuya-LAN-Protokoll auswählen. LocalTuya validiert die Auswahl vor dem Speichern.",
+                        "data": {
+                            "protocol_version": "Protokollversion"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_protocol_not_detected": {
+            "title": "LocalTuya konnte das Protokoll für {device_name} nicht erkennen",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "Das konfigurierte Gerät existiert nicht mehr."
+                },
+                "error": {
+                    "cannot_connect": "Das Gerät konnte über LAN nicht erreicht werden. Die Konfiguration wurde nicht geändert.",
+                    "invalid_auth": "Das Gerät hat die gespeicherten Zugangsdaten abgelehnt. Die Konfiguration wurde nicht geändert.",
+                    "empty_dps": "Das Gerät verbindet sich, liefert aber keine Datenpunkte. Die Konfiguration wurde nicht geändert.",
+                    "unknown": "Die Validierung ist sicher fehlgeschlagen. Die bestehende Konfiguration blieb unverändert.",
+                    "qr_account_not_linked": "Mit diesem LocalTuya-Eintrag ist kein Smart-Life/Tuya-QR-Konto verknüpft. Lokalen Schlüssel manuell eingeben oder das Konto in den LocalTuya-Optionen neu verknüpfen.",
+                    "qr_reauth_required": "Die gespeicherte Tuya-Autorisierung ist abgelaufen. Smart-Life/Tuya-Konto neu verknüpfen und erneut versuchen.",
+                    "credential_refresh_failed": "LocalTuya konnte keinen verwendbaren lokalen Schlüssel aus dem verknüpften Tuya-Konto abrufen."
+                },
+                "step": {
+                    "init": {
+                        "title": "{device_name} reparieren",
+                        "description": "Die automatische Erkennung hat kein funktionierendes Tuya-LAN-Protokoll gefunden. Protokoll ausdrücklich auswählen oder erneut versuchen.",
+                        "menu_options": {
+                            "refresh_credentials": "Lokalen Schlüssel aus verknüpftem Tuya-Konto aktualisieren",
+                            "manual_credentials": "Lokalen Schlüssel manuell eingeben",
+                            "select_protocol": "Protokollversion auswählen",
+                            "retry": "Aktuelle Konfiguration erneut versuchen"
+                        }
+                    },
+                    "retry": {
+                        "title": "{device_name} erneut prüfen",
+                        "description": "Gespeicherte LAN-Adresse, Zugangsdaten, Protokoll und Datenpunkte erneut validieren, ohne sie vorher zu ändern."
+                    },
+                    "manual_credentials": {
+                        "title": "Lokalen Schlüssel für {device_name} aktualisieren",
+                        "description": "Gib den aktuellen lokalen Schlüssel ein. Für ein Gateway-Untergerät den lokalen Gateway-Schlüssel verwenden. Er wird nur nach erfolgreicher LAN-Prüfung gespeichert.",
+                        "data": {
+                            "local_key": "Lokaler Schlüssel"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "Lokalen Schlüssel für {device_name} aktualisieren",
+                        "description": "Das verknüpfte Smart-Life/Tuya-Konto bei Bedarf synchronisieren und den aktualisierten Schlüssel vor dem Speichern über LAN prüfen."
+                    },
+                    "select_protocol": {
+                        "title": "Protokoll für {device_name} auswählen",
+                        "description": "Automatisch oder ein bestimmtes Tuya-LAN-Protokoll auswählen. LocalTuya validiert die Auswahl vor dem Speichern.",
+                        "data": {
+                            "protocol_version": "Protokollversion"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_empty_dps": {
+            "title": "LocalTuya hat keine Datenpunkte von {device_name} erhalten",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "Das konfigurierte Gerät existiert nicht mehr."
+                },
+                "error": {
+                    "cannot_connect": "Das Gerät konnte über LAN nicht erreicht werden. Die Konfiguration wurde nicht geändert.",
+                    "invalid_auth": "Das Gerät hat die gespeicherten Zugangsdaten abgelehnt. Die Konfiguration wurde nicht geändert.",
+                    "empty_dps": "Das Gerät verbindet sich, liefert aber keine Datenpunkte. Die Konfiguration wurde nicht geändert.",
+                    "unknown": "Die Validierung ist sicher fehlgeschlagen. Die bestehende Konfiguration blieb unverändert.",
+                    "qr_account_not_linked": "Mit diesem LocalTuya-Eintrag ist kein Smart-Life/Tuya-QR-Konto verknüpft. Lokalen Schlüssel manuell eingeben oder das Konto in den LocalTuya-Optionen neu verknüpfen.",
+                    "qr_reauth_required": "Die gespeicherte Tuya-Autorisierung ist abgelaufen. Smart-Life/Tuya-Konto neu verknüpfen und erneut versuchen.",
+                    "credential_refresh_failed": "LocalTuya konnte keinen verwendbaren lokalen Schlüssel aus dem verknüpften Tuya-Konto abrufen."
+                },
+                "step": {
+                    "init": {
+                        "title": "{device_name} reparieren",
+                        "description": "Das Gerät wurde authentifiziert, liefert aber keine Datenpunkte. Erneut versuchen oder das Protokoll ausdrücklich auswählen.",
+                        "menu_options": {
+                            "refresh_credentials": "Lokalen Schlüssel aus verknüpftem Tuya-Konto aktualisieren",
+                            "manual_credentials": "Lokalen Schlüssel manuell eingeben",
+                            "select_protocol": "Protokollversion auswählen",
+                            "retry": "Aktuelle Konfiguration erneut versuchen"
+                        }
+                    },
+                    "retry": {
+                        "title": "{device_name} erneut prüfen",
+                        "description": "Gespeicherte LAN-Adresse, Zugangsdaten, Protokoll und Datenpunkte erneut validieren, ohne sie vorher zu ändern."
+                    },
+                    "manual_credentials": {
+                        "title": "Lokalen Schlüssel für {device_name} aktualisieren",
+                        "description": "Gib den aktuellen lokalen Schlüssel ein. Für ein Gateway-Untergerät den lokalen Gateway-Schlüssel verwenden. Er wird nur nach erfolgreicher LAN-Prüfung gespeichert.",
+                        "data": {
+                            "local_key": "Lokaler Schlüssel"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "Lokalen Schlüssel für {device_name} aktualisieren",
+                        "description": "Das verknüpfte Smart-Life/Tuya-Konto bei Bedarf synchronisieren und den aktualisierten Schlüssel vor dem Speichern über LAN prüfen."
+                    },
+                    "select_protocol": {
+                        "title": "Protokoll für {device_name} auswählen",
+                        "description": "Automatisch oder ein bestimmtes Tuya-LAN-Protokoll auswählen. LocalTuya validiert die Auswahl vor dem Speichern.",
+                        "data": {
+                            "protocol_version": "Protokollversion"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_invalid_configuration": {
+            "title": "LocalTuya hat eine ungültige Konfiguration für {device_name} gefunden",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "Das konfigurierte Gerät existiert nicht mehr."
+                },
+                "error": {
+                    "cannot_connect": "Das Gerät konnte über LAN nicht erreicht werden. Die Konfiguration wurde nicht geändert.",
+                    "invalid_auth": "Das Gerät hat die gespeicherten Zugangsdaten abgelehnt. Die Konfiguration wurde nicht geändert.",
+                    "empty_dps": "Das Gerät verbindet sich, liefert aber keine Datenpunkte. Die Konfiguration wurde nicht geändert.",
+                    "unknown": "Die Validierung ist sicher fehlgeschlagen. Die bestehende Konfiguration blieb unverändert.",
+                    "qr_account_not_linked": "Mit diesem LocalTuya-Eintrag ist kein Smart-Life/Tuya-QR-Konto verknüpft. Lokalen Schlüssel manuell eingeben oder das Konto in den LocalTuya-Optionen neu verknüpfen.",
+                    "qr_reauth_required": "Die gespeicherte Tuya-Autorisierung ist abgelaufen. Smart-Life/Tuya-Konto neu verknüpfen und erneut versuchen.",
+                    "credential_refresh_failed": "LocalTuya konnte keinen verwendbaren lokalen Schlüssel aus dem verknüpften Tuya-Konto abrufen."
+                },
+                "step": {
+                    "init": {
+                        "title": "{device_name} reparieren",
+                        "description": "Die gespeicherte LocalTuya-Konfiguration kann nicht sicher validiert werden. Zugangsdaten/Protokoll prüfen oder ohne Verlust der aktuellen Konfiguration erneut versuchen.",
+                        "menu_options": {
+                            "refresh_credentials": "Lokalen Schlüssel aus verknüpftem Tuya-Konto aktualisieren",
+                            "manual_credentials": "Lokalen Schlüssel manuell eingeben",
+                            "select_protocol": "Protokollversion auswählen",
+                            "retry": "Aktuelle Konfiguration erneut versuchen"
+                        }
+                    },
+                    "retry": {
+                        "title": "{device_name} erneut prüfen",
+                        "description": "Gespeicherte LAN-Adresse, Zugangsdaten, Protokoll und Datenpunkte erneut validieren, ohne sie vorher zu ändern."
+                    },
+                    "manual_credentials": {
+                        "title": "Lokalen Schlüssel für {device_name} aktualisieren",
+                        "description": "Gib den aktuellen lokalen Schlüssel ein. Für ein Gateway-Untergerät den lokalen Gateway-Schlüssel verwenden. Er wird nur nach erfolgreicher LAN-Prüfung gespeichert.",
+                        "data": {
+                            "local_key": "Lokaler Schlüssel"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "Lokalen Schlüssel für {device_name} aktualisieren",
+                        "description": "Das verknüpfte Smart-Life/Tuya-Konto bei Bedarf synchronisieren und den aktualisierten Schlüssel vor dem Speichern über LAN prüfen."
+                    },
+                    "select_protocol": {
+                        "title": "Protokoll für {device_name} auswählen",
+                        "description": "Automatisch oder ein bestimmtes Tuya-LAN-Protokoll auswählen. LocalTuya validiert die Auswahl vor dem Speichern.",
+                        "data": {
+                            "protocol_version": "Protokollversion"
+                        }
+                    }
+                }
+            }
+        },
+        "device_health_probe_error": {
+            "title": "LocalTuya konnte die Zustandsprüfung für {device_name} nicht abschließen",
+            "fix_flow": {
+                "abort": {
+                    "device_not_found": "Das konfigurierte Gerät existiert nicht mehr."
+                },
+                "error": {
+                    "cannot_connect": "Das Gerät konnte über LAN nicht erreicht werden. Die Konfiguration wurde nicht geändert.",
+                    "invalid_auth": "Das Gerät hat die gespeicherten Zugangsdaten abgelehnt. Die Konfiguration wurde nicht geändert.",
+                    "empty_dps": "Das Gerät verbindet sich, liefert aber keine Datenpunkte. Die Konfiguration wurde nicht geändert.",
+                    "unknown": "Die Validierung ist sicher fehlgeschlagen. Die bestehende Konfiguration blieb unverändert.",
+                    "qr_account_not_linked": "Mit diesem LocalTuya-Eintrag ist kein Smart-Life/Tuya-QR-Konto verknüpft. Lokalen Schlüssel manuell eingeben oder das Konto in den LocalTuya-Optionen neu verknüpfen.",
+                    "qr_reauth_required": "Die gespeicherte Tuya-Autorisierung ist abgelaufen. Smart-Life/Tuya-Konto neu verknüpfen und erneut versuchen.",
+                    "credential_refresh_failed": "LocalTuya konnte keinen verwendbaren lokalen Schlüssel aus dem verknüpften Tuya-Konto abrufen."
+                },
+                "step": {
+                    "init": {
+                        "title": "{device_name} reparieren",
+                        "description": "Die begrenzte LocalTuya-Zustandsprüfung ist unerwartet fehlgeschlagen. Aktuelle Konfiguration erneut versuchen oder Protokoll ausdrücklich auswählen.",
+                        "menu_options": {
+                            "refresh_credentials": "Lokalen Schlüssel aus verknüpftem Tuya-Konto aktualisieren",
+                            "manual_credentials": "Lokalen Schlüssel manuell eingeben",
+                            "select_protocol": "Protokollversion auswählen",
+                            "retry": "Aktuelle Konfiguration erneut versuchen"
+                        }
+                    },
+                    "retry": {
+                        "title": "{device_name} erneut prüfen",
+                        "description": "Gespeicherte LAN-Adresse, Zugangsdaten, Protokoll und Datenpunkte erneut validieren, ohne sie vorher zu ändern."
+                    },
+                    "manual_credentials": {
+                        "title": "Lokalen Schlüssel für {device_name} aktualisieren",
+                        "description": "Gib den aktuellen lokalen Schlüssel ein. Für ein Gateway-Untergerät den lokalen Gateway-Schlüssel verwenden. Er wird nur nach erfolgreicher LAN-Prüfung gespeichert.",
+                        "data": {
+                            "local_key": "Lokaler Schlüssel"
+                        }
+                    },
+                    "refresh_credentials": {
+                        "title": "Lokalen Schlüssel für {device_name} aktualisieren",
+                        "description": "Das verknüpfte Smart-Life/Tuya-Konto bei Bedarf synchronisieren und den aktualisierten Schlüssel vor dem Speichern über LAN prüfen."
+                    },
+                    "select_protocol": {
+                        "title": "Protokoll für {device_name} auswählen",
+                        "description": "Automatisch oder ein bestimmtes Tuya-LAN-Protokoll auswählen. LocalTuya validiert die Auswahl vor dem Speichern.",
+                        "data": {
+                            "protocol_version": "Protokollversion"
                         }
                     }
                 }

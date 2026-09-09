@@ -20,6 +20,26 @@ class QrImportParsingTests(unittest.TestCase):
         self.assertEqual(devices["device-b"]["host"], "192.168.1.31")
         self.assertEqual(devices["device-b"]["protocol_version"], "3.3")
 
+    def test_gateway_routing_metadata_is_preserved(self):
+        devices = _parse_import_payload(json.dumps({
+            "id": "child-1", "key": "gateway-key", "gateway_id": "gateway-1",
+            "node_id": "node-1",
+        }))
+        self.assertEqual(devices["child-1"]["gateway_id"], "gateway-1")
+        self.assertEqual(devices["child-1"]["node_id"], "node-1")
+
+    def test_true_subdevice_uses_uuid_as_cid_but_string_false_does_not(self):
+        true_child = _parse_import_payload(json.dumps({
+            "id": "child-true", "key": "gateway-key", "gateway_id": "gateway-1",
+            "sub": True, "uuid": "uuid-cid",
+        }))["child-true"]
+        false_child = _parse_import_payload(json.dumps({
+            "id": "child-false", "key": "gateway-key", "gateway_id": "gateway-1",
+            "sub": "false", "uuid": "must-not-be-cid",
+        }))["child-false"]
+        self.assertEqual(true_child["node_id"], "uuid-cid")
+        self.assertNotIn("node_id", false_child)
+
 class QrImportFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_user_menu_exposes_three_onboarding_modes(self):
         result = await LocaltuyaConfigFlow().async_step_user()

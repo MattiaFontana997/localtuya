@@ -64,7 +64,7 @@ COMMUNITY_CATALOG_REPOSITORY_URL = (
 COMMUNITY_CATALOG_NEW_SUBMISSION_URL = (
     f"{COMMUNITY_CATALOG_REPOSITORY_URL}/new/main/submissions"
 )
-MAX_GITHUB_PREFILL_URL_LENGTH = 30000
+MAX_GITHUB_PREFILL_URL_LENGTH = 7500
 
 
 def _json_clone(value: Any) -> Any:
@@ -436,11 +436,13 @@ def build_mapping_contribution_package(
         suggested_filename,
         submission_prefill_json,
     )
+    prefill_complete = "value=" in new_submission_url
 
     return {
         "suggested_filename": suggested_filename,
         "repository_url": COMMUNITY_CATALOG_REPOSITORY_URL,
         "new_submission_url": new_submission_url,
+        "prefill_complete": prefill_complete,
         "preview": preview,
         "privacy": {
             "automatic_upload": False,

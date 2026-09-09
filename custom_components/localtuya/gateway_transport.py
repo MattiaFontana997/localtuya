@@ -303,7 +303,10 @@ class SharedGatewayTransport:
                 self.parent.transport = None
                 if transport is not None:
                     transport.close()
-            self._disconnected = True
+            if not self._closed:
+                # Heartbeat failure is a physical disconnect too. Notify every
+                # logical child once and make the pooled session non-reusable.
+                self.parent_disconnected()
 
     def parent_disconnected(self) -> None:
         """Invalidate the pooled physical session and notify every child."""

@@ -11,14 +11,21 @@ from homeassistant.components.repairs import ConfirmRepairFlow
 from homeassistant.const import CONF_DEVICES, CONF_HOST
 
 from custom_components.localtuya.const import (
+    ATTR_UPDATED_AT,
+    CONF_DPS_STRINGS,
     CONF_LOCAL_KEY,
     CONF_PROTOCOL_VERSION,
     DATA_DISCOVERY,
     DOMAIN,
 )
 from custom_components.localtuya.host_recovery import HostRecoveryOutcome, HostRecoveryResult
-from custom_components.localtuya.repair_issues import host_recovery_issue_id
+from custom_components.localtuya.qr_onboarding import CONF_QR_AUTH
+from custom_components.localtuya.repair_issues import (
+    device_health_issue_id,
+    host_recovery_issue_id,
+)
 from custom_components.localtuya.repairs import (
+    DeviceHealthRepairFlow,
     HostRecoveryRepairFlow,
     _find_repair_target,
     _validation_error_key,
@@ -31,11 +38,19 @@ class FakeConfigEntries:
 
     def __init__(self, entries):
         self._entries = list(entries)
+        self.reload_calls = []
 
     def async_entries(self, domain=None):
         if domain is not None and domain != DOMAIN:
             return []
         return list(self._entries)
+
+    def async_update_entry(self, entry, *, data):
+        entry.data = data
+
+    async def async_reload(self, entry_id):
+        self.reload_calls.append(entry_id)
+        return True
 
 
 class RepairsTests(unittest.IsolatedAsyncioTestCase):
@@ -107,6 +122,108 @@ class RepairsTests(unittest.IsolatedAsyncioTestCase):
         flow = await async_create_fix_flow(self.hass, "other_issue", None)
 
         self.assertIsInstance(flow, ConfirmRepairFlow)
+
+    async def test_device_health_issue_routes_to_device_repair_flow(self):
+        flow = await async_create_fix_flow(
+            self.hass,
+            device_health_issue_id(self.device_id, "auth_or_protocol"),
+            None,
+        )
+        self.assertIsInstance(flow, DeviceHealthRepairFlow)
+        flow.hass = self.hass
+        result = await flow.async_step_init()
+        self.assertEqual(
+            result["menu_options"],
+            ["refresh_credentials", "manual_credentials", "select_protocol", "retry"],
+        )
+
+    async def test_host_unreachable_health_issue_routes_to_host_repair(self):
+        flow = await async_create_fix_flow(
+            self.hass,
+            device_health_issue_id(self.device_id, "host_unreachable"),
+            None,
+        )
+        self.assertIsInstance(flow, HostRecoveryRepairFlow)
+
+    async def test_retry_persists_only_after_validation_and_reloads(self):
+        target = _find_repair_target(
+            self.hass,
+            device_health_issue_id(self.device_id, "auth_or_protocol"),
+        )
+        flow = DeviceHealthRepairFlow(target)
+        flow.hass = self.hass
+        with (
+            patch(
+                "custom_components.localtuya.repairs.validate_input",
+                new=AsyncMock(return_value=(["1 (value: True)"], "3.4")),
+            ),
+            patch("custom_components.localtuya.repairs.async_clear_device_health_issues"),
+            patch("custom_components.localtuya.repairs.async_clear_host_recovery_issue"),
+        ):
+            result = await flow.async_step_retry()
+        self.assertEqual(result["type"].value, "create_entry")
+        saved = self.entry.data[CONF_DEVICES][self.device_id]
+        self.assertEqual(saved[CONF_PROTOCOL_VERSION], "3.4")
+        self.assertEqual(saved[CONF_DPS_STRINGS], ["1 (value: True)"])
+        self.assertGreater(int(self.entry.data[ATTR_UPDATED_AT]), 1_000_000_000_000)
+        self.assertEqual(self.hass.config_entries.reload_calls, ["entry-1"])
+
+    async def test_failed_manual_key_never_overwrites_saved_key(self):
+        target = _find_repair_target(
+            self.hass,
+            device_health_issue_id(self.device_id, "auth_or_protocol"),
+        )
+        flow = DeviceHealthRepairFlow(target)
+        flow.hass = self.hass
+        from custom_components.localtuya.config_flow import InvalidAuth
+        with patch(
+            "custom_components.localtuya.repairs.validate_input",
+            new=AsyncMock(side_effect=InvalidAuth()),
+        ):
+            result = await flow.async_step_manual_credentials(
+                {CONF_LOCAL_KEY: "wrong-new-key"}
+            )
+        self.assertEqual(result["errors"], {"base": "invalid_auth"})
+        self.assertEqual(
+            self.entry.data[CONF_DEVICES][self.device_id][CONF_LOCAL_KEY],
+            "private-key",
+        )
+
+    async def test_qr_refresh_for_child_uses_gateway_key(self):
+        self.entry.data[CONF_QR_AUTH] = {"saved": "auth"}
+        child = self.entry.data[CONF_DEVICES][self.device_id]
+        child["node_id"] = "node-1"
+        child["gateway_id"] = "gateway-1"
+        target = _find_repair_target(
+            self.hass,
+            device_health_issue_id(self.device_id, "auth_or_protocol"),
+        )
+        flow = DeviceHealthRepairFlow(target)
+        flow.hass = self.hass
+        fake_client = SimpleNamespace(
+            async_get_devices=AsyncMock(return_value={
+                self.device_id: {
+                    "gateway_local_key": "fresh-gateway-key",
+                    CONF_LOCAL_KEY: "child-key-must-not-win",
+                }
+            }),
+            auth={"refreshed": "auth"},
+        )
+        with (
+            patch("custom_components.localtuya.repairs.QrCloudClient", return_value=fake_client),
+            patch(
+                "custom_components.localtuya.repairs.validate_input",
+                new=AsyncMock(return_value=(["20 (value: True)"], "3.4")),
+            ) as validator,
+            patch("custom_components.localtuya.repairs.async_clear_device_health_issues"),
+            patch("custom_components.localtuya.repairs.async_clear_host_recovery_issue"),
+        ):
+            result = await flow.async_step_refresh_credentials()
+        self.assertEqual(result["type"].value, "create_entry")
+        saved = self.entry.data[CONF_DEVICES][self.device_id]
+        self.assertEqual(saved[CONF_LOCAL_KEY], "fresh-gateway-key")
+        self.assertEqual(self.entry.data[CONF_QR_AUTH], {"refreshed": "auth"})
+        self.assertEqual(validator.await_args.args[1][CONF_LOCAL_KEY], "fresh-gateway-key")
 
     async def test_changed_host_is_applied_only_through_validated_recovery(self):
         flow = self._flow()

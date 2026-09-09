@@ -151,6 +151,31 @@ class TranslationCoverageTests(
             {"host"},
         )
 
+    def test_device_health_repair_translation_contract(self):
+        issues = self.english.get("issues", {})
+        expected = {
+            "device_health_host_unreachable",
+            "device_health_auth_or_protocol",
+            "device_health_protocol_not_detected",
+            "device_health_empty_dps",
+            "device_health_invalid_configuration",
+            "device_health_probe_error",
+        }
+        self.assertTrue(expected.issubset(issues))
+        host_steps = issues["device_health_host_unreachable"]["fix_flow"]["step"]
+        self.assertEqual(set(host_steps), {"init", "manual_host"})
+        for key in expected - {"device_health_host_unreachable"}:
+            fix_flow = issues[key]["fix_flow"]
+            self.assertEqual(
+                set(fix_flow["step"]),
+                {"init", "retry", "manual_credentials", "refresh_credentials", "select_protocol"},
+            )
+            self.assertEqual(
+                set(fix_flow["step"]["init"]["menu_options"]),
+                {"refresh_credentials", "manual_credentials", "select_protocol", "retry"},
+            )
+            self.assertIn("device_not_found", fix_flow["abort"])
+
     def test_supported_languages_have_all_keys(
         self,
     ):

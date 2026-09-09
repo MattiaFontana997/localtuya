@@ -6,9 +6,16 @@ import unittest
 from unittest.mock import patch
 
 from custom_components.localtuya.host_recovery import HostRecoveryOutcome
+from custom_components.localtuya.device_health import (
+    DeviceHealthFailure,
+    DeviceHealthReport,
+    DeviceHealthStage,
+)
 from custom_components.localtuya.repair_issues import (
     async_clear_host_recovery_issue,
+    async_sync_device_health_issue,
     async_sync_host_recovery_issue,
+    device_health_issue_id,
     host_recovery_issue_id,
 )
 
@@ -112,6 +119,30 @@ class RepairIssueTests(unittest.TestCase):
 
         create_issue.assert_not_called()
         delete_issue.assert_not_called()
+
+    @patch("custom_components.localtuya.repair_issues.ir.async_delete_issue")
+    @patch("custom_components.localtuya.repair_issues.ir.async_create_issue")
+    def test_health_failure_creates_specific_private_fixable_issue(
+        self, create_issue, delete_issue
+    ):
+        hass = object()
+        device_id = "private-health-device"
+        report = DeviceHealthReport(
+            requested_protocol="auto",
+            stage=DeviceHealthStage.PROTOCOL,
+            failure=DeviceHealthFailure.AUTH_OR_PROTOCOL,
+        )
+        async_sync_device_health_issue(
+            hass, device_id=device_id, device_name="Bedroom lamp", report=report
+        )
+        self.assertTrue(delete_issue.called)
+        create_issue.assert_called_once()
+        args = create_issue.call_args.args
+        kwargs = create_issue.call_args.kwargs
+        self.assertEqual(args[2], device_health_issue_id(device_id, "auth_or_protocol"))
+        self.assertNotIn(device_id, args[2])
+        self.assertTrue(kwargs["is_fixable"])
+        self.assertEqual(kwargs["translation_key"], "device_health_auth_or_protocol")
 
     @patch("custom_components.localtuya.repair_issues.ir.async_delete_issue")
     def test_explicit_clear_uses_hashed_issue_id(self, delete_issue):
