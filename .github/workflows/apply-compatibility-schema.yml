@@ -20,6 +20,8 @@ jobs:
           fetch-depth: 0
       - name: Apply final 6.7 patch
         run: python scripts/_compat_catalog_patch.py
+      - name: Install test dependencies
+        run: python -m pip install -r requirements_test.txt
       - name: Regenerate compatibility matrix
         run: PYTHONPATH=. python scripts/generate_compatibility_matrix.py
       - name: Compile changed modules
@@ -28,8 +30,6 @@ jobs:
             custom_components/localtuya/device_catalog.py \
             custom_components/localtuya/zero_config.py \
             custom_components/localtuya/qr_onboarding.py
-      - name: Install focused test dependencies
-        run: python -m pip install -r requirements_test.txt
       - name: Run completion regression tests
         run: |
           python -m unittest \
