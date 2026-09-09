@@ -270,6 +270,12 @@ class QrCloudClient:
                 or getattr(device, "parent_id", "")
                 or ""
             ).strip()
+            is_subdevice = bool(getattr(device, "sub", False))
+            device_uuid = str(getattr(device, "uuid", "") or "").strip()
+            if not node_id and is_subdevice and gateway_id and device_uuid:
+                # Some Tuya subdevice records omit node_id. For an explicitly
+                # marked child with a known gateway, UUID is the local CID.
+                node_id = device_uuid
             device_ip = str(getattr(device, "ip", "") or "").strip()
 
             devices[device_id] = {
@@ -683,6 +689,20 @@ def _normalize_import_device(
     ).strip()
     if protocol not in {"auto", "3.1", "3.2", "3.3", "3.4", "3.5"}:
         protocol = "auto"
+    gateway_id = str(
+        raw.get("gateway_id")
+        or raw.get("gatewayId")
+        or raw.get("parent_id")
+        or ""
+    ).strip()
+    node_id = str(
+        raw.get("node_id")
+        or raw.get("cid")
+        or raw.get("device_cid")
+        or ""
+    ).strip()
+    if not node_id and bool(raw.get("sub", False)) and gateway_id:
+        node_id = str(raw.get("uuid") or "").strip()
     result: dict[str, Any] = {
         CONF_FRIENDLY_NAME: name or device_id,
         CONF_HOST: host,
@@ -691,6 +711,10 @@ def _normalize_import_device(
         CONF_PROTOCOL_VERSION: protocol,
         CONF_ENABLE_DEBUG: bool(raw.get(CONF_ENABLE_DEBUG, False)),
     }
+    if node_id:
+        result["node_id"] = node_id
+    if gateway_id:
+        result["gateway_id"] = gateway_id
     product_key = (
         raw.get(CONF_PRODUCT_KEY)
         or raw.get("productKey")

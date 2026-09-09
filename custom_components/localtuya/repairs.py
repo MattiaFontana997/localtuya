@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -126,7 +127,7 @@ class _BaseDeviceRepairFlow(RepairsFlow):
         new_data[CONF_DEVICES][self._target.device_id] = candidate
         if root_updates:
             new_data.update(copy.deepcopy(root_updates))
-        new_data[ATTR_UPDATED_AT] = str(int(asyncio.get_running_loop().time() * 1000))
+        new_data[ATTR_UPDATED_AT] = str(int(time.time() * 1000))
         self.hass.config_entries.async_update_entry(self._target.entry, data=new_data)
         async_clear_device_health_issues(self.hass, self._target.device_id)
         async_clear_host_recovery_issue(self.hass, self._target.device_id)
