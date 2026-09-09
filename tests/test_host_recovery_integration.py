@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 import custom_components.localtuya as integration
 
-from homeassistant.const import CONF_DEVICES, CONF_HOST
+from homeassistant.const import CONF_DEVICE_ID, CONF_DEVICES, CONF_HOST
 
 from custom_components.localtuya.config_flow import CannotConnect
 from custom_components.localtuya.const import (
@@ -234,6 +234,47 @@ class HostRecoveryRuntimeTests(unittest.IsolatedAsyncioTestCase):
         validator.assert_not_awaited()
         self.assertEqual(self.runtime_device.connect_calls, 1)
         self.assertEqual(self.manager.updated, [])
+
+    async def test_gateway_discovery_recovers_child_transport_host(self):
+        """A gateway IP change updates its child without corrupting child metadata."""
+        child_id = "child-device-1"
+        self.entry.data[CONF_DEVICES][child_id] = {
+            CONF_HOST: "192.168.1.80",
+            CONF_LOCAL_KEY: "gateway-private-key",
+            CONF_PROTOCOL_VERSION: "3.4",
+            CONF_ENABLE_DEBUG: False,
+            CONF_PRODUCT_KEY: "child-product",
+            "node_id": "node-123",
+            "gateway_id": "gateway-device-1",
+        }
+        self.hass.data[DOMAIN][TUYA_DEVICES][child_id] = FakeRuntimeDevice()
+        validator = AsyncMock(return_value=(["20 (value: True)"], "3.4"))
+
+        with patch.object(integration, "validate_input", validator):
+            # The gateway itself is intentionally not configured as a LocalTuya
+            # device. Its discovery packet must still recover configured children.
+            FakeDiscovery.instance.callback(
+                {
+                    "gwId": "gateway-device-1",
+                    "ip": "192.168.1.81",
+                    "productKey": "gateway-product",
+                }
+            )
+            await self._drain_new_tasks()
+
+        child = self.entry.data[CONF_DEVICES][child_id]
+        self.assertEqual(child[CONF_HOST], "192.168.1.81")
+        self.assertEqual(child[CONF_PRODUCT_KEY], "child-product")
+        self.assertEqual(child["node_id"], "node-123")
+        self.assertEqual(child["gateway_id"], "gateway-device-1")
+
+        validator.assert_awaited_once()
+        probe_data = validator.await_args.args[1]
+        self.assertEqual(probe_data[CONF_DEVICE_ID], child_id)
+        self.assertEqual(probe_data[CONF_HOST], "192.168.1.81")
+        self.assertEqual(probe_data[CONF_LOCAL_KEY], "gateway-private-key")
+        self.assertEqual(probe_data["node_id"], "node-123")
+        self.assertEqual(probe_data["gateway_id"], "gateway-device-1")
 
     async def test_periodic_reconnect_requests_active_discovery_first(self):
         self.assertEqual(len(self.intervals), 2)
