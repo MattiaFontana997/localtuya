@@ -1,0 +1,135 @@
+name: Harden gateway child metadata
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - .github/workflows/harden-gateway-child-metadata.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+
+      - name: Preserve and derive safe child routing metadata
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("custom_components/localtuya/qr_onboarding.py")
+          text = path.read_text(encoding="utf-8")
+
+          old = '''            local_key = str(getattr(device, "local_key", "") or "").strip()
+              product_id = str(getattr(device, "product_id", "") or "").strip()
+              node_id = str(getattr(device, "node_id", "") or "").strip()
+              gateway_id = str(
+                  getattr(device, "gateway_id", "")
+                  or getattr(device, "gatewayId", "")
+                  or getattr(device, "parent_id", "")
+                  or ""
+              ).strip()
+              device_ip = str(getattr(device, "ip", "") or "").strip()
+          '''
+          new = '''            local_key = str(getattr(device, "local_key", "") or "").strip()
+              product_id = str(getattr(device, "product_id", "") or "").strip()
+              node_id = str(getattr(device, "node_id", "") or "").strip()
+              gateway_id = str(
+                  getattr(device, "gateway_id", "")
+                  or getattr(device, "gatewayId", "")
+                  or getattr(device, "parent_id", "")
+                  or ""
+              ).strip()
+              is_subdevice = bool(getattr(device, "sub", False))
+              device_uuid = str(getattr(device, "uuid", "") or "").strip()
+              if not node_id and is_subdevice and gateway_id and device_uuid:
+                  # Some Tuya child records omit node_id. tuya-local and
+                  # TinyTuya-compatible exports use the child UUID as CID in
+                  # that specific case. Never apply this fallback to direct
+                  # devices or records without a known parent gateway.
+                  node_id = device_uuid
+              device_ip = str(getattr(device, "ip", "") or "").strip()
+          '''
+          if text.count(old) != 1:
+              raise SystemExit("QR device metadata block no longer matches expected state")
+          text = text.replace(old, new, 1)
+
+          old = '''    if protocol not in {"auto", "3.1", "3.2", "3.3", "3.4", "3.5"}:
+              protocol = "auto"
+              result: dict[str, Any] = {
+          '''
+          new = '''    if protocol not in {"auto", "3.1", "3.2", "3.3", "3.4", "3.5"}:
+              protocol = "auto"
+              gateway_id = str(
+                  raw.get("gateway_id")
+                  or raw.get("gatewayId")
+                  or raw.get("parent_id")
+                  or ""
+              ).strip()
+              node_id = str(
+                  raw.get("node_id")
+                  or raw.get("cid")
+                  or raw.get("device_cid")
+                  or ""
+              ).strip()
+              if (
+                  not node_id
+                  and bool(raw.get("sub", False))
+                  and gateway_id
+              ):
+                  node_id = str(raw.get("uuid") or "").strip()
+              result: dict[str, Any] = {
+          '''
+          if text.count(old) != 1:
+              raise SystemExit("import protocol block no longer matches expected state")
+          text = text.replace(old, new, 1)
+
+          old = '''    result: dict[str, Any] = {
+                  CONF_FRIENDLY_NAME: name or device_id,
+                  CONF_HOST: host,
+                  CONF_DEVICE_ID: device_id,
+                  CONF_LOCAL_KEY: local_key,
+                  CONF_PROTOCOL_VERSION: protocol,
+                  CONF_ENABLE_DEBUG: bool(raw.get(CONF_ENABLE_DEBUG, False)),
+              }
+              product_key = (
+          '''
+          new = '''    result: dict[str, Any] = {
+                  CONF_FRIENDLY_NAME: name or device_id,
+                  CONF_HOST: host,
+                  CONF_DEVICE_ID: device_id,
+                  CONF_LOCAL_KEY: local_key,
+                  CONF_PROTOCOL_VERSION: protocol,
+                  CONF_ENABLE_DEBUG: bool(raw.get(CONF_ENABLE_DEBUG, False)),
+              }
+              if node_id:
+                  result["node_id"] = node_id
+              if gateway_id:
+                  result["gateway_id"] = gateway_id
+              product_key = (
+          '''
+          if text.count(old) != 1:
+              raise SystemExit("import result block no longer matches expected state")
+          text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate and push
+        shell: bash
+        run: |
+          python -m compileall -q custom_components/localtuya/qr_onboarding.py
+          git rm .github/workflows/harden-gateway-child-metadata.yml
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/localtuya/qr_onboarding.py
+          git commit -m "Harden gateway child routing metadata"
+          git push origin HEAD:develop
