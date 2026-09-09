@@ -21,7 +21,7 @@ jobs:
       - name: Apply final 6.7 patch
         run: python scripts/_compat_catalog_patch.py
       - name: Regenerate compatibility matrix
-        run: python scripts/generate_compatibility_matrix.py
+        run: PYTHONPATH=. python scripts/generate_compatibility_matrix.py
       - name: Compile changed modules
         run: |
           python -m compileall -q \
