@@ -28,8 +28,7 @@ jobs:
           path = Path("custom_components/localtuya/__init__.py")
           text = path.read_text(encoding="utf-8")
 
-          marker = '''    def _device_discovered(device):
-          '''
+          marker = "    def _device_discovered(device):\n"
 
           helper = '''    def _gateway_child_targets(gateway_id):
               """Return configured child devices routed through one gateway."""
@@ -156,25 +155,24 @@ jobs:
               raise SystemExit("device discovery marker no longer matches expected develop state")
           text = text.replace(marker, helper, 1)
 
-          needle = '''        device_id = str(device_id)
-              device_ip = str(device_ip)
-
-              entry = async_config_entry_by_device_id(
-          '''
-          replacement = '''        device_id = str(device_id)
-              device_ip = str(device_ip)
-
-              # A BLE/Zigbee child has no own LAN address. When the gateway is
-              # rediscovered at a new IP, validate that address through each
-              # configured child before persisting it. The child Device ID and
-              # cid/node_id remain unchanged; only the gateway transport host moves.
-              _schedule_gateway_child_recovery(
-                  device_id,
-                  device_ip,
-              )
-
-              entry = async_config_entry_by_device_id(
-          '''
+          needle = (
+              "        device_id = str(device_id)\n"
+              "        device_ip = str(device_ip)\n\n"
+              "        entry = async_config_entry_by_device_id(\n"
+          )
+          replacement = (
+              "        device_id = str(device_id)\n"
+              "        device_ip = str(device_ip)\n\n"
+              "        # A BLE/Zigbee child has no own LAN address. When the gateway is\n"
+              "        # rediscovered at a new IP, validate that address through each\n"
+              "        # configured child before persisting it. The child Device ID and\n"
+              "        # cid/node_id remain unchanged; only the gateway transport host moves.\n"
+              "        _schedule_gateway_child_recovery(\n"
+              "            device_id,\n"
+              "            device_ip,\n"
+              "        )\n\n"
+              "        entry = async_config_entry_by_device_id(\n"
+          )
 
           if text.count(needle) != 1:
               raise SystemExit("device discovery body no longer matches expected develop state")
@@ -190,6 +188,6 @@ jobs:
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add custom_components/localtuya/__init__.py .github/workflows/gateway-child-host-recovery.yml
+          git add custom_components/localtuya/__init__.py
           git commit -m "Recover gateway child hosts after gateway IP changes"
           git push origin HEAD:develop
