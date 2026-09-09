@@ -2,29 +2,34 @@ name: Strengthen catalog intelligence
 
 on:
   push:
-    branches: [develop]
-    paths: [.github/workflows/catalog-intelligence-ranking.yml]
+    branches:
+      - develop
+    paths:
+      - ".github/workflows/catalog-intelligence-ranking.yml"
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout develop
+        uses: actions/checkout@v7
         with:
           ref: develop
+
       - name: Patch deterministic catalog ranking
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path('custom_components/localtuya/device_catalog.py')
-          s = p.read_text(encoding='utf-8')
-          start = s.index('def _mapping_compatible(')
-          end = s.index('\ndef load_builtin_catalog(', start)
-          new = '''def _mapping_compatible(mapping, product_id, category, available_dps):
+
+          path = Path("custom_components/localtuya/device_catalog.py")
+          text = path.read_text(encoding="utf-8")
+          start = text.index("def _mapping_compatible(")
+          end = text.index("\ndef load_builtin_catalog(", start)
+          replacement = '''def _mapping_compatible(mapping, product_id, category, available_dps):
               """Return a deterministic compatibility rank and adapted entities."""
               match = mapping["match"]
               product_ids = tuple(match.get("product_ids", ()))
@@ -62,10 +67,6 @@ jobs:
               category_rank = 1 if expected_category and category == expected_category else 0
               optional_hits = len(optional & available_dps)
               optional_missing = len(optional - available_dps)
-              # Product identity is stronger than a productless fingerprint;
-              # within the same identity prefer higher catalog trust before
-              # increasingly specific LAN evidence. Lexicographic ranking keeps
-              # this deterministic and auditable.
               rank = (
                   1 if kind == "product" else 0,
                   trust_rank,
@@ -77,7 +78,7 @@ jobs:
               return kind, rank, entities
 
 
-          def match_catalog_mapping(catalog, device, available_dps, *, source="remote"):
+def match_catalog_mapping(catalog, device, available_dps, *, source="remote"):
               """Return one unambiguous, highest-authority catalog match."""
               if not catalog:
                   return None
@@ -119,14 +120,15 @@ jobs:
               )
 
 '''
-          p.write_text(s[:start] + new + s[end:], encoding='utf-8')
+          path.write_text(text[:start] + replacement + text[end:], encoding="utf-8")
           PY
+
       - name: Validate and push
         shell: bash
         run: |
           python -m compileall -q custom_components/localtuya/device_catalog.py
-          git rm .github/workflows/catalog-intelligence-ranking.yml
           git diff --check
+          git rm .github/workflows/catalog-intelligence-ranking.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add custom_components/localtuya/device_catalog.py
