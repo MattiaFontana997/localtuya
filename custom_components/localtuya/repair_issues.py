@@ -36,23 +36,25 @@ def host_recovery_issue_id(device_id: str) -> str:
     return f"{_HOST_RECOVERY_ISSUE_PREFIX}{_stable_digest(device_id)}"
 
 
-def device_health_issue_id(device_id: str) -> str:
-    """Return the stable device-health issue ID for a configured device."""
-    return f"{_HEALTH_ISSUE_PREFIX}{_stable_digest(device_id)}"
+def device_health_issue_id(device_id: str, failure: str | None = None) -> str:
+    """Return a stable health issue ID without exposing private identifiers."""
+    suffix = str(failure or "health").strip().lower().replace(" ", "_")
+    return f"{_HEALTH_ISSUE_PREFIX}{suffix}_{_stable_digest(device_id)}"
 
 
 def async_clear_host_recovery_issue(hass, device_id: str) -> None:
     """Remove a previously reported host recovery issue for one device."""
-    ir.async_delete_issue(
-        hass,
-        DOMAIN,
-        host_recovery_issue_id(device_id),
-    )
+    ir.async_delete_issue(hass, DOMAIN, host_recovery_issue_id(device_id))
 
 
-def async_clear_device_health_issue(hass, device_id: str) -> None:
-    """Remove a previously reported health issue for one device."""
-    ir.async_delete_issue(hass, DOMAIN, device_health_issue_id(device_id))
+def async_clear_device_health_issues(hass, device_id: str) -> None:
+    """Remove all known health issues for one device."""
+    for failure in _HEALTH_TRANSLATIONS:
+        ir.async_delete_issue(
+            hass,
+            DOMAIN,
+            device_health_issue_id(device_id, failure),
+        )
 
 
 def _outcome_value(outcome) -> str:
@@ -80,7 +82,6 @@ def async_sync_host_recovery_issue(
         return
 
     name = str(device_name or "LocalTuya device").strip() or "LocalTuya device"
-
     ir.async_create_issue(
         hass,
         DOMAIN,
@@ -90,6 +91,10 @@ def async_sync_host_recovery_issue(
         severity=ir.IssueSeverity.WARNING,
         translation_key="host_recovery_failed",
         translation_placeholders={"device_name": name},
+        data={
+            "kind": "host_recovery",
+            "device_ref": _stable_digest(device_id),
+        },
     )
 
 
@@ -100,33 +105,32 @@ def async_sync_device_health_issue(
     device_name: str | None,
     report,
 ) -> None:
-    """Create/clear a fixable issue for structured device-health failures.
-
-    The issue stores only a friendly name and a stable failure category. It does
-    not expose the Tuya Device ID, host, local key, datapoint values, cloud
-    credentials or exception messages.
-    """
-    issue_id = device_health_issue_id(device_id)
-    ok = bool(getattr(report, "ok", False))
-    if ok:
-        ir.async_delete_issue(hass, DOMAIN, issue_id)
+    """Create/clear fixable issues for structured device-health failures."""
+    if bool(getattr(report, "ok", False)):
+        async_clear_device_health_issues(hass, device_id)
         return
 
     failure = getattr(report, "failure", None)
-    failure_value = getattr(failure, "value", failure)
-    failure_value = str(failure_value or "")
+    failure_value = str(getattr(failure, "value", failure) or "")
     translation_key = _HEALTH_TRANSLATIONS.get(failure_value)
     if not translation_key:
         return
 
+    # Keep exactly one active health issue per device.
+    async_clear_device_health_issues(hass, device_id)
     name = str(device_name or "LocalTuya device").strip() or "LocalTuya device"
     ir.async_create_issue(
         hass,
         DOMAIN,
-        issue_id,
+        device_health_issue_id(device_id, failure_value),
         is_fixable=True,
         is_persistent=True,
         severity=ir.IssueSeverity.WARNING,
         translation_key=translation_key,
         translation_placeholders={"device_name": name},
+        data={
+            "kind": "device_health",
+            "failure": failure_value,
+            "device_ref": _stable_digest(device_id),
+        },
     )
