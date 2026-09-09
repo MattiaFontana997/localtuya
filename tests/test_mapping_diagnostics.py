@@ -554,6 +554,26 @@ class DeviceDiagnosticsIntegrationTests(
 ):
     """Test complete Home Assistant device diagnostics."""
 
+    def setUp(self):
+        from unittest.mock import AsyncMock, patch
+
+        self.health_patcher = patch(
+            "custom_components.localtuya.diagnostics.async_build_device_health_snapshot",
+            new=AsyncMock(
+                return_value={
+                    "runtime_present": False,
+                    "runtime_connected": None,
+                    "preflight": {
+                        "ok": False,
+                        "failure": "probe_error",
+                        "recommended_action": "retry",
+                    },
+                }
+            ),
+        )
+        self.health_patcher.start()
+        self.addCleanup(self.health_patcher.stop)
+
     async def test_device_diagnostics_contains_mapping_and_redacts_network_data(
         self,
     ):

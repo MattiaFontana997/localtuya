@@ -188,13 +188,15 @@ class SharedGatewayTransportTests(unittest.IsolatedAsyncioTestCase):
         first = await self._acquire("child-1", "cid-1", first_listener)
         await self._acquire("child-2", "cid-2", second_listener)
         self.parent.heartbeat = AsyncMock(side_effect=TimeoutError())
+        physical_transport = self.parent.transport
 
         await first._shared._heartbeat_loop()
 
         self.assertFalse(first._shared.alive)
         self.assertEqual(first_listener.disconnects, 1)
         self.assertEqual(second_listener.disconnects, 1)
-        self.parent.transport.close.assert_called_once()
+        self.assertIsNone(self.parent.transport)
+        physical_transport.close.assert_called_once()
 
 
 if __name__ == "__main__":

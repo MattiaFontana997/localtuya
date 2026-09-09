@@ -75,6 +75,11 @@ class RepairsTests(unittest.IsolatedAsyncioTestCase):
             config_entries=FakeConfigEntries([self.entry]),
             data={DOMAIN: {}},
         )
+        self.health_clear_patcher = patch(
+            "custom_components.localtuya.repairs.async_clear_device_health_issues"
+        )
+        self.health_clear = self.health_clear_patcher.start()
+        self.addCleanup(self.health_clear_patcher.stop)
 
     def _flow(self) -> HostRecoveryRepairFlow:
         """Return a repair flow bound to the fake Home Assistant object."""

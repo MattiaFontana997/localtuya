@@ -43,6 +43,11 @@ class HealthRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 }
             }
         )
+        self.issue_sync_patcher = patch(
+            "custom_components.localtuya.health_runtime.async_sync_device_health_issue"
+        )
+        self.issue_sync = self.issue_sync_patcher.start()
+        self.addCleanup(self.issue_sync_patcher.stop)
 
     async def test_snapshot_contains_only_safe_preflight_output(self):
         report = DeviceHealthReport(
@@ -100,7 +105,9 @@ class HealthRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 self.device_config,
             )
 
-        self.assertIsNone(result["preflight"])
+        self.assertFalse(result["preflight"]["ok"])
+        self.assertEqual(result["preflight"]["failure"], "probe_error")
+        self.assertEqual(result["preflight"]["recommended_action"], "retry")
         self.assertEqual(result["probe_error_type"], "RuntimeError")
         self.assertNotIn(private_message, repr(result))
 
@@ -119,7 +126,9 @@ class HealthRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 timeout=0.001,
             )
 
-        self.assertIsNone(result["preflight"])
+        self.assertFalse(result["preflight"]["ok"])
+        self.assertEqual(result["preflight"]["failure"], "probe_error")
+        self.assertEqual(result["preflight"]["recommended_action"], "retry")
         self.assertEqual(result["probe_error_type"], "TimeoutError")
 
     async def test_missing_runtime_device_is_reported_without_identifier(self):
