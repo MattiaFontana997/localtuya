@@ -698,6 +698,7 @@ def _adapt_entity_for_available_dps(entity, optional_dps, available_dps):
 
 
 def _mapping_compatible(mapping, product_id, category, available_dps):
+    """Return a deterministic compatibility rank and adapted entities."""
     match = mapping["match"]
     product_ids = tuple(match.get("product_ids", ()))
     fingerprint = match.get("fingerprint")
@@ -712,6 +713,7 @@ def _mapping_compatible(mapping, product_id, category, available_dps):
         if available_dps - declared:
             return None
         kind = "fingerprint"
+
     expected_category = match.get("category")
     if expected_category and category and category != expected_category:
         return None
@@ -719,18 +721,33 @@ def _mapping_compatible(mapping, product_id, category, available_dps):
     optional = set(match.get("optional_dps", []))
     if not required.issubset(available_dps):
         return None
-    entities = tuple(adapted for entity in mapping["entities"] if (adapted := _adapt_entity_for_available_dps(entity, optional, available_dps)) is not None)
+    entities = tuple(
+        adapted
+        for entity in mapping["entities"]
+        if (adapted := _adapt_entity_for_available_dps(entity, optional, available_dps)) is not None
+    )
     if not entities:
         return None
-    score = len(required) * 4 + len(optional & available_dps)
-    if expected_category and category == expected_category:
-        score += 10
-    if kind == "product":
-        score += 1000
-    return kind, score, entities
+
+    trust_rank = {"experimental": 0, "community": 1, "verified": 2}.get(
+        mapping.get("confidence", "experimental"), 0
+    )
+    category_rank = 1 if expected_category and category == expected_category else 0
+    optional_hits = len(optional & available_dps)
+    optional_missing = len(optional - available_dps)
+    rank = (
+        1 if kind == "product" else 0,
+        trust_rank,
+        category_rank,
+        len(required),
+        optional_hits,
+        -optional_missing,
+    )
+    return kind, rank, entities
 
 
 def match_catalog_mapping(catalog, device, available_dps, *, source="remote"):
+    """Return one unambiguous, highest-authority catalog match."""
     if not catalog:
         return None
     product_id = _device_product_id(device)
@@ -739,20 +756,36 @@ def match_catalog_mapping(catalog, device, available_dps, *, source="remote"):
     for mapping in catalog.get("mappings", []):
         compatible = _mapping_compatible(mapping, product_id, category, available_dps)
         if compatible:
-            kind, score, entities = compatible
-            candidates.append((score, mapping, entities, kind))
+            kind, rank, entities = compatible
+            candidates.append((rank, mapping, entities, kind))
     if not candidates:
         return None
+
     candidates.sort(key=lambda item: item[0], reverse=True)
-    best_score = candidates[0][0]
-    best = [item for item in candidates if item[0] == best_score]
-    if len(best) != 1 and best[0][3] == "fingerprint":
-        _LOGGER.debug("Rejecting ambiguous LocalTuya fingerprint match: %s candidates", len(best))
+    best_rank = candidates[0][0]
+    best = [item for item in candidates if item[0] == best_rank]
+    if len(best) != 1:
+        _LOGGER.warning(
+            "Rejecting ambiguous LocalTuya catalog match: %s equally authoritative candidates",
+            len(best),
+        )
         return None
+
     _, mapping, entities, kind = best[0]
     match = mapping["match"]
     provenance = mapping.get("provenance")
-    return CatalogMatch(mapping["id"], product_id or "", mapping["confidence"], tuple(match["required_dps"]), entities, source, tuple(match.get("product_ids", ())), tuple(match.get("optional_dps", ())), copy.deepcopy(provenance) if provenance else None, kind)
+    return CatalogMatch(
+        mapping["id"],
+        product_id or "",
+        mapping["confidence"],
+        tuple(match["required_dps"]),
+        entities,
+        source,
+        tuple(match.get("product_ids", ())),
+        tuple(match.get("optional_dps", ())),
+        copy.deepcopy(provenance) if provenance else None,
+        kind,
+    )
 
 
 def load_builtin_catalog(path=BUILTIN_CATALOG_PATH):
