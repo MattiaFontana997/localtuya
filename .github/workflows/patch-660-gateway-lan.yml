@@ -2,8 +2,10 @@ name: Patch 6.6.0 gateway and LAN onboarding
 
 on:
   push:
-    branches: [fix/6.6.0-gateway-lan-onboarding]
-    paths: [.github/workflows/patch-660-gateway-lan.yml]
+    branches:
+      - "fix/6.6.0-gateway-lan-onboarding"
+    paths:
+      - ".github/workflows/patch-660-gateway-lan.yml"
 
 permissions:
   contents: write
@@ -23,140 +25,78 @@ jobs:
 
           def replace(path, old, new):
               p = Path(path)
-              text = p.read_text(encoding='utf-8')
+              text = p.read_text(encoding="utf-8")
               if old not in text:
-                  raise SystemExit(f'pattern not found in {path}: {old[:120]!r}')
-              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+                  raise SystemExit(f"pattern not found in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
 
-          # --- pytuya: allow child/sub-device payloads through a gateway ---
-          path = 'custom_components/localtuya/pytuya/__init__.py'
+          path = "custom_components/localtuya/pytuya/__init__.py"
           replace(path,
-          '''    def __init__(\n        self, dev_id, local_key, protocol_version, enable_debug, on_connected, listener\n    ):''',
-          '''    def __init__(\n        self,\n        dev_id,\n        local_key,\n        protocol_version,\n        enable_debug,\n        on_connected,\n        listener,\n        cid=None,\n        gateway_id=None,\n    ):''')
+              "    def __init__(\n        self, dev_id, local_key, protocol_version, enable_debug, on_connected, listener\n    ):",
+              "    def __init__(\n        self,\n        dev_id,\n        local_key,\n        protocol_version,\n        enable_debug,\n        on_connected,\n        listener,\n        cid=None,\n        gateway_id=None,\n    ):")
           replace(path,
-          '''        self.id = dev_id\n        self.local_key = local_key.encode("latin1")''',
-          '''        self.id = dev_id\n        self.cid = str(cid or "").strip() or None\n        self.gateway_id = str(gateway_id or "").strip() or None\n        self.local_key = local_key.encode("latin1")''')
+              "        self.id = dev_id\n        self.local_key = local_key.encode(\"latin1\")",
+              "        self.id = dev_id\n        self.cid = str(cid or \"\").strip() or None\n        self.gateway_id = str(gateway_id or \"\").strip() or None\n        self.local_key = local_key.encode(\"latin1\")")
           replace(path,
-          '''        if "t" in json_data:\n            if json_data["t"] == "int":''',
-          '''        if self.cid:\n            # Tuya hub children are addressed by cid/node_id. For 3.4/3.5\n            # the cid is also required inside the nested data object used by\n            # gateway CONTROL_NEW frames. Older gateways use top-level cid.\n            json_data["cid"] = self.cid\n            if self.gateway_id and "gwId" in json_data:\n                json_data["gwId"] = self.gateway_id\n            if self.version >= 3.4:\n                nested = json_data.get("data")\n                if not isinstance(nested, dict):\n                    nested = {}\n                    json_data["data"] = nested\n                nested["cid"] = self.cid\n                nested["ctype"] = 0\n\n        if "t" in json_data:\n            if json_data["t"] == "int":''')
+              "        if \"t\" in json_data:\n            if json_data[\"t\"] == \"int\":",
+              "        if self.cid:\n            json_data[\"cid\"] = self.cid\n            if self.gateway_id and \"gwId\" in json_data:\n                json_data[\"gwId\"] = self.gateway_id\n            if self.version >= 3.4:\n                nested = json_data.get(\"data\")\n                if not isinstance(nested, dict):\n                    nested = {}\n                    json_data[\"data\"] = nested\n                nested[\"cid\"] = self.cid\n                nested[\"ctype\"] = 0\n\n        if \"t\" in json_data:\n            if json_data[\"t\"] == \"int\":")
           replace(path,
-          '''        if data is not None:\n            if "dpId" in json_data:\n                json_data["dpId"] = data\n            elif "data" in json_data:\n                json_data["data"] = {"dps": data}\n            else:\n                json_data["dps"] = data''',
-          '''        if data is not None:\n            if "dpId" in json_data:\n                json_data["dpId"] = data\n            elif "data" in json_data:\n                if not isinstance(json_data["data"], dict):\n                    json_data["data"] = {}\n                json_data["data"]["dps"] = data\n            else:\n                json_data["dps"] = data''')
+              "            elif \"data\" in json_data:\n                json_data[\"data\"] = {\"dps\": data}",
+              "            elif \"data\" in json_data:\n                if not isinstance(json_data[\"data\"], dict):\n                    json_data[\"data\"] = {}\n                json_data[\"data\"][\"dps\"] = data")
           replace(path,
-          '''        # v3.4/v3.5 may wrap DPS inside {"data":{"dps":{"1":true}}, ...}\n        if (\n            "dps" not in json_payload\n            and "data" in json_payload\n            and "dps" in json_payload["data"]\n        ):\n            json_payload["dps"] = json_payload["data"]["dps"]\n\n        return json_payload''',
-          '''        # v3.4/v3.5 may wrap DPS inside {"data":{"dps":{"1":true}}, ...}\n        if (\n            "dps" not in json_payload\n            and "data" in json_payload\n            and isinstance(json_payload["data"], dict)\n            and "dps" in json_payload["data"]\n        ):\n            json_payload["dps"] = json_payload["data"]["dps"]\n\n        # A gateway connection can report updates for another child. Never let\n        # those DPS leak into the selected LocalTuya child entity.\n        if self.cid:\n            received_cid = json_payload.get("cid")\n            nested = json_payload.get("data")\n            if not received_cid and isinstance(nested, dict):\n                received_cid = nested.get("cid")\n            if received_cid and str(received_cid) != self.cid:\n                json_payload.pop("dps", None)\n\n        return json_payload''')
+              "            and \"data\" in json_payload\n            and \"dps\" in json_payload[\"data\"]\n        ):\n            json_payload[\"dps\"] = json_payload[\"data\"][\"dps\"]\n\n        return json_payload",
+              "            and \"data\" in json_payload\n            and isinstance(json_payload[\"data\"], dict)\n            and \"dps\" in json_payload[\"data\"]\n        ):\n            json_payload[\"dps\"] = json_payload[\"data\"][\"dps\"]\n\n        if self.cid:\n            received_cid = json_payload.get(\"cid\")\n            nested = json_payload.get(\"data\")\n            if not received_cid and isinstance(nested, dict):\n                received_cid = nested.get(\"cid\")\n            if received_cid and str(received_cid) != self.cid:\n                json_payload.pop(\"dps\", None)\n\n        return json_payload")
           replace(path,
-          '''async def connect(\n    address,\n    device_id,\n    local_key,\n    protocol_version,\n    enable_debug,\n    listener=None,\n    port=6668,\n    timeout=5,\n):''',
-          '''async def connect(\n    address,\n    device_id,\n    local_key,\n    protocol_version,\n    enable_debug,\n    listener=None,\n    port=6668,\n    timeout=5,\n    cid=None,\n    gateway_id=None,\n):''')
+              "    listener=None,\n    port=6668,\n    timeout=5,\n):",
+              "    listener=None,\n    port=6668,\n    timeout=5,\n    cid=None,\n    gateway_id=None,\n):")
           replace(path,
-          '''            listener or EmptyListener(),\n        ),''',
-          '''            listener or EmptyListener(),\n            cid=cid,\n            gateway_id=gateway_id,\n        ),''')
+              "            listener or EmptyListener(),\n        ),",
+              "            listener or EmptyListener(),\n            cid=cid,\n            gateway_id=gateway_id,\n        ),")
 
-          # --- config validation: pass child addressing + retry transient socket failures ---
-          path = 'custom_components/localtuya/config_flow.py'
+          path = "custom_components/localtuya/config_flow.py"
           replace(path,
-          '''            interface = await pytuya.connect(\n                data[CONF_HOST],\n                data[CONF_DEVICE_ID],\n                data[CONF_LOCAL_KEY],\n                float(protocol_version),\n                data.get(CONF_ENABLE_DEBUG, False),\n            )''',
-          '''            last_connect_error = None\n            for attempt in range(2):\n                try:\n                    interface = await pytuya.connect(\n                        data[CONF_HOST],\n                        data[CONF_DEVICE_ID],\n                        data[CONF_LOCAL_KEY],\n                        float(protocol_version),\n                        data.get(CONF_ENABLE_DEBUG, False),\n                        cid=data.get("node_id"),\n                        gateway_id=data.get("gateway_id"),\n                    )\n                    break\n                except (ConnectionRefusedError, ConnectionResetError, OSError, TimeoutError) as ex:\n                    last_connect_error = ex\n                    if attempt == 0:\n                        await asyncio.sleep(0.35)\n            if interface is None and last_connect_error is not None:\n                raise last_connect_error''')
+              "            interface = await pytuya.connect(\n                data[CONF_HOST],\n                data[CONF_DEVICE_ID],\n                data[CONF_LOCAL_KEY],\n                float(protocol_version),\n                data.get(CONF_ENABLE_DEBUG, False),\n            )",
+              "            last_connect_error = None\n            for attempt in range(2):\n                try:\n                    interface = await pytuya.connect(\n                        data[CONF_HOST],\n                        data[CONF_DEVICE_ID],\n                        data[CONF_LOCAL_KEY],\n                        float(protocol_version),\n                        data.get(CONF_ENABLE_DEBUG, False),\n                        cid=data.get(\"node_id\"),\n                        gateway_id=data.get(\"gateway_id\"),\n                    )\n                    break\n                except (ConnectionRefusedError, ConnectionResetError, OSError, TimeoutError) as ex:\n                    last_connect_error = ex\n                    if attempt == 0:\n                        await asyncio.sleep(0.35)\n            if interface is None and last_connect_error is not None:\n                raise last_connect_error")
 
-          # --- runtime: child devices use the gateway host/key with cid routing ---
-          path = 'custom_components/localtuya/common.py'
+          path = "custom_components/localtuya/common.py"
           replace(path,
-          '''                self._local_key, float(self._dev_config_entry[CONF_PROTOCOL_VERSION]),\n                self._dev_config_entry.get(CONF_ENABLE_DEBUG, False), self,\n            )''',
-          '''                self._local_key, float(self._dev_config_entry[CONF_PROTOCOL_VERSION]),\n                self._dev_config_entry.get(CONF_ENABLE_DEBUG, False), self,\n                cid=self._dev_config_entry.get("node_id"),\n                gateway_id=self._dev_config_entry.get("gateway_id"),\n            )''')
+              "                self._local_key, float(self._dev_config_entry[CONF_PROTOCOL_VERSION]),\n                self._dev_config_entry.get(CONF_ENABLE_DEBUG, False), self,\n            )",
+              "                self._local_key, float(self._dev_config_entry[CONF_PROTOCOL_VERSION]),\n                self._dev_config_entry.get(CONF_ENABLE_DEBUG, False), self,\n                cid=self._dev_config_entry.get(\"node_id\"),\n                gateway_id=self._dev_config_entry.get(\"gateway_id\"),\n            )")
 
-          # --- QR provisioning: retain gateway metadata and use it for children ---
-          path = 'custom_components/localtuya/qr_onboarding.py'
+          path = "custom_components/localtuya/qr_onboarding.py"
           replace(path,
-          '''            node_id = str(getattr(device, "node_id", "") or "").strip()\n\n            devices[device_id] = {''',
-          '''            node_id = str(getattr(device, "node_id", "") or "").strip()\n            gateway_id = str(\n                getattr(device, "gateway_id", "")\n                or getattr(device, "gatewayId", "")\n                or getattr(device, "parent_id", "")\n                or ""\n            ).strip()\n            device_ip = str(getattr(device, "ip", "") or "").strip()\n\n            devices[device_id] = {''')
+              "            node_id = str(getattr(device, \"node_id\", \"\") or \"\").strip()\n\n            devices[device_id] = {",
+              "            node_id = str(getattr(device, \"node_id\", \"\") or \"\").strip()\n            gateway_id = str(\n                getattr(device, \"gateway_id\", \"\")\n                or getattr(device, \"gatewayId\", \"\")\n                or getattr(device, \"parent_id\", \"\")\n                or \"\"\n            ).strip()\n            device_ip = str(getattr(device, \"ip\", \"\") or \"\").strip()\n\n            devices[device_id] = {")
           replace(path,
-          '''                "support_local": bool(getattr(device, "support_local", False)),\n                "node_id": node_id,\n            }\n\n        return devices''',
-          '''                "support_local": bool(getattr(device, "support_local", False)),\n                "node_id": node_id,\n                "gateway_id": gateway_id,\n                "ip": device_ip,\n            }\n\n        # Tuya sub-devices are reached through their Wi-Fi gateway. The sharing\n        # API may omit the child's own local_key/IP; inherit only transport\n        # metadata from the explicitly reported parent gateway.\n        for device in devices.values():\n            gateway_id = device.get("gateway_id")\n            if not device.get("node_id") or not gateway_id:\n                continue\n            gateway = devices.get(gateway_id)\n            if not isinstance(gateway, dict):\n                continue\n            device["gateway_local_key"] = gateway.get(CONF_LOCAL_KEY) or ""\n            device["gateway_ip"] = gateway.get("ip") or ""\n            device["gateway_name"] = gateway.get(CONF_NAME) or gateway_id\n\n        return devices''')
+              "                \"support_local\": bool(getattr(device, \"support_local\", False)),\n                \"node_id\": node_id,\n            }\n\n        return devices",
+              "                \"support_local\": bool(getattr(device, \"support_local\", False)),\n                \"node_id\": node_id,\n                \"gateway_id\": gateway_id,\n                \"ip\": device_ip,\n            }\n\n        for device in devices.values():\n            gateway_id = device.get(\"gateway_id\")\n            if not device.get(\"node_id\") or not gateway_id:\n                continue\n            gateway = devices.get(gateway_id)\n            if not isinstance(gateway, dict):\n                continue\n            device[\"gateway_local_key\"] = gateway.get(CONF_LOCAL_KEY) or \"\"\n            device[\"gateway_ip\"] = gateway.get(\"ip\") or \"\"\n            device[\"gateway_name\"] = gateway.get(CONF_NAME) or gateway_id\n\n        return devices")
           replace(path,
-          '''    device_id = str(cloud_device.get("id") or "").strip()\n    local_key = str(cloud_device.get(CONF_LOCAL_KEY) or "").strip()\n\n    if not device_id or not local_key:''',
-          '''    device_id = str(cloud_device.get("id") or "").strip()\n    node_id = str(cloud_device.get("node_id") or "").strip()\n    gateway_id = str(cloud_device.get("gateway_id") or "").strip()\n    local_key = str(\n        cloud_device.get(CONF_LOCAL_KEY)\n        or cloud_device.get("gateway_local_key")\n        or ""\n    ).strip()\n\n    if not device_id or not local_key:''')
+              "    device_id = str(cloud_device.get(\"id\") or \"\").strip()\n    local_key = str(cloud_device.get(CONF_LOCAL_KEY) or \"\").strip()",
+              "    device_id = str(cloud_device.get(\"id\") or \"\").strip()\n    node_id = str(cloud_device.get(\"node_id\") or \"\").strip()\n    gateway_id = str(cloud_device.get(\"gateway_id\") or \"\").strip()\n    local_key = str(\n        cloud_device.get(CONF_LOCAL_KEY)\n        or cloud_device.get(\"gateway_local_key\")\n        or \"\"\n    ).strip()")
           replace(path,
-          '''    if cloud_device.get("node_id"):\n        raise QrProvisioningError(\n            "qr_subdevice_not_supported",\n            "The selected device is a hub child device",\n        )\n    if not cloud_device.get("support_local", True):\n        raise QrProvisioningError(\n            "qr_device_not_local",\n            "Tuya marks this device as cloud-only",\n        )\n\n    discovered_devices:''',
-          '''    if node_id and not gateway_id:\n        raise QrProvisioningError(\n            "qr_subdevice_gateway_missing",\n            "Tuya returned a child device without its parent gateway ID",\n        )\n\n    discovered_devices:''')
+              "    if cloud_device.get(\"node_id\"):\n        raise QrProvisioningError(\n            \"qr_subdevice_not_supported\",\n            \"The selected device is a hub child device\",\n        )\n    if not cloud_device.get(\"support_local\", True):\n        raise QrProvisioningError(\n            \"qr_device_not_local\",\n            \"Tuya marks this device as cloud-only\",\n        )",
+              "    if node_id and not gateway_id:\n        raise QrProvisioningError(\n            \"qr_subdevice_gateway_missing\",\n            \"Tuya returned a child device without its parent gateway ID\",\n        )")
           replace(path,
-          '''        found = _find_discovered_device(discovered_devices, device_id)\n        if isinstance(found, dict):\n            discovered = found\n\n        host = str(discovered.get("ip") or "").strip()\n        if not host:\n            raise QrProvisioningError(''',
-          '''        discovery_id = gateway_id if node_id else device_id\n        found = _find_discovered_device(discovered_devices, discovery_id)\n        if isinstance(found, dict):\n            discovered = found\n\n        # Prefer authenticated LAN discovery, then the SDK-reported address.\n        # The latter is never trusted blindly: validate_input still performs the\n        # full Device ID/local-key/protocol/DPS handshake before saving.\n        host = str(\n            discovered.get("ip")\n            or (cloud_device.get("gateway_ip") if node_id else cloud_device.get("ip"))\n            or ""\n        ).strip()\n        if not host:\n            raise QrProvisioningError(''')
+              "        found = _find_discovered_device(discovered_devices, device_id)",
+              "        discovery_id = gateway_id if node_id else device_id\n        found = _find_discovered_device(discovered_devices, discovery_id)")
           replace(path,
-          '''        discovered = {\n            "gwId": device_id,\n            "ip": host,\n        }''',
-          '''        discovered = {\n            "gwId": gateway_id or device_id,\n            "ip": host,\n        }''')
+              "        host = str(discovered.get(\"ip\") or \"\").strip()",
+              "        host = str(\n            discovered.get(\"ip\")\n            or (cloud_device.get(\"gateway_ip\") if node_id else cloud_device.get(\"ip\"))\n            or \"\"\n        ).strip()")
           replace(path,
-          '''        "product_id": cloud_device.get("product_id") or "",\n    }''',
-          '''        "product_id": cloud_device.get("product_id") or "",\n    }\n    if node_id:\n        device_data["node_id"] = node_id\n        device_data["gateway_id"] = gateway_id''')
+              "            \"gwId\": device_id,",
+              "            \"gwId\": gateway_id or device_id,")
           replace(path,
-          '''        eligible = {\n            device_id: device\n            for device_id, device in devices.items()\n            if device.get(CONF_LOCAL_KEY)\n            and not device.get("node_id")\n            and device.get("support_local", True)\n        }''',
-          '''        eligible = {\n            device_id: device\n            for device_id, device in devices.items()\n            if (\n                device.get(CONF_LOCAL_KEY)\n                or (\n                    device.get("node_id")\n                    and device.get("gateway_id")\n                    and device.get("gateway_local_key")\n                )\n            )\n        }''')
+              "        \"product_id\": cloud_device.get(\"product_id\") or \"\",\n    }",
+              "        \"product_id\": cloud_device.get(\"product_id\") or \"\",\n    }\n    if node_id:\n        device_data[\"node_id\"] = node_id\n        device_data[\"gateway_id\"] = gateway_id")
           replace(path,
-          '''                f" ({device.get('product_name') or device.get('category') or 'Tuya'})"\n            )''',
-          '''                f" ({device.get('product_name') or device.get('category') or 'Tuya'}"\n                f"{' · via ' + str(device.get('gateway_name')) if device.get('node_id') else ''})"\n            )''')
-
-          # Regression tests for child payload routing and provisioning source.
-          Path('tests/test_gateway_subdevice_support.py').write_text(r'''"""Regression tests for QR gateway/sub-device support."""
-
-import asyncio
-import json
-import unittest
-from unittest.mock import patch
-
-from custom_components.localtuya import pytuya
-
-
-class GatewaySubdeviceProtocolTests(unittest.TestCase):
-    def _protocol(self, version=3.3):
-        loop = asyncio.new_event_loop()
-        self.addCleanup(loop.close)
-        asyncio.set_event_loop(loop)
-        future = loop.create_future()
-        protocol = pytuya.TuyaProtocol(
-            "child-device-id",
-            "0123456789abcdef",
-            version,
-            False,
-            future,
-            pytuya.EmptyListener(),
-            cid="node-123",
-            gateway_id="gateway-device-id",
-        )
-        return protocol
-
-    def test_v33_child_payload_contains_cid_and_gateway_id(self):
-        protocol = self._protocol(3.3)
-        payload = protocol._generate_payload(pytuya.CONTROL, {"1": True})
-        body = json.loads(payload.payload.decode())
-        self.assertEqual(body["cid"], "node-123")
-        self.assertEqual(body["devId"], "child-device-id")
-        self.assertEqual(body["dps"], {"1": True})
-
-    def test_v35_child_control_wraps_cid_and_dps(self):
-        protocol = self._protocol(3.5)
-        payload = protocol._generate_payload(pytuya.CONTROL, {"20": True})
-        body = json.loads(payload.payload.decode())
-        self.assertEqual(body["data"]["cid"], "node-123")
-        self.assertEqual(body["data"]["ctype"], 0)
-        self.assertEqual(body["data"]["dps"], {"20": True})
-
-    def test_wrong_child_update_does_not_leak_dps(self):
-        protocol = self._protocol(3.3)
-        cipher = pytuya.AESCipher(protocol.local_key)
-        raw = json.dumps({"cid": "another-node", "dps": {"1": True}}).encode()
-        encrypted = cipher.encrypt(raw, False)
-        decoded = protocol._decode_payload(encrypted)
-        self.assertNotIn("dps", decoded)
-
-
-if __name__ == "__main__":
-    unittest.main()
-''', encoding='utf-8')
+              "        eligible = {\n            device_id: device\n            for device_id, device in devices.items()\n            if device.get(CONF_LOCAL_KEY)\n            and not device.get(\"node_id\")\n            and device.get(\"support_local\", True)\n        }",
+              "        eligible = {\n            device_id: device\n            for device_id, device in devices.items()\n            if (\n                device.get(CONF_LOCAL_KEY)\n                or (\n                    device.get(\"node_id\")\n                    and device.get(\"gateway_id\")\n                    and device.get(\"gateway_local_key\")\n                )\n            )\n        }")
           PY
       - name: Commit patch
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add custom_components/localtuya tests/test_gateway_subdevice_support.py
+          git add custom_components/localtuya
           git commit -m "Support gateway children and harden QR LAN onboarding"
           git push origin HEAD:fix/6.6.0-gateway-lan-onboarding
