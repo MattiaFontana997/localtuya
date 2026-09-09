@@ -50,6 +50,10 @@ from .const import (
 )
 from .mapping_resolver import resolve_entity_candidates
 from .device_mapper import MappingConfidence
+from .zero_config import (
+    ZeroConfigDecision,
+    evaluate_zero_config,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1128,12 +1132,13 @@ class QrConfigFlowMixin:
         for item in successes:
             device_data = copy.deepcopy(item["device_data"])
             candidates = item.get("candidates", [])
-            high = [candidate for candidate in candidates if getattr(candidate, "confidence", None) == MappingConfidence.HIGH]
-            medium = [candidate for candidate in candidates if getattr(candidate, "confidence", None) == MappingConfidence.MEDIUM]
-            entities = [copy.deepcopy(candidate.config) for candidate in high]
-            if medium:
-                review_required.append(str(item["device_id"]))
-            if not entities and not medium:
+            zero_config = evaluate_zero_config(candidates)
+            entities = (
+                copy.deepcopy(zero_config.entities)
+                if zero_config.decision is ZeroConfigDecision.AUTO_CONFIGURE
+                else []
+            )
+            if zero_config.decision is not ZeroConfigDecision.AUTO_CONFIGURE:
                 review_required.append(str(item["device_id"]))
             device_data[CONF_ENTITIES] = entities
             devices[str(item["device_id"])] = device_data
