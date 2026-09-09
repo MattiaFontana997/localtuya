@@ -122,6 +122,31 @@ class TestTuya35ErrorHandling(unittest.IsolatedAsyncioTestCase):
         finally:
             await protocol.close()
 
+    async def test_status_dispatch_ignores_empty_decoded_payload(self):
+        """A 3.5 data-unvalid response must not crash unsolicited dispatch."""
+        protocol = self._protocol()
+        protocol._decode_payload = MagicMock(return_value=None)
+        protocol._test_listener.status_updated = MagicMock()
+
+        message = pytuya.TuyaMessage(
+            0,
+            pytuya.STATUS,
+            0,
+            b"json obj data unvalid",
+            0,
+            True,
+            pytuya.PREFIX_55AA_VALUE,
+            None,
+        )
+
+        try:
+            protocol.dispatcher.listener(message)
+
+            self.assertEqual(protocol.dps_cache, {})
+            protocol._test_listener.status_updated.assert_called_once_with({})
+        finally:
+            await protocol.close()
+
 
 if __name__ == "__main__":
     unittest.main()
