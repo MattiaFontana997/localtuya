@@ -28,8 +28,6 @@ class _GatewayListener(pytuya.TuyaListener):
         self.owner: SharedGatewayTransport | None = None
 
     def status_updated(self, status):
-        # STATUS routing is installed directly on the parent dispatcher so CID
-        # metadata is still available. This callback is a fallback only.
         del status
 
     def disconnected(self):
@@ -123,7 +121,7 @@ class GatewayChildInterface:
         self.dps_cache.update({str(key): value for key, value in dps.items()})
         try:
             self.listener.status_updated(copy.deepcopy(self.dps_cache))
-        except Exception:  # noqa: BLE001 - one child must not break gateway routing.
+        except Exception:  # noqa: BLE001
             _LOGGER.exception("Failed to dispatch shared gateway child status")
 
     def _parent_disconnected(self) -> None:
@@ -156,15 +154,19 @@ class SharedGatewayTransport:
         self.lock = asyncio.Lock()
         self._heartbeat_task: asyncio.Task | None = None
         self._closed = False
+        self._disconnected = False
         self._gateway_cache: dict[str, Any] = {}
-        # Replace the physical protocol's STATUS callback so CID remains
-        # available for routing before pytuya flattens the DPS cache.
         if self.parent.dispatcher is not None:
             self.parent.dispatcher.listener = self._status_message
 
     @property
     def alive(self) -> bool:
-        return not self._closed and self.parent.transport is not None
+        """Return whether the physical session is still reusable."""
+        return (
+            not self._closed
+            and not self._disconnected
+            and self.parent.transport is not None
+        )
 
     def add_child(
         self,
@@ -174,8 +176,6 @@ class SharedGatewayTransport:
     ) -> GatewayChildInterface:
         existing = self.children.get(str(cid))
         if existing is not None and not existing._closed:
-            # A reconnecting TuyaDevice replaces the logical listener while
-            # preserving the same physical gateway connection.
             existing.listener = listener
             existing.id = str(device_id)
             return existing
@@ -303,8 +303,13 @@ class SharedGatewayTransport:
                 self.parent.transport = None
                 if transport is not None:
                     transport.close()
+            self._disconnected = True
 
     def parent_disconnected(self) -> None:
+        """Invalidate the pooled physical session and notify every child."""
+        if self._disconnected:
+            return
+        self._disconnected = True
         for child in tuple(self.children.values()):
             child._parent_disconnected()
 
