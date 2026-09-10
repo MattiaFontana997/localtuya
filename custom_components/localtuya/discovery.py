@@ -32,6 +32,8 @@ UDP_PORTS = (6666, 6667, 7000)
 DISCOVERY_REQUEST_PORT = 7000
 DISCOVERY_REQUEST_COMMAND = 0x25
 DEFAULT_TIMEOUT = 6.0
+TARGETED_DISCOVERY_TIMEOUT = 18.0
+DISCOVERY_REBROADCAST_INTERVAL = 6.0
 
 PREFIX_55AA = b"\x00\x00\x55\xaa"
 SUFFIX_55AA = b"\x00\x00\xaa\x55"
@@ -665,6 +667,94 @@ class TuyaDiscovery(asyncio.DatagramProtocol):
 
         if self._callback is not None:
             self._callback(normalized)
+
+
+async def find_device(
+    device_id: str,
+    *,
+    timeout: float = TARGETED_DISCOVERY_TIMEOUT,
+    rebroadcast_interval: float = DISCOVERY_REBROADCAST_INTERVAL,
+    hass: HomeAssistant | None = None,
+) -> dict[str, Any] | None:
+    """Find one Tuya device by Device ID with TinyTuya-style discovery.
+
+    Listen on all Tuya discovery ports, actively request REQ_DEVINFO, resend the
+    request periodically for slow 3.5 devices, and return immediately once the
+    requested Device ID is observed. Cloud/WAN addresses are never consulted.
+    """
+    target_id = str(device_id or "").strip()
+    if not target_id:
+        return None
+
+    timeout = max(0.0, float(timeout))
+    rebroadcast_interval = max(0.1, float(rebroadcast_interval))
+    matched: dict[str, Any] | None = None
+    found = asyncio.Event()
+
+    def _on_device(device: dict[str, Any]) -> None:
+        nonlocal matched
+        found_id = (
+            device.get("gwId")
+            or device.get("id")
+            or device.get("devId")
+            or device.get("deviceId")
+            or device.get("dev_id")
+        )
+        if str(found_id or "").strip() != target_id:
+            return
+        matched = dict(device)
+        found.set()
+
+    discovery = TuyaDiscovery(_on_device, hass=hass)
+    loop = asyncio.get_running_loop()
+
+    try:
+        await discovery.start()
+
+        existing = discovery.devices.get(target_id)
+        if isinstance(existing, dict):
+            return dict(existing)
+        if found.is_set():
+            return dict(matched) if matched is not None else None
+
+        deadline = loop.time() + timeout
+        next_broadcast = loop.time() + rebroadcast_interval
+
+        while loop.time() < deadline:
+            now = loop.time()
+            wait_time = min(
+                max(0.0, deadline - now),
+                max(0.0, next_broadcast - now),
+            )
+            if wait_time <= 0:
+                wait_time = min(0.05, max(0.0, deadline - now))
+
+            try:
+                await asyncio.wait_for(found.wait(), timeout=wait_time)
+            except TimeoutError:
+                pass
+
+            if found.is_set():
+                return dict(matched) if matched is not None else None
+
+            now = loop.time()
+            if now >= next_broadcast and now < deadline:
+                try:
+                    await discovery.async_request_discovery()
+                except Exception as exc:
+                    _LOGGER.debug(
+                        "Targeted Tuya discovery rebroadcast failed: %s",
+                        exc,
+                    )
+                next_broadcast = now + rebroadcast_interval
+
+                existing = discovery.devices.get(target_id)
+                if isinstance(existing, dict):
+                    return dict(existing)
+
+        return dict(matched) if matched is not None else None
+    finally:
+        discovery.close()
 
 
 async def discover(
