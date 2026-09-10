@@ -574,7 +574,10 @@ async def _async_find_lan_device(
     from .discovery import discover
 
     try:
-        devices = await discover(timeout=6.0, hass=hass)
+        # TinyTuya/tuya-local use an 18-second discovery window.  Keep
+        # LocalTuya's fast cached/active probes above, but use the same proven
+        # window on this slow fallback so infrequent announcers are not missed.
+        devices = await discover(timeout=18.0, hass=hass)
     except Exception as exc:
         _LOGGER.debug("Targeted Tuya LAN discovery fallback failed: %s", exc)
         return None
