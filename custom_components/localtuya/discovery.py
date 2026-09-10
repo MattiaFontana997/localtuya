@@ -605,12 +605,19 @@ class TuyaDiscovery(asyncio.DatagramProtocol):
         source_ip: str | None = None,
     ) -> None:
         """Register or refresh a discovered Tuya device."""
-        gw_id = device.get("gwId") or device.get("id")
+        gw_id = (
+            device.get("gwId")
+            or device.get("id")
+            or device.get("devId")
+            or device.get("deviceId")
+            or device.get("dev_id")
+        )
 
         if not gw_id:
             _LOGGER.debug(
-                "Ignoring Tuya discovery packet "
-                "without device ID"
+                "Ignoring Tuya discovery packet from %s without device ID; fields=%s",
+                source_ip or "unknown",
+                sorted(str(key) for key in device),
             )
             return
 

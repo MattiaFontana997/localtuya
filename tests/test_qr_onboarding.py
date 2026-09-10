@@ -28,6 +28,8 @@ from custom_components.localtuya.qr_onboarding import (
     QrCloudClient,
     QrProvisioningError,
     _base_entry_data,
+    _enrich_gateway_routes,
+    _qr_is_locally_eligible,
     async_prepare_qr_device,
 )
 
@@ -424,6 +426,59 @@ class QrConfigFlowTests(unittest.IsolatedAsyncioTestCase):
             prepare.await_args.kwargs["host_override"],
             "10.0.21.42",
         )
+
+
+class QrGatewayParityTests(unittest.IsolatedAsyncioTestCase):
+    """Match proven tuya-local gateway-child onboarding semantics."""
+
+    def test_ambiguous_child_remains_selectable(self):
+        devices = {
+            "hub-1": {"id": "hub-1", "is_hub": True, CONF_LOCAL_KEY: "hub-key-1", "ip": "192.168.1.10"},
+            "hub-2": {"id": "hub-2", "is_hub": True, CONF_LOCAL_KEY: "hub-key-2", "ip": "192.168.1.11"},
+            "child": {
+                "id": "child", "name": "Bluetooth lamp",
+                "node_id": "child-cid", CONF_LOCAL_KEY: "child-key",
+                "gateway_id": "",
+            },
+        }
+        child = _enrich_gateway_routes(devices)["child"]
+        self.assertTrue(_qr_is_locally_eligible(child))
+        self.assertEqual(child["gateway_candidates"], ["hub-1", "hub-2"])
+        self.assertFalse(child.get("gateway_id"))
+
+    async def test_user_can_select_gateway_for_ambiguous_child(self):
+        flow = LocaltuyaConfigFlow()
+        flow.hass = SimpleNamespace(data={})
+        flow._qr_cloud = SimpleNamespace(auth={})
+        flow._qr_devices = {
+            "hub-1": {
+                "id": "hub-1", "name": "Hub 1", "product_name": "BLE Hub",
+                "is_hub": True, CONF_LOCAL_KEY: "hub-key", "ip": "192.168.1.10",
+            },
+            "hub-2": {
+                "id": "hub-2", "name": "Hub 2", "product_name": "BLE Hub",
+                "is_hub": True, CONF_LOCAL_KEY: "hub-key-2", "ip": "192.168.1.11",
+            },
+            "child": {
+                "id": "child", "name": "Lamp", "product_name": "BLE Lamp",
+                "node_id": "child-cid", CONF_LOCAL_KEY: "child-key",
+                "gateway_id": "", "is_hub": False,
+            },
+        }
+        with patch(
+            "custom_components.localtuya.qr_onboarding.async_prepare_qr_device",
+            new=AsyncMock(side_effect=QrProvisioningError("cannot_connect", "test")),
+        ) as prepare:
+            result = await flow.async_step_qr_choose_device(
+                {"device_id": "child", "qr_gateway_id": "hub-2"}
+            )
+        self.assertEqual(result["type"], FlowResultType.FORM)
+        self.assertEqual(result["step_id"], "qr_device_host")
+        routed = prepare.await_args.args[2]
+        self.assertEqual(routed["gateway_id"], "hub-2")
+        self.assertEqual(routed["gateway_local_key"], "child-key")
+        self.assertEqual(routed["gateway_ip"], "192.168.1.11")
+
 
 
 if __name__ == "__main__":
