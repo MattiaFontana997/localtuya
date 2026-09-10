@@ -83,10 +83,13 @@ class TargetedDiscoveryTests(unittest.IsolatedAsyncioTestCase):
             "custom_components.localtuya.discovery.TuyaDiscovery",
             _FakeDiscovery,
         ):
+            # Keep this bounded but leave enough scheduling margin for several
+            # rebroadcast cycles on shared GitHub runners. Production timing is
+            # 18 seconds with a 6-second interval; this only scales it down.
             result = await find_device(
                 "missing-device",
-                timeout=0.06,
-                rebroadcast_interval=0.02,
+                timeout=0.25,
+                rebroadcast_interval=0.03,
                 hass=object(),
             )
 
