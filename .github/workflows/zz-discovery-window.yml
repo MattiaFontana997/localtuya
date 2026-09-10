@@ -1,0 +1,41 @@
+name: Stage extended Tuya discovery fallback
+
+on:
+  push:
+    branches: [fix/6.7.0-tuya-local-parity]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/6.7.0-tuya-local-parity
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Extend slow-path discovery window
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('custom_components/localtuya/qr_onboarding.py')
+          s = p.read_text()
+          old = '        devices = await discover(timeout=6.0, hass=hass)\n'
+          new = '''        # TinyTuya/tuya-local use an 18-second discovery window.  Keep\n        # LocalTuya's fast cached/active probes above, but use the same proven\n        # window on this slow fallback so infrequent announcers are not missed.\n        devices = await discover(timeout=18.0, hass=hass)\n'''
+          if old not in s:
+              raise SystemExit('target discovery fallback anchor missing')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          python -m compileall -q custom_components/localtuya
+      - name: Commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/localtuya/qr_onboarding.py
+          git commit -m 'Match proven Tuya targeted discovery window'
+          git push origin HEAD:fix/6.7.0-tuya-local-parity
