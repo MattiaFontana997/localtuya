@@ -12,5 +12,5 @@
   "requirements": [
     "tuya-device-sharing-sdk~=0.2.4"
   ],
-  "version": "6.6.0"
+  "version": "6.7.0b1"
 }
