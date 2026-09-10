@@ -66,6 +66,7 @@ CONF_IMPORT_JSON = "import_json"
 CONF_IMPORT_DEVICE_ID = "import_device_id"
 CONF_QR_BULK_DEVICE_IDS = "qr_bulk_device_ids"
 CONF_QR_BULK_MODE = "qr_bulk_mode"
+CONF_QR_GATEWAY_ID = "qr_gateway_id"
 
 TUYA_CLIENT_ID = "HA_3y9q4ak7g4ephrvke"
 TUYA_SCHEMA = "haauthorize"
@@ -129,52 +130,56 @@ def _is_subdevice_flag(value: Any) -> bool:
     return False
 
 
+def _first_device_attr(device: Any, *names: str) -> Any:
+    """Return the first non-empty SDK attribute across known Tuya aliases."""
+    for name in names:
+        value = getattr(device, name, None)
+        if value is not None and str(value).strip():
+            return value
+    return ""
+
+
+def _assign_gateway_route(
+    device: dict[str, Any],
+    gateway_id: str,
+    gateway: dict[str, Any],
+) -> bool:
+    """Attach one child to a selected/known gateway transport."""
+    gateway_id = str(gateway_id or "").strip()
+    if not gateway_id or not isinstance(gateway, dict):
+        return False
+    child_key = str(device.get(CONF_LOCAL_KEY) or "").strip()
+    gateway_key = str(gateway.get(CONF_LOCAL_KEY) or "").strip()
+    route_key = child_key or gateway_key
+    device["gateway_id"] = gateway_id
+    device["gateway_local_key"] = route_key
+    device["gateway_ip"] = str(gateway.get("ip") or "").strip()
+    device["gateway_name"] = gateway.get(CONF_NAME) or gateway_id
+    device.pop("gateway_candidates", None)
+    return bool(route_key)
+
+
 def _enrich_gateway_routes(
     devices: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
-    """Resolve Tuya child -> gateway transport metadata conservatively.
-
-    Device Sharing does not consistently expose gateway_id on BLE/Zigbee
-    children.  tuya-local works around that by treating known hub categories as
-    parent candidates and using the child node_id/uuid as the CID.  We follow
-    the same proven routing model while remaining fail-closed when more than one
-    possible hub exists.
-
-    Some Tuya accounts expose the *gateway* LAN key on the child record.  When
-    present, prefer it over the hub record key, matching tuya-local's behavior.
-    """
+    """Resolve child routes conservatively while keeping children visible."""
     hubs = {
         str(device_id): device
         for device_id, device in devices.items()
         if isinstance(device, dict) and device.get("is_hub")
     }
-
     for device in devices.values():
         if not isinstance(device, dict) or not device.get("node_id"):
             continue
-
         gateway_id = str(device.get("gateway_id") or "").strip()
         gateway = devices.get(gateway_id) if gateway_id else None
-
-        if not isinstance(gateway, dict) and len(hubs) == 1:
-            gateway_id, gateway = next(iter(hubs.items()))
-            device["gateway_id"] = gateway_id
-
         if isinstance(gateway, dict):
-            child_key = str(device.get(CONF_LOCAL_KEY) or "").strip()
-            gateway_key = str(gateway.get(CONF_LOCAL_KEY) or "").strip()
-            device["gateway_local_key"] = child_key or gateway_key
-            device["gateway_ip"] = str(gateway.get("ip") or "").strip()
-            device["gateway_name"] = (
-                gateway.get(CONF_NAME) or gateway_id
-            )
-            device.pop("gateway_candidates", None)
-        elif len(hubs) > 1:
-            # Do not guess between multiple hubs.  Keep the candidates available
-            # for diagnostics/future UI selection, but do not mark the child as
-            # locally eligible until a parent is unambiguous.
+            _assign_gateway_route(device, gateway_id, gateway)
+        elif len(hubs) == 1:
+            inferred_id, inferred_gateway = next(iter(hubs.items()))
+            _assign_gateway_route(device, inferred_id, inferred_gateway)
+        elif hubs:
             device["gateway_candidates"] = sorted(hubs)
-
     return devices
 
 
@@ -352,23 +357,42 @@ class QrCloudClient:
             if not device_id:
                 continue
 
+            has_local_key_attr = hasattr(device, "local_key")
             local_key = str(getattr(device, "local_key", "") or "").strip()
             product_id = str(getattr(device, "product_id", "") or "").strip()
             category = str(getattr(device, "category", "") or "").strip()
-            node_id = str(getattr(device, "node_id", "") or "").strip()
-            gateway_id = str(
-                getattr(device, "gateway_id", "")
-                or getattr(device, "gatewayId", "")
-                or getattr(device, "parent_id", "")
+            device_ip = str(getattr(device, "ip", "") or "").strip()
+            is_subdevice = _is_subdevice_flag(
+                _first_device_attr(device, "sub", "is_subdevice", "isSubDevice")
+            )
+            node_id = str(
+                _first_device_attr(
+                    device, "node_id", "nodeId", "cid", "device_cid", "deviceCid"
+                )
                 or ""
             ).strip()
-            is_subdevice = _is_subdevice_flag(getattr(device, "sub", False))
+            gateway_id = str(
+                _first_device_attr(
+                    device,
+                    "gateway_id", "gatewayId",
+                    "parent_id", "parentId",
+                    "parent_dev_id", "parentDevId",
+                    "parent_device_id", "parentDeviceId",
+                    "hub_id", "hubId",
+                )
+                or ""
+            ).strip()
             device_uuid = str(getattr(device, "uuid", "") or "").strip()
-            if not node_id and is_subdevice and device_uuid:
-                # Tuya frequently omits gateway_id while still providing the
-                # child's UUID.  For an explicit sub-device, UUID is the CID.
+            if not node_id and device_uuid and (is_subdevice or not device_ip):
                 node_id = device_uuid
-            device_ip = str(getattr(device, "ip", "") or "").strip()
+
+            raw_fields = getattr(device, "__dict__", {})
+            if isinstance(raw_fields, dict):
+                _LOGGER.debug(
+                    "Tuya sharing metadata category=%s fields=%s",
+                    category or "unknown",
+                    sorted(str(key) for key in raw_fields),
+                )
 
             devices[device_id] = {
                 "id": device_id,
@@ -385,7 +409,10 @@ class QrCloudClient:
                 "uuid": device_uuid,
                 "node_id": node_id,
                 "gateway_id": gateway_id,
-                "is_hub": category in TUYA_HUB_CATEGORIES,
+                "is_hub": (
+                    category in TUYA_HUB_CATEGORIES
+                    or not has_local_key_attr
+                ),
                 "ip": device_ip,
             }
 
@@ -506,7 +533,13 @@ def _find_discovered_device(
     for candidate in devices.values():
         if not isinstance(candidate, dict):
             continue
-        found_id = candidate.get("gwId") or candidate.get("id")
+        found_id = (
+            candidate.get("gwId")
+            or candidate.get("id")
+            or candidate.get("devId")
+            or candidate.get("deviceId")
+            or candidate.get("dev_id")
+        )
         if found_id == device_id:
             return copy.deepcopy(candidate)
     return None
@@ -541,7 +574,10 @@ async def _async_find_lan_device(
     from .discovery import discover
 
     try:
-        devices = await discover(timeout=6.0, hass=hass)
+        # TinyTuya/tuya-local use an 18-second discovery window.  Keep
+        # LocalTuya's fast cached/active probes above, but use the same proven
+        # window on this slow fallback so infrequent announcers are not missed.
+        devices = await discover(timeout=18.0, hass=hass)
     except Exception as exc:
         _LOGGER.debug("Targeted Tuya LAN discovery fallback failed: %s", exc)
         return None
@@ -561,19 +597,14 @@ def _qr_host_schema(default: str = "") -> vol.Schema:
 
 
 def _qr_is_locally_eligible(device: dict[str, Any]) -> bool:
-    """Return whether Tuya supplied enough routing metadata for LAN validation."""
+    """Keep routable children visible even when their hub is ambiguous."""
     if not isinstance(device, dict):
         return False
-    node_id = str(device.get("node_id") or "").strip()
-    if node_id:
-        return bool(
-            str(device.get("gateway_id") or "").strip()
-            and (
-                str(device.get("gateway_local_key") or "").strip()
-                or str(device.get(CONF_LOCAL_KEY) or "").strip()
-            )
-        )
-    return bool(str(device.get(CONF_LOCAL_KEY) or "").strip())
+    local_key = str(device.get(CONF_LOCAL_KEY) or "").strip()
+    gateway_key = str(device.get("gateway_local_key") or "").strip()
+    if str(device.get("node_id") or "").strip():
+        return bool(local_key or gateway_key)
+    return bool(local_key)
 
 
 def _qr_needs_host_fallback(reason: str) -> bool:
@@ -1126,7 +1157,20 @@ class QrConfigFlowMixin:
 
         if user_input is not None:
             selected = user_input[CONF_DEVICE_ID]
-            cloud_device = eligible[selected]
+            cloud_device = copy.deepcopy(eligible[selected])
+            if cloud_device.get("node_id") and not cloud_device.get("gateway_id"):
+                gateway_id = str(user_input.get(CONF_QR_GATEWAY_ID) or "").strip()
+                gateway = devices.get(gateway_id) if gateway_id else None
+                if not isinstance(gateway, dict) or not gateway.get("is_hub"):
+                    return self.async_show_form(
+                        step_id="qr_choose_device",
+                        data_schema=self._qr_device_schema(eligible, devices),
+                        errors={"base": "qr_subdevice_gateway_missing"},
+                        description_placeholders={
+                            "msg": "Select the hub/gateway used by this sub-device"
+                        },
+                    )
+                _assign_gateway_route(cloud_device, gateway_id, gateway)
             self._qr_selected_device = copy.deepcopy(cloud_device)
             try:
                 (
@@ -1143,7 +1187,7 @@ class QrConfigFlowMixin:
                     return await self.async_step_qr_device_host()
                 return self.async_show_form(
                     step_id="qr_choose_device",
-                    data_schema=self._qr_device_schema(eligible),
+                    data_schema=self._qr_device_schema(eligible, devices),
                     errors={"base": exc.reason},
                     description_placeholders={"msg": exc.detail},
                 )
@@ -1161,7 +1205,7 @@ class QrConfigFlowMixin:
 
         return self.async_show_form(
             step_id="qr_choose_device",
-            data_schema=self._qr_device_schema(eligible),
+            data_schema=self._qr_device_schema(eligible, devices),
         )
 
     async def async_step_qr_device_host(self, user_input=None):
@@ -1217,7 +1261,10 @@ class QrConfigFlowMixin:
         )
 
     @staticmethod
-    def _qr_device_schema(devices: dict[str, dict[str, Any]]):
+    def _qr_device_schema(
+        devices: dict[str, dict[str, Any]],
+        all_devices: dict[str, dict[str, Any]] | None = None,
+    ):
         labels = {
             device_id: (
                 f"{device.get(CONF_NAME) or device_id}"
@@ -1225,9 +1272,22 @@ class QrConfigFlowMixin:
             )
             for device_id, device in devices.items()
         }
-        return vol.Schema(
-            {vol.Required(CONF_DEVICE_ID): vol.In(labels)}
-        )
+        schema: dict[Any, Any] = {
+            vol.Required(CONF_DEVICE_ID): vol.In(labels)
+        }
+        hubs = {
+            str(device_id): (
+                f"{device.get(CONF_NAME) or device_id}"
+                f" ({device.get('product_name') or device.get('category') or 'Gateway'})"
+            )
+            for device_id, device in (all_devices or devices).items()
+            if isinstance(device, dict) and device.get("is_hub")
+        }
+        if hubs:
+            schema[vol.Optional(CONF_QR_GATEWAY_ID, default="")] = vol.In(
+                {"": "Automatic / none", **hubs}
+            )
+        return vol.Schema(schema)
 
     async def async_step_qr_mapping_review(self, user_input=None):
         """Review only mappings that are not high-confidence."""

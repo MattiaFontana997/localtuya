@@ -66,7 +66,8 @@ class TuyaLocalGatewayMetadataTests(unittest.TestCase):
         self.assertEqual(child["gateway_local_key"], "hub-local-key")
         self.assertTrue(_qr_is_locally_eligible(child))
 
-    def test_multiple_hubs_remain_fail_closed_without_explicit_parent(self):
+    def test_multiple_hubs_keep_child_selectable_for_explicit_parent(self):
+        """Ambiguous children remain visible but no parent is guessed."""
         devices = {
             "gateway-1": {
                 "id": "gateway-1",
@@ -90,7 +91,7 @@ class TuyaLocalGatewayMetadataTests(unittest.TestCase):
         child = _enrich_gateway_routes(devices)["lamp-1"]
         self.assertFalse(child.get("gateway_id"))
         self.assertEqual(child["gateway_candidates"], ["gateway-1", "gateway-2"])
-        self.assertFalse(_qr_is_locally_eligible(child))
+        self.assertTrue(_qr_is_locally_eligible(child))
 
 
 if __name__ == "__main__":

@@ -315,6 +315,21 @@ class DiscoveryPacketTests(unittest.TestCase):
             2,
         )
 
+    def test_device_registration_accepts_devid_aliases(self):
+        """Accept identity aliases emitted by some Tuya firmware families."""
+        discovery = TuyaDiscovery()
+        discovery.device_found(
+            {"devId": "alias-dev", "version": "3.5"},
+            source_ip="192.168.1.70",
+        )
+        discovery.device_found(
+            {"deviceId": "alias-device", "version": "3.4"},
+            source_ip="192.168.1.71",
+        )
+        self.assertEqual(discovery.devices["alias-dev"]["ip"], "192.168.1.70")
+        self.assertEqual(discovery.devices["alias-device"]["ip"], "192.168.1.71")
+
+
 
 class ActiveDiscoveryTests(
     unittest.IsolatedAsyncioTestCase
