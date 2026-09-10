@@ -571,20 +571,18 @@ async def _async_find_lan_device(
                 if found is not None:
                     return found
 
-    from .discovery import discover
+    from .discovery import find_device
 
     try:
-        # TinyTuya/tuya-local use an 18-second discovery window.  Keep
-        # LocalTuya's fast cached/active probes above, but use the same proven
-        # window on this slow fallback so infrequent announcers are not missed.
-        devices = await discover(timeout=18.0, hass=hass)
+        # Match the proven TinyTuya/tuya-local find_device(dev_id=...) model:
+        # listen on 6666/6667/7000, periodically rebroadcast REQ_DEVINFO for
+        # slow 3.5 devices, and stop as soon as the requested ID appears.
+        found = await find_device(device_id, hass=hass)
     except Exception as exc:
         _LOGGER.debug("Targeted Tuya LAN discovery fallback failed: %s", exc)
         return None
 
-    if not isinstance(devices, dict):
-        return None
-    return _find_discovered_device(devices, device_id)
+    return copy.deepcopy(found) if isinstance(found, dict) else None
 
 
 def _qr_host_schema(default: str = "") -> vol.Schema:
