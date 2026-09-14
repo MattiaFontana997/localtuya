@@ -1,0 +1,36 @@
+name: Fix b2 patcher workflow
+
+on:
+  push:
+    branches:
+      - fix/6.7.0b2-explicit-gateway-diagnostics
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/6.7.0b2-explicit-gateway-diagnostics
+          fetch-depth: 0
+      - name: Repair patcher YAML
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/apply-6.7.0b2-explicit-gateway.yml')
+          text = p.read_text()
+          old = "    if: github.actor != 'github-actions[bot]'\n"
+          new = "    if: ${{ github.actor != 'github-actions[bot]' }}\n"
+          if old not in text:
+              raise SystemExit('Expected invalid if line not found')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/apply-6.7.0b2-explicit-gateway.yml
+          git commit -m "Fix explicit gateway patcher workflow"
+          git push origin HEAD:fix/6.7.0b2-explicit-gateway-diagnostics
