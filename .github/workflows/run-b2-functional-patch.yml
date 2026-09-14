@@ -34,7 +34,7 @@ jobs:
               body.append(line[10:] if line.startswith('          ') else line)
           script = '\n'.join(body) + '\n'
           original = '''    if text.count(old) != 1:\n        raise SystemExit(f"Expected exactly one match in {path}, found {text.count(old)}")\n    p.write_text(text.replace(old, new, 1))'''
-          replacement = '''    count = text.count(old)\n    qr_initial_call = (\n        path == "custom_components/localtuya/qr_onboarding.py"\n        and old == "                    self.hass,\\n                    self._qr_cloud,\\n                    cloud_device,\\n                )"\n    )\n    if count != 1 and not (qr_initial_call and count == 2):\n        raise SystemExit(\n            f"Expected exactly one match in {path}, found {count}; old={old[:160]!r}"\n        )\n    p.write_text(text.replace(old, new, 1))'''
+          replacement = '''    count = text.count(old)\n    qr_path = "custom_components/localtuya/qr_onboarding.py"\n    qr_first_only = (\n        path == qr_path\n        and old in {\n            "                    self.hass,\\n                    self._qr_cloud,\\n                    cloud_device,\\n                )",\n            "            except QrProvisioningError as exc:\\n                if _qr_needs_host_fallback(exc.reason):",\n        }\n    )\n    if count != 1 and not (qr_first_only and count == 2):\n        raise SystemExit(\n            f"Expected exactly one match in {path}, found {count}; old={old[:160]!r}"\n        )\n    p.write_text(text.replace(old, new, 1))'''
           if original not in script:
               raise SystemExit('replace_once implementation not found in extracted recipe')
           script = script.replace(original, replacement, 1)
