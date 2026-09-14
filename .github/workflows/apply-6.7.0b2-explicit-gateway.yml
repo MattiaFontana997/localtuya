@@ -1,0 +1,353 @@
+name: Apply 6.7.0b2 explicit gateway parity
+
+on:
+  push:
+    branches:
+      - fix/6.7.0b2-explicit-gateway-diagnostics
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/6.7.0b2-explicit-gateway-diagnostics
+          fetch-depth: 0
+      - name: Apply focused parity and diagnostics patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f"Expected exactly one match in {path}, found {text.count(old)}")
+              p.write_text(text.replace(old, new, 1))
+
+          # 1) Keep the existing validation API, but allow callers to receive the
+          # exact privacy-safe preflight used by the real connection attempt.
+          replace_once(
+              "custom_components/localtuya/config_flow.py",
+              '''async def validate_input(\n    hass: core.HomeAssistant,\n    data,\n):\n    \"\"\"Validate input and resolve the Tuya LAN protocol.\"\"\"''',
+              '''async def validate_input(\n    hass: core.HomeAssistant,\n    data,\n    *,\n    preflight_trace: dict | None = None,\n):\n    \"\"\"Validate input and resolve the Tuya LAN protocol.\n\n    ``preflight_trace`` is an optional privacy-safe sink used by onboarding to\n    expose the exact network/protocol attempts that produced the result.\n    \"\"\"''',
+          )
+          replace_once(
+              "custom_components/localtuya/config_flow.py",
+              '''    report = await async_device_preflight(hass, data)\n\n    if report.ok:''',
+              '''    report = await async_device_preflight(\n        hass,\n        data,\n        trace_sink=preflight_trace,\n    )\n    if preflight_trace is not None:\n        preflight_trace[\"_report\"] = report.as_dict()\n\n    if report.ok:''',
+          )
+
+          # 2) Instrument the existing probe rather than introducing a second
+          # diagnostic connection path.
+          replace_once(
+              "custom_components/localtuya/device_probe.py",
+              '''async def _async_probe_protocol(\n    data: dict[str, Any],\n    protocol_version: str,\n    reset_ids: list[int],\n) -> dict[Any, Any]:\n    \"\"\"Probe one Tuya LAN protocol and return detected datapoints.\"\"\"\n    interface = None''',
+              '''async def _async_probe_protocol(\n    data: dict[str, Any],\n    protocol_version: str,\n    reset_ids: list[int],\n    trace_sink: dict[str, Any] | None = None,\n) -> dict[Any, Any]:\n    \"\"\"Probe one Tuya LAN protocol and return detected datapoints.\"\"\"\n    interface = None\n    protocol_trace = None\n    if trace_sink is not None:\n        protocol_trace = trace_sink.setdefault(str(protocol_version), {})''',
+          )
+          replace_once(
+              "custom_components/localtuya/device_probe.py",
+              '''                    interface = await pytuya.connect(\n                        data[CONF_HOST],\n                        data[CONF_DEVICE_ID],\n                        data[CONF_LOCAL_KEY],\n                        float(protocol_version),\n                        data.get(CONF_ENABLE_DEBUG, False),\n                        cid=data.get(\"node_id\"),\n                        gateway_id=data.get(\"gateway_id\"),\n                    )\n                    break''',
+              '''                    interface = await pytuya.connect(\n                        data[CONF_HOST],\n                        data[CONF_DEVICE_ID],\n                        data[CONF_LOCAL_KEY],\n                        float(protocol_version),\n                        data.get(CONF_ENABLE_DEBUG, False),\n                        cid=data.get(\"node_id\"),\n                        gateway_id=data.get(\"gateway_id\"),\n                    )\n                    if protocol_trace is not None:\n                        protocol_trace[\"connect\"] = \"ok\"\n                        protocol_trace[\"connect_attempts\"] = attempt + 1\n                    break''',
+          )
+          replace_once(
+              "custom_components/localtuya/device_probe.py",
+              '''                    last_connect_error = ex\n                    if attempt == 0:''',
+              '''                    last_connect_error = ex\n                    if protocol_trace is not None:\n                        protocol_trace[\"connect\"] = type(ex).__name__\n                        protocol_trace[\"connect_attempts\"] = attempt + 1\n                    if attempt == 0:''',
+          )
+          replace_once(
+              "custom_components/localtuya/device_probe.py",
+              '''                detected_dps = await interface.status()\n                if not detected_dps:\n                    detected_dps = await interface.detect_available_dps()''',
+              '''                detected_dps = await interface.status()\n                if protocol_trace is not None:\n                    protocol_trace[\"status\"] = (\n                        \"data\" if detected_dps else \"empty\"\n                    )\n                if not detected_dps:\n                    try:\n                        detected_dps = await interface.detect_available_dps()\n                    except Exception as ex:\n                        if protocol_trace is not None:\n                            protocol_trace[\"dps_fallback\"] = type(ex).__name__\n                        raise\n                    if protocol_trace is not None:\n                        protocol_trace[\"dps_fallback\"] = (\n                            \"data\" if detected_dps else \"empty\"\n                        )''',
+          )
+          replace_once(
+              "custom_components/localtuya/device_probe.py",
+              '''            except Exception as ex:\n                if protocol_version == \"3.3\" and reset_ids:''',
+              '''            except Exception as ex:\n                if protocol_trace is not None and \"status\" not in protocol_trace:\n                    protocol_trace[\"status\"] = type(ex).__name__\n                if protocol_version == \"3.3\" and reset_ids:''',
+          )
+          replace_once(
+              "custom_components/localtuya/device_probe.py",
+              '''async def async_device_preflight(\n    hass: HomeAssistant | None,\n    data: dict[str, Any],\n) -> DeviceHealthReport:''',
+              '''async def async_device_preflight(\n    hass: HomeAssistant | None,\n    data: dict[str, Any],\n    *,\n    trace_sink: dict[str, Any] | None = None,\n) -> DeviceHealthReport:''',
+          )
+          replace_once(
+              "custom_components/localtuya/device_probe.py",
+              '''            data,\n            protocol_version,\n            reset_ids,\n        )''',
+              '''            data,\n            protocol_version,\n            reset_ids,\n            trace_sink,\n        )''',
+          )
+
+          # 3) Make gateway choice authoritative and match tuya-local's direct
+          # versus indirect decision instead of relying on inferred parent data.
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''    def __init__(self, reason: str, detail: str = \"\") -> None:\n        super().__init__(detail or reason)\n        self.reason = reason\n        self.detail = detail''',
+              '''    def __init__(\n        self,\n        reason: str,\n        detail: str = \"\",\n        diagnostics: dict[str, Any] | None = None,\n    ) -> None:\n        super().__init__(detail or reason)\n        self.reason = reason\n        self.detail = detail\n        self.diagnostics = copy.deepcopy(diagnostics or {})''',
+          )
+
+          anchor = '''def _enrich_gateway_routes(\n    devices: dict[str, dict[str, Any]],\n) -> dict[str, dict[str, Any]]:\n'''
+          p = Path("custom_components/localtuya/qr_onboarding.py")
+          text = p.read_text()
+          idx = text.index(anchor)
+          helper = '''def _qr_requires_gateway(device: dict[str, Any]) -> bool:\n    \"\"\"Match tuya-local's direct/indirect cloud-device distinction.\n\n    Device Sharing records with an IP are directly addressable. Records with\n    no IP, or explicit sub-device/CID metadata, require a gateway. The cloud IP\n    is used only as a routing-shape hint and is never trusted as a LAN host.\n    \"\"\"\n    if not isinstance(device, dict):\n        return False\n    if device.get(\"sub\") or str(device.get(\"node_id\") or \"\").strip():\n        return True\n    return not bool(str(device.get(\"ip\") or \"\").strip())\n\n\ndef _clear_gateway_route(device: dict[str, Any]) -> None:\n    \"\"\"Remove inferred gateway transport when the user chose direct mode.\"\"\"\n    device[\"gateway_id\"] = \"\"\n    for key in (\n        \"gateway_local_key\",\n        \"gateway_ip\",\n        \"gateway_name\",\n        \"gateway_candidates\",\n    ):\n        device.pop(key, None)\n\n\ndef _apply_explicit_gateway_choice(\n    device: dict[str, Any],\n    gateway_id: str,\n    devices: dict[str, dict[str, Any]],\n) -> dict[str, Any]:\n    \"\"\"Apply the user's gateway selection as the routing authority.\"\"\"\n    selected_gateway = str(gateway_id or \"\").strip()\n    requires_gateway = _qr_requires_gateway(device)\n\n    if not requires_gateway:\n        if selected_gateway:\n            raise QrProvisioningError(\n                \"qr_device_does_not_need_gateway\",\n                \"This Device Sharing record is directly addressable; choose no gateway\",\n            )\n        _clear_gateway_route(device)\n        return device\n\n    if not selected_gateway:\n        raise QrProvisioningError(\n            \"qr_subdevice_gateway_missing\",\n            \"This Device Sharing record is indirect; select its hub/gateway\",\n        )\n\n    gateway = devices.get(selected_gateway)\n    if not isinstance(gateway, dict) or not gateway.get(\"is_hub\"):\n        raise QrProvisioningError(\n            \"qr_subdevice_gateway_missing\",\n            \"Select a valid hub/gateway from the linked Tuya account\",\n        )\n\n    cid = str(device.get(\"node_id\") or device.get(\"uuid\") or \"\").strip()\n    if not cid:\n        raise QrProvisioningError(\n            \"qr_device_not_local\",\n            \"The indirect device has no node_id/UUID that can be used as CID\",\n        )\n    device[\"node_id\"] = cid\n    if not _assign_gateway_route(device, selected_gateway, gateway):\n        raise QrProvisioningError(\n            \"qr_device_not_local\",\n            \"Neither the child nor selected gateway exposes a usable local key\",\n        )\n    return device\n\n\ndef _qr_trace_summary(diagnostics: dict[str, Any] | None) -> str:\n    \"\"\"Return one compact, credential-free provisioning trace for logs/UI.\"\"\"\n    if not isinstance(diagnostics, dict):\n        return \"no diagnostics\"\n    preflight = diagnostics.get(\"preflight\")\n    if not isinstance(preflight, dict):\n        preflight = {}\n    protocol_steps = diagnostics.get(\"protocol_steps\")\n    if not isinstance(protocol_steps, dict):\n        protocol_steps = {}\n    attempts = []\n    for protocol in (\"3.5\", \"3.4\", \"3.3\", \"3.2\", \"3.1\"):\n        step = protocol_steps.get(protocol)\n        if not isinstance(step, dict):\n            continue\n        bits = [f\"connect={step.get('connect', '—')}\"]\n        if \"status\" in step:\n            bits.append(f\"status={step['status']}\")\n        if \"dps_fallback\" in step:\n            bits.append(f\"dps={step['dps_fallback']}\")\n        attempts.append(f\"{protocol}[{','.join(bits)}]\")\n    return (\n        f\"transport={diagnostics.get('transport', '—')} \"\n        f\"discovery={diagnostics.get('discovery', '—')} \"\n        f\"host={diagnostics.get('host', '—')} \"\n        f\"stage={preflight.get('stage', '—')} \"\n        f\"failure={preflight.get('failure', '—')} \"\n        f\"resolved={preflight.get('resolved_protocol', '—')} \"\n        f\"attempts={' ; '.join(attempts) or '—'}\"\n    )\n\n\n'''
+          text = text[:idx] + helper + text[idx:]
+          p.write_text(text)
+
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''async def async_prepare_qr_device(\n    hass,\n    cloud: QrCloudClient,\n    cloud_device: dict[str, Any],\n    *,\n    host_override: str | None = None,\n) -> tuple[dict[str, Any], list[Any]]:''',
+              '''async def async_prepare_qr_device(\n    hass,\n    cloud: QrCloudClient,\n    cloud_device: dict[str, Any],\n    *,\n    host_override: str | None = None,\n    diagnostics: dict[str, Any] | None = None,\n) -> tuple[dict[str, Any], list[Any]]:''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''    device_id = str(cloud_device.get(\"id\") or \"\").strip()\n    node_id = str(cloud_device.get(\"node_id\") or \"\").strip()\n    gateway_id = str(cloud_device.get(\"gateway_id\") or \"\").strip()''',
+              '''    trace = diagnostics if isinstance(diagnostics, dict) else {}\n    trace.clear()\n    device_id = str(cloud_device.get(\"id\") or \"\").strip()\n    node_id = str(cloud_device.get(\"node_id\") or \"\").strip()\n    gateway_id = str(cloud_device.get(\"gateway_id\") or \"\").strip()\n    trace[\"transport\"] = \"gateway\" if node_id else \"direct\"''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''            \"qr_device_not_local\",\n            \"Device ID/local_key is not available\",\n        )''',
+              '''            \"qr_device_not_local\",\n            \"Device ID/local_key is not available\",\n            trace,\n        )''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''            \"qr_subdevice_gateway_missing\",\n            \"Tuya returned a child device without its parent gateway ID\",\n        )''',
+              '''            \"qr_subdevice_gateway_missing\",\n            \"Tuya returned a child device without its parent gateway ID\",\n            trace,\n        )''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''        found = await _async_find_lan_device(hass, discovery_id)\n        if isinstance(found, dict):\n            discovered = found''',
+              '''        trace[\"discovery_target\"] = \"gateway\" if node_id else \"device\"\n        found = await _async_find_lan_device(hass, discovery_id)\n        if isinstance(found, dict):\n            discovered = found\n            trace[\"discovery\"] = \"found\"\n        else:\n            trace[\"discovery\"] = \"not_found\"''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''        host = str(discovered.get(\"ip\") or \"\").strip()\n        if not host:\n            raise QrProvisioningError(\n                \"qr_device_host_required\",\n                \"Automatic LAN discovery could not determine the device address\",\n            )''',
+              '''        host = str(discovered.get(\"ip\") or \"\").strip()\n        trace[\"host\"] = host or \"—\"\n        if not host:\n            _LOGGER.warning(\"QR provisioning trace: %s\", _qr_trace_summary(trace))\n            raise QrProvisioningError(\n                \"qr_device_host_required\",\n                \"Automatic LAN discovery could not determine the device address\",\n                trace,\n            )''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''        host = str(host_override or \"\").strip()\n        if not host:''',
+              '''        host = str(host_override or \"\").strip()\n        trace[\"discovery\"] = \"manual_host\"\n        trace[\"host\"] = host or \"—\"\n        if not host:''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''                \"qr_device_host_required\",\n                \"Enter the current device IP address or hostname\",\n            )''',
+              '''                \"qr_device_host_required\",\n                \"Enter the current device IP address or hostname\",\n                trace,\n            )''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''    try:\n        dps_strings, resolved_protocol = await validate_input(hass, device_data)\n    except CannotConnect as exc:''',
+              '''    preflight_trace: dict[str, Any] = {}\n    try:\n        dps_strings, resolved_protocol = await validate_input(\n            hass,\n            device_data,\n            preflight_trace=preflight_trace,\n        )\n    except CannotConnect as exc:\n        trace[\"preflight\"] = copy.deepcopy(preflight_trace.get(\"_report\", {}))\n        trace[\"protocol_steps\"] = {\n            key: copy.deepcopy(value)\n            for key, value in preflight_trace.items()\n            if key != \"_report\"\n        }\n        _LOGGER.warning(\"QR provisioning trace: %s\", _qr_trace_summary(trace))''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''            \"cannot_connect\",\n            \"The device did not answer at the selected LAN address\",\n        ) from exc\n    except InvalidAuth as exc:''',
+              '''            \"cannot_connect\",\n            \"The device did not answer at the selected LAN address\",\n            trace,\n        ) from exc\n    except InvalidAuth as exc:\n        trace[\"preflight\"] = copy.deepcopy(preflight_trace.get(\"_report\", {}))\n        trace[\"protocol_steps\"] = {\n            key: copy.deepcopy(value)\n            for key, value in preflight_trace.items()\n            if key != \"_report\"\n        }\n        _LOGGER.warning(\"QR provisioning trace: %s\", _qr_trace_summary(trace))''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''            \"invalid_auth\",\n            \"The device rejected the Device ID/local key returned by Tuya\",\n        ) from exc\n    except EmptyDpsList as exc:''',
+              '''            \"invalid_auth\",\n            \"The device rejected the Device ID/local key returned by Tuya\",\n            trace,\n        ) from exc\n    except EmptyDpsList as exc:\n        trace[\"preflight\"] = copy.deepcopy(preflight_trace.get(\"_report\", {}))\n        trace[\"protocol_steps\"] = {\n            key: copy.deepcopy(value)\n            for key, value in preflight_trace.items()\n            if key != \"_report\"\n        }\n        _LOGGER.warning(\"QR provisioning trace: %s\", _qr_trace_summary(trace))''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''            \"empty_dps\",\n            \"The LAN connection succeeded but the device returned no datapoints\",\n        ) from exc''',
+              '''            \"empty_dps\",\n            \"The LAN connection succeeded but the device returned no datapoints\",\n            trace,\n        ) from exc''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''        raise QrProvisioningError(\n            \"unknown\",\n            \"Unexpected error while validating the device over LAN\",\n        ) from exc\n\n    device_data[CONF_PROTOCOL_VERSION] = resolved_protocol''',
+              '''        trace[\"preflight\"] = copy.deepcopy(preflight_trace.get(\"_report\", {}))\n        trace[\"protocol_steps\"] = {\n            key: copy.deepcopy(value)\n            for key, value in preflight_trace.items()\n            if key != \"_report\"\n        }\n        _LOGGER.warning(\"QR provisioning trace: %s\", _qr_trace_summary(trace))\n        raise QrProvisioningError(\n            \"unknown\",\n            \"Unexpected error while validating the device over LAN\",\n            trace,\n        ) from exc\n\n    trace[\"preflight\"] = copy.deepcopy(preflight_trace.get(\"_report\", {}))\n    trace[\"protocol_steps\"] = {\n        key: copy.deepcopy(value)\n        for key, value in preflight_trace.items()\n        if key != \"_report\"\n    }\n    _LOGGER.info(\"QR provisioning trace: %s\", _qr_trace_summary(trace))\n    device_data[CONF_PROTOCOL_VERSION] = resolved_protocol''',
+          )
+
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''            selected = user_input[CONF_DEVICE_ID]\n            cloud_device = copy.deepcopy(eligible[selected])\n            if cloud_device.get(\"node_id\") and not cloud_device.get(\"gateway_id\"):\n                gateway_id = str(user_input.get(CONF_QR_GATEWAY_ID) or \"\").strip()\n                gateway = devices.get(gateway_id) if gateway_id else None\n                if not isinstance(gateway, dict) or not gateway.get(\"is_hub\"):\n                    return self.async_show_form(\n                        step_id=\"qr_choose_device\",\n                        data_schema=self._qr_device_schema(eligible, devices),\n                        errors={\"base\": \"qr_subdevice_gateway_missing\"},\n                        description_placeholders={\n                            \"msg\": \"Select the hub/gateway used by this sub-device\"\n                        },\n                    )\n                _assign_gateway_route(cloud_device, gateway_id, gateway)\n            self._qr_selected_device = copy.deepcopy(cloud_device)''',
+              '''            selected = user_input[CONF_DEVICE_ID]\n            cloud_device = copy.deepcopy(eligible[selected])\n            gateway_id = str(user_input.get(CONF_QR_GATEWAY_ID) or \"\").strip()\n            try:\n                _apply_explicit_gateway_choice(cloud_device, gateway_id, devices)\n            except QrProvisioningError as exc:\n                return self.async_show_form(\n                    step_id=\"qr_choose_device\",\n                    data_schema=self._qr_device_schema(eligible, devices),\n                    errors={\"base\": exc.reason},\n                    description_placeholders={\"msg\": exc.detail},\n                )\n            self._qr_selected_device = copy.deepcopy(cloud_device)\n            self._qr_provisioning_diagnostics = {}''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''                    self.hass,\n                    self._qr_cloud,\n                    cloud_device,\n                )''',
+              '''                    self.hass,\n                    self._qr_cloud,\n                    cloud_device,\n                    diagnostics=self._qr_provisioning_diagnostics,\n                )''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''            except QrProvisioningError as exc:\n                if _qr_needs_host_fallback(exc.reason):''',
+              '''            except QrProvisioningError as exc:\n                self._qr_provisioning_diagnostics = copy.deepcopy(exc.diagnostics)\n                if _qr_needs_host_fallback(exc.reason):''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''                        cloud_device,\n                        host_override=host,\n                    )''',
+              '''                        cloud_device,\n                        host_override=host,\n                        diagnostics=getattr(\n                            self, \"_qr_provisioning_diagnostics\", None\n                        ),\n                    )''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''                except QrProvisioningError as exc:\n                    errors[\"base\"] = exc.reason\n                    placeholders = {\"msg\": exc.detail}''',
+              '''                except QrProvisioningError as exc:\n                    self._qr_provisioning_diagnostics = copy.deepcopy(exc.diagnostics)\n                    errors[\"base\"] = exc.reason\n                    placeholders = {\n                        \"msg\": (\n                            f\"{exc.detail} | {_qr_trace_summary(exc.diagnostics)}\"\n                        )\n                    }''',
+          )
+          replace_once(
+              "custom_components/localtuya/qr_onboarding.py",
+              '''        if hubs:\n            schema[vol.Optional(CONF_QR_GATEWAY_ID, default=\"\")] = vol.In(\n                {\"\": \"Automatic / none\", **hubs}\n            )''',
+              '''        if hubs:\n            schema[vol.Required(CONF_QR_GATEWAY_ID, default=\"\")] = vol.In(\n                {\"\": \"None / direct device\", **hubs}\n            )''',
+          )
+
+          # New focused regression tests. Keep them independent from translation UI.
+          Path("tests/test_qr_explicit_gateway_diagnostics.py").write_text(r'''"""Regression tests for explicit gateway choice and provisioning traces."""
+
+from __future__ import annotations
+
+import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+from custom_components.localtuya.config_flow import CannotConnect
+from custom_components.localtuya.const import CONF_LOCAL_KEY
+from custom_components.localtuya.qr_onboarding import (
+    QrProvisioningError,
+    _apply_explicit_gateway_choice,
+    _qr_requires_gateway,
+    async_prepare_qr_device,
+)
+
+
+class ExplicitGatewayParityTests(unittest.TestCase):
+    def setUp(self):
+        self.hubs = {
+            "hub-1": {
+                "id": "hub-1",
+                "name": "Hub 1",
+                "is_hub": True,
+                CONF_LOCAL_KEY: "hub-key-1",
+                "ip": "198.51.100.10",
+            },
+            "hub-2": {
+                "id": "hub-2",
+                "name": "Hub 2",
+                "is_hub": True,
+                CONF_LOCAL_KEY: "hub-key-2",
+                "ip": "198.51.100.11",
+            },
+        }
+
+    def test_direct_cloud_record_rejects_gateway(self):
+        device = {
+            "id": "thermostat",
+            "ip": "203.0.113.22",
+            CONF_LOCAL_KEY: "child-key",
+            "node_id": "",
+            "sub": False,
+        }
+        self.assertFalse(_qr_requires_gateway(device))
+        with self.assertRaises(QrProvisioningError) as ctx:
+            _apply_explicit_gateway_choice(device, "hub-1", self.hubs)
+        self.assertEqual(ctx.exception.reason, "qr_device_does_not_need_gateway")
+
+    def test_indirect_cloud_record_requires_gateway(self):
+        device = {
+            "id": "lamp",
+            "ip": "",
+            "uuid": "lamp-cid",
+            CONF_LOCAL_KEY: "child-key",
+            "node_id": "",
+            "sub": False,
+        }
+        self.assertTrue(_qr_requires_gateway(device))
+        with self.assertRaises(QrProvisioningError) as ctx:
+            _apply_explicit_gateway_choice(device, "", self.hubs)
+        self.assertEqual(ctx.exception.reason, "qr_subdevice_gateway_missing")
+
+    def test_explicit_gateway_overrides_inferred_parent_and_uses_child_key(self):
+        device = {
+            "id": "lamp",
+            "ip": "",
+            "uuid": "lamp-cid",
+            "node_id": "lamp-cid",
+            "gateway_id": "hub-1",
+            "gateway_local_key": "old-key",
+            CONF_LOCAL_KEY: "child-key",
+            "sub": True,
+        }
+        _apply_explicit_gateway_choice(device, "hub-2", self.hubs)
+        self.assertEqual(device["gateway_id"], "hub-2")
+        self.assertEqual(device["node_id"], "lamp-cid")
+        self.assertEqual(device["gateway_local_key"], "child-key")
+
+
+class ProvisioningTraceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failed_real_preflight_trace_is_attached_to_error(self):
+        hass = SimpleNamespace(data={"localtuya": {"device_catalog": None}})
+        cloud = SimpleNamespace(async_get_datamodel=AsyncMock(return_value=[]))
+        device = {
+            "id": "thermostat",
+            "name": "Thermostat",
+            "ip": "203.0.113.22",
+            CONF_LOCAL_KEY: "local-key",
+            "product_id": "thermostat-product",
+            "node_id": "",
+        }
+        trace = {}
+
+        async def fail_validation(hass, data, *, preflight_trace=None):
+            preflight_trace.update(
+                {
+                    "3.5": {
+                        "connect": "ConnectionRefusedError",
+                        "connect_attempts": 2,
+                    },
+                    "3.4": {
+                        "connect": "TimeoutError",
+                        "connect_attempts": 2,
+                    },
+                    "_report": {
+                        "ok": False,
+                        "stage": "lan",
+                        "failure": "host_unreachable",
+                        "resolved_protocol": None,
+                    },
+                }
+            )
+            raise CannotConnect()
+
+        with patch(
+            "custom_components.localtuya.qr_onboarding._async_find_lan_device",
+            new=AsyncMock(return_value={"gwId": "thermostat", "ip": "192.168.1.44"}),
+        ), patch(
+            "custom_components.localtuya.config_flow.validate_input",
+            new=fail_validation,
+        ):
+            with self.assertRaises(QrProvisioningError) as ctx:
+                await async_prepare_qr_device(
+                    hass,
+                    cloud,
+                    device,
+                    diagnostics=trace,
+                )
+
+        self.assertEqual(ctx.exception.reason, "cannot_connect")
+        self.assertEqual(ctx.exception.diagnostics["discovery"], "found")
+        self.assertEqual(ctx.exception.diagnostics["host"], "192.168.1.44")
+        self.assertEqual(
+            ctx.exception.diagnostics["preflight"]["failure"],
+            "host_unreachable",
+        )
+        self.assertEqual(
+            ctx.exception.diagnostics["protocol_steps"]["3.5"]["connect"],
+            "ConnectionRefusedError",
+        )
+        cloud.async_get_datamodel.assert_not_awaited()
+
+
+if __name__ == "__main__":
+    unittest.main()
+''')
+          PY
+      - name: Commit functional patch and remove one-shot workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-6.7.0b2-explicit-gateway.yml
+          git add custom_components/localtuya/config_flow.py custom_components/localtuya/device_probe.py custom_components/localtuya/qr_onboarding.py tests/test_qr_explicit_gateway_diagnostics.py
+          git commit -m "Match tuya-local explicit gateway routing and trace provisioning"
+          git push origin HEAD:fix/6.7.0b2-explicit-gateway-diagnostics
