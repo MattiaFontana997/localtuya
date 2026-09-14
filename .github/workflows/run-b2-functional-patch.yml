@@ -33,6 +33,10 @@ jobs:
                   break
               body.append(line[10:] if line.startswith('          ') else line)
           script = '\n'.join(body) + '\n'
+          script = script.replace(
+              'raise SystemExit(f"Expected exactly one match in {path}, found {text.count(old)}")',
+              'raise SystemExit(f"Expected exactly one match in {path}, found {text.count(old)}; old={old[:160]!r}")',
+          )
           Path('/tmp/apply_b2.sh').write_text(script)
           PY
           bash /tmp/apply_b2.sh
