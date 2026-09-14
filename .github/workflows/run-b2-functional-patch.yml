@@ -1,0 +1,43 @@
+name: Run b2 functional patch
+
+on:
+  push:
+    branches:
+      - fix/6.7.0b2-explicit-gateway-diagnostics
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/6.7.0b2-explicit-gateway-diagnostics
+          fetch-depth: 0
+      - name: Apply functional patch recipe
+        if: github.actor != 'github-actions[bot]'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/apply-6.7.0b2-explicit-gateway.yml').read_text().splitlines()
+          marker = '      - name: Apply focused parity and diagnostics patch'
+          start = source.index(marker) + 1
+          while start < len(source) and source[start].strip() != 'run: |':
+              start += 1
+          start += 1
+          body = []
+          for line in source[start:]:
+              if line.startswith('      - name:'):
+                  break
+              body.append(line[10:] if line.startswith('          ') else line)
+          script = '\n'.join(body) + '\n'
+          Path('/tmp/apply_b2.sh').write_text(script)
+          PY
+          bash /tmp/apply_b2.sh
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/localtuya/config_flow.py custom_components/localtuya/device_probe.py custom_components/localtuya/qr_onboarding.py tests/test_qr_explicit_gateway_diagnostics.py
+          git commit -m "Match tuya-local explicit gateway routing and trace provisioning"
+          git push origin HEAD:fix/6.7.0b2-explicit-gateway-diagnostics
