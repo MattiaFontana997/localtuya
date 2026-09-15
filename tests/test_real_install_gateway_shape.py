@@ -8,6 +8,7 @@ from custom_components.localtuya.const import CONF_LOCAL_KEY
 from custom_components.localtuya.qr_onboarding import (
     _enrich_gateway_routes,
     _qr_is_locally_eligible,
+    _select_gateway_route,
 )
 
 
@@ -40,6 +41,9 @@ class ReportedGatewayShapeTests(unittest.TestCase):
 
         for index in range(1, 6):
             child = routed[f"lamp-{index}"]
+            self.assertTrue(_qr_is_locally_eligible(child))
+            self.assertFalse(child.get("gateway_id"))
+            _select_gateway_route(child, devices, {"qr_gateway_id": "gateway"})
             self.assertEqual(child["gateway_id"], "gateway")
             self.assertEqual(child["gateway_local_key"], "gateway-key")
             self.assertEqual(child["gateway_ip"], "192.168.1.50")

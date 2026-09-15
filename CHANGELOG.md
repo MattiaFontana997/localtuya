@@ -1,5 +1,12 @@
 # Changelog
 
+## 6.7.0b2 — 2026-09-15
+
+- Fixed direct Wi-Fi versus gateway-child classification and explicit parent selection in initial, additional-device and bulk setup.
+- Kept keyless gateway children selectable and preserved child product identity during discovery.
+- Redacted gateway routing secrets from diagnostics and clarified connection failures.
+- See [beta release notes](docs/releases/6.7.0b2.md) for installation and hardware-test limitations.
+
 ## 6.7.0 — In development
 
 Reliability, repair, gateway-child and zero-config onboarding development release. Stable `master` remains unchanged until explicit release approval.

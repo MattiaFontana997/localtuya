@@ -1,0 +1,52 @@
+name: Validate and publish 6.7.0b2
+
+on:
+  push:
+    branches: [release/6.7.0b2]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prerelease-6.7.0b2
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+      - run: python -m pip install -r requirements_test.txt
+      - run: python -m unittest discover -s tests -p 'test_*.py' -q
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: integration
+      - name: Hassfest validation
+        uses: home-assistant/actions/hassfest@master
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify version and build archive
+        run: |
+          python -c 'import json; assert json.load(open("custom_components/localtuya/manifest.json"))["version"] == "6.7.0b2"'
+          git archive --format=zip --output=localtuya-6.7.0b2.zip HEAD custom_components/localtuya
+      - name: Publish beta release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v6.7.0b2 localtuya-6.7.0b2.zip --target "$GITHUB_SHA" --title "LocalTuya 6.7.0b2" --prerelease --latest=false --notes-file docs/releases/6.7.0b2.md

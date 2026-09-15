@@ -52,7 +52,13 @@ QR_AUTH_TO_REDACT = {
     "user_code",
 }
 
+GATEWAY_TO_REDACT = {
+    "gateway_local_key", "gateway_ip", "gateway_id", "node_id", "cid",
+    "gateway_candidates",
+}
+
 TO_REDACT = {
+    *GATEWAY_TO_REDACT,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
     CONF_DEVICE_ID,
@@ -66,6 +72,7 @@ TO_REDACT = {
 # Do NOT add "id" to TO_REDACT globally: LocalTuya entity
 # configurations legitimately use "id" for the datapoint ID.
 CLOUD_DEVICE_TO_REDACT = {
+    *GATEWAY_TO_REDACT,
     "id",
     "uuid",
     "uid",

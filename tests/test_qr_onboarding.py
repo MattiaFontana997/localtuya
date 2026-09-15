@@ -26,6 +26,7 @@ from custom_components.localtuya.qr_onboarding import (
     CONF_QR_TOKEN_INFO,
     CONF_QR_USER_CODE,
     QrCloudClient,
+    QrOptionsFlowMixin,
     QrProvisioningError,
     _base_entry_data,
     _enrich_gateway_routes,
@@ -137,6 +138,9 @@ class QrCloudClientTests(unittest.IsolatedAsyncioTestCase):
         device = SimpleNamespace(
             id="device-1",
             name="Kitchen Plug",
+            uuid="direct-wifi-uuid",
+            ip="",
+            sub=False,
             local_key="local-secret",
             product_id="product-1",
             product_name="Plug",
@@ -167,6 +171,8 @@ class QrCloudClientTests(unittest.IsolatedAsyncioTestCase):
         cloud._build_manager = build_manager
         devices = await cloud.async_get_devices()
 
+        self.assertEqual(devices["device-1"]["node_id"], "")
+        self.assertFalse(devices["device-1"].get("gateway_id"))
         self.assertIn("device-1", devices)
         self.assertEqual(
             devices["device-1"][CONF_LOCAL_KEY],
@@ -478,6 +484,34 @@ class QrGatewayParityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(routed["gateway_id"], "hub-2")
         self.assertEqual(routed["gateway_local_key"], "child-key")
         self.assertEqual(routed["gateway_ip"], "192.168.1.11")
+
+    async def test_add_device_applies_selected_gateway(self):
+        class Flow(QrOptionsFlowMixin):
+            def async_show_form(self, **kwargs):
+                return kwargs
+
+            async def async_step_qr_add_device_host(self, user_input=None):
+                return {"step_id": "qr_add_device_host"}
+
+        flow = Flow()
+        flow.hass = SimpleNamespace(data={})
+        flow.config_entry = SimpleNamespace(data={CONF_QR_AUTH: {"test": True}})
+        flow._qr_cloud = SimpleNamespace()
+        flow._qr_devices = {
+            "hub": {"is_hub": True, CONF_LOCAL_KEY: "test-hub-key"},
+            "child": {"id": "child", "node_id": "cid", "gateway_candidates": ["hub"]},
+        }
+        with patch(
+            "custom_components.localtuya.qr_onboarding.async_prepare_qr_device",
+            new=AsyncMock(side_effect=QrProvisioningError("cannot_connect", "test")),
+        ) as prepare:
+            result = await flow.async_step_qr_add_device(
+                {"device_id": "child", "qr_gateway_id": "hub"}
+            )
+        self.assertEqual(result["step_id"], "qr_add_device_host")
+        self.assertEqual(prepare.await_args.args[2]["gateway_id"], "hub")
+        self.assertEqual(prepare.await_args.args[2]["gateway_local_key"], "test-hub-key")
+        self.assertNotIn("gateway_id", flow._qr_devices["child"])
 
 
 

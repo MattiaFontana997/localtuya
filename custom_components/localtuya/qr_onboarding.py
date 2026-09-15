@@ -159,6 +159,29 @@ def _assign_gateway_route(
     return bool(route_key)
 
 
+def _select_gateway_route(device, devices, user_input):
+    """Apply a user's hub choice consistently before opening a LAN connection."""
+    selected = str(user_input.get(CONF_QR_GATEWAY_ID) or "").strip()
+    if not device.get("node_id"):
+        if selected:
+            raise QrProvisioningError(
+                "qr_subdevice_gateway_missing",
+                "This device has no child node ID; configure it directly",
+            )
+        return
+    gateway_id = selected or str(device.get("gateway_id") or "").strip()
+    gateway = devices.get(gateway_id)
+    if not gateway_id or not isinstance(gateway, dict):
+        raise QrProvisioningError(
+            "qr_subdevice_gateway_missing", "Select the gateway used by this device"
+        )
+    if selected and not gateway.get("is_hub"):
+        raise QrProvisioningError(
+            "qr_subdevice_gateway_missing", "Select a valid gateway"
+        )
+    _assign_gateway_route(device, gateway_id, gateway)
+
+
 def _enrich_gateway_routes(
     devices: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
@@ -175,9 +198,6 @@ def _enrich_gateway_routes(
         gateway = devices.get(gateway_id) if gateway_id else None
         if isinstance(gateway, dict):
             _assign_gateway_route(device, gateway_id, gateway)
-        elif len(hubs) == 1:
-            inferred_id, inferred_gateway = next(iter(hubs.items()))
-            _assign_gateway_route(device, inferred_id, inferred_gateway)
         elif hubs:
             device["gateway_candidates"] = sorted(hubs)
     return devices
@@ -383,7 +403,7 @@ class QrCloudClient:
                 or ""
             ).strip()
             device_uuid = str(getattr(device, "uuid", "") or "").strip()
-            if not node_id and device_uuid and (is_subdevice or not device_ip):
+            if not node_id and device_uuid and (is_subdevice or gateway_id):
                 node_id = device_uuid
 
             raw_fields = getattr(device, "__dict__", {})
@@ -601,7 +621,7 @@ def _qr_is_locally_eligible(device: dict[str, Any]) -> bool:
     local_key = str(device.get(CONF_LOCAL_KEY) or "").strip()
     gateway_key = str(device.get("gateway_local_key") or "").strip()
     if str(device.get("node_id") or "").strip():
-        return bool(local_key or gateway_key)
+        return bool(local_key or gateway_key or device.get("gateway_candidates"))
     return bool(local_key)
 
 
@@ -701,7 +721,11 @@ async def async_prepare_qr_device(
         device_data["node_id"] = node_id
         device_data["gateway_id"] = gateway_id
 
-    product_key = discovered.get("productKey") or cloud_device.get("product_id")
+    # Discovery identifies the hub, not the product behind it.
+    product_key = (
+        cloud_device.get("product_id") if node_id
+        else discovered.get("productKey") or cloud_device.get("product_id")
+    )
     if product_key:
         device_data[CONF_PRODUCT_KEY] = str(product_key)
 
@@ -1156,19 +1180,15 @@ class QrConfigFlowMixin:
         if user_input is not None:
             selected = user_input[CONF_DEVICE_ID]
             cloud_device = copy.deepcopy(eligible[selected])
-            if cloud_device.get("node_id") and not cloud_device.get("gateway_id"):
-                gateway_id = str(user_input.get(CONF_QR_GATEWAY_ID) or "").strip()
-                gateway = devices.get(gateway_id) if gateway_id else None
-                if not isinstance(gateway, dict) or not gateway.get("is_hub"):
-                    return self.async_show_form(
-                        step_id="qr_choose_device",
-                        data_schema=self._qr_device_schema(eligible, devices),
-                        errors={"base": "qr_subdevice_gateway_missing"},
-                        description_placeholders={
-                            "msg": "Select the hub/gateway used by this sub-device"
-                        },
-                    )
-                _assign_gateway_route(cloud_device, gateway_id, gateway)
+            try:
+                _select_gateway_route(cloud_device, devices, user_input)
+            except QrProvisioningError as exc:
+                return self.async_show_form(
+                    step_id="qr_choose_device",
+                    data_schema=self._qr_device_schema(eligible, devices),
+                    errors={"base": exc.reason},
+                    description_placeholders={"msg": exc.detail},
+                )
             self._qr_selected_device = copy.deepcopy(cloud_device)
             try:
                 (
@@ -1585,7 +1605,13 @@ class QrOptionsFlowMixin:
             if not isinstance(cloud_device, dict):
                 failures.append({"device_id": device_id, "reason": "device_not_found"})
                 continue
+            cloud_device = copy.deepcopy(cloud_device)
             try:
+                if cloud_device.get("node_id"):
+                    _select_gateway_route(
+                        cloud_device, devices,
+                        {CONF_QR_GATEWAY_ID: getattr(self, "_qr_bulk_gateway_id", "")},
+                    )
                 device_data, candidates = await async_prepare_qr_device(
                     self.hass,
                     cloud,
@@ -1611,7 +1637,7 @@ class QrOptionsFlowMixin:
         return {"successes": successes, "failures": failures}
 
     @staticmethod
-    def _qr_bulk_schema(eligible):
+    def _qr_bulk_schema(eligible, all_devices=None):
         """Build the privacy-safe multi-select schema for linked devices."""
         options = [
             {
@@ -1620,17 +1646,24 @@ class QrOptionsFlowMixin:
             }
             for device_id, device in eligible.items()
         ]
-        return vol.Schema(
-            {
-                vol.Required(CONF_QR_BULK_DEVICE_IDS): SelectSelector(
-                    SelectSelectorConfig(
-                        options=options,
-                        multiple=True,
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
+        schema = {
+            vol.Required(CONF_QR_BULK_DEVICE_IDS): SelectSelector(
+                SelectSelectorConfig(
+                    options=options, multiple=True,
+                    mode=SelectSelectorMode.DROPDOWN,
                 )
-            }
-        )
+            )
+        }
+        hubs = {
+            str(device_id): str(device.get(CONF_NAME) or device_id)
+            for device_id, device in (all_devices or eligible).items()
+            if isinstance(device, dict) and device.get("is_hub")
+        }
+        if hubs:
+            schema[vol.Optional(CONF_QR_GATEWAY_ID, default="")] = vol.In(
+                {"": "Automatic / none", **hubs}
+            )
+        return vol.Schema(schema)
 
     async def async_step_qr_bulk_choose_devices(self, user_input=None):
         """Select multiple linked Tuya devices for sequential LAN onboarding."""
@@ -1649,15 +1682,18 @@ class QrOptionsFlowMixin:
             if not selected:
                 return self.async_show_form(
                     step_id="qr_bulk_choose_devices",
-                    data_schema=self._qr_bulk_schema(eligible),
+                    data_schema=self._qr_bulk_schema(eligible, self._qr_devices),
                     errors={"base": "select_at_least_one_device"},
                 )
+            self._qr_bulk_gateway_id = str(
+                user_input.get(CONF_QR_GATEWAY_ID) or ""
+            ).strip()
             self._qr_bulk_result = await self._async_bulk_prepare_devices(selected)
             self._qr_bulk_summary = None
             return await self.async_step_qr_bulk_summary()
         return self.async_show_form(
             step_id="qr_bulk_choose_devices",
-            data_schema=self._qr_bulk_schema(eligible),
+            data_schema=self._qr_bulk_schema(eligible, self._qr_devices),
         )
 
     async def async_step_qr_bulk_summary(self, user_input=None):
@@ -1761,7 +1797,18 @@ class QrOptionsFlowMixin:
 
         if user_input is not None:
             selected = user_input[CONF_DEVICE_ID]
-            cloud_device = eligible[selected]
+            cloud_device = copy.deepcopy(eligible[selected])
+            try:
+                _select_gateway_route(cloud_device, self._qr_devices, user_input)
+            except QrProvisioningError as exc:
+                return self.async_show_form(
+                    step_id="qr_add_device",
+                    data_schema=QrConfigFlowMixin._qr_device_schema(
+                        eligible, self._qr_devices
+                    ),
+                    errors={"base": exc.reason},
+                    description_placeholders={"msg": exc.detail},
+                )
             self._qr_selected_device = copy.deepcopy(cloud_device)
             try:
                 (
@@ -1778,7 +1825,7 @@ class QrOptionsFlowMixin:
                     return await self.async_step_qr_add_device_host()
                 return self.async_show_form(
                     step_id="qr_add_device",
-                    data_schema=QrConfigFlowMixin._qr_device_schema(eligible),
+                    data_schema=QrConfigFlowMixin._qr_device_schema(eligible, self._qr_devices),
                     errors={"base": exc.reason},
                     description_placeholders={"msg": exc.detail},
                 )
@@ -1796,7 +1843,7 @@ class QrOptionsFlowMixin:
 
         return self.async_show_form(
             step_id="qr_add_device",
-            data_schema=QrConfigFlowMixin._qr_device_schema(eligible),
+            data_schema=QrConfigFlowMixin._qr_device_schema(eligible, self._qr_devices),
         )
 
     async def async_step_qr_add_device_host(self, user_input=None):

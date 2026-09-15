@@ -89,6 +89,7 @@ class QrGatewayOnboardingTests(unittest.IsolatedAsyncioTestCase):
                     return_value={
                         "gwId": "gateway-device-1",
                         "ip": "192.168.1.80",
+                        "productKey": "hub-product-not-bulb",
                     }
                 ),
             ),
@@ -108,6 +109,7 @@ class QrGatewayOnboardingTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(device_data["device_id"], "child-device-1")
+        self.assertEqual(device_data["product_key"], "bulb-product")
         self.assertEqual(device_data["node_id"], "node-123")
         self.assertEqual(device_data["gateway_id"], "gateway-device-1")
         self.assertEqual(device_data[CONF_HOST], "192.168.1.80")

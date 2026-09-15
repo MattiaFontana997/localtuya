@@ -25,7 +25,8 @@
             "qr_mapping_required": "Wähle mindestens eine Zuordnung aus, bevor du fortfährst.",
             "import_invalid": "Das eingefügte JSON enthält keine unterstützte Gerätekonfiguration.",
             "import_missing_credentials": "Dem importierten Gerät fehlt Device ID oder local_key. {msg}",
-            "import_device_not_on_lan": "Das importierte Gerät wurde im Home-Assistant-LAN nicht gefunden. {msg}"
+            "import_device_not_on_lan": "Das importierte Gerät wurde im Home-Assistant-LAN nicht gefunden. {msg}",
+            "qr_subdevice_gateway_missing": "Wähle das Gateway dieses Untergeräts. Direkte WLAN-Geräte benötigen kein Gateway."
         },
         "step": {
             "user": {
@@ -60,7 +61,8 @@
                 "title": "Gerät auswählen",
                 "description": "Wähle ein Gerät für die lokale Bereitstellung. Angezeigt werden nur Geräte mit nutzbarem local_key.",
                 "data": {
-                    "device_id": "Tuya-Gerät"
+                    "device_id": "Tuya-Gerät",
+                    "qr_gateway_id": "Gateway für ausgewählte Untergeräte"
                 }
             },
             "qr_mapping_review": {
@@ -241,7 +243,8 @@
             "qr_mapping_required": "Wähle mindestens eine Zuordnung aus, bevor du fortfährst.",
             "qr_login_error": "QR-Anmeldung konnte nicht abgeschlossen werden. {msg}",
             "health_device_not_found": "Das ausgewählte LocalTuya-Gerät ist nicht mehr konfiguriert.",
-            "select_at_least_one_device": "Wähle mindestens ein Gerät aus."
+            "select_at_least_one_device": "Wähle mindestens ein Gerät aus.",
+            "qr_subdevice_gateway_missing": "Wähle das Gateway dieses Untergeräts. Direkte WLAN-Geräte benötigen kein Gateway."
         },
         "step": {
             "yaml_import": {
@@ -484,7 +487,8 @@
                 "title": "Neues Tuya-Gerät auswählen",
                 "description": "Das Konto wurde bei Bedarf aktualisiert. Wähle ein noch nicht konfiguriertes lokal steuerbares Gerät.",
                 "data": {
-                    "device_id": "Tuya-Gerät"
+                    "device_id": "Tuya-Gerät",
+                    "qr_gateway_id": "Gateway für ausgewählte Untergeräte"
                 }
             },
             "qr_add_mapping_review": {
@@ -530,7 +534,8 @@
                 "title": "Mehrere Geräte hinzufügen",
                 "description": "Wähle ein oder mehrere Tuya-Geräte. LocalTuya prüft sie nacheinander; Geräte mit erforderlicher Zuordnungsprüfung werden nicht automatisch gespeichert.",
                 "data": {
-                    "qr_bulk_device_ids": "Tuya-Geräte"
+                    "qr_bulk_device_ids": "Tuya-Geräte",
+                    "qr_gateway_id": "Gateway für ausgewählte Untergeräte"
                 }
             },
             "qr_bulk_summary": {

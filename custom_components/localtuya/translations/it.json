@@ -10,7 +10,7 @@
         },
         "error": {
             "authentication_failed": "Autenticazione fallita. Errore:\n{msg}",
-            "cannot_connect": "Impossibile connettersi al dispositivo. Verifica che l'indirizzo sia corretto e riprova.",
+            "cannot_connect": "Connessione locale non riuscita. Verifica indirizzo, chiave locale, protocollo e altre connessioni attive al dispositivo.",
             "device_list_failed": "Impossibile recuperare l'elenco dei dispositivi.\n{msg}",
             "invalid_auth": "Impossibile autenticarsi con il dispositivo. Verificare che device_id e local_key siano corretti.",
             "unknown": "Si è verificato un errore sconosciuto. Vedere registro per i dettagli.",
@@ -25,7 +25,8 @@
             "qr_mapping_required": "Seleziona almeno un mapping prima di continuare.",
             "import_invalid": "Il JSON incollato non contiene una configurazione dispositivo supportata.",
             "import_missing_credentials": "Nel dispositivo importato manca Device ID o local_key. {msg}",
-            "import_device_not_on_lan": "Il dispositivo importato non è stato trovato nella LAN di Home Assistant. {msg}"
+            "import_device_not_on_lan": "Il dispositivo importato non è stato trovato nella LAN di Home Assistant. {msg}",
+            "qr_subdevice_gateway_missing": "Seleziona il gateway collegato a questo subdevice. I dispositivi Wi-Fi diretti non richiedono un gateway."
         },
         "step": {
             "user": {
@@ -60,7 +61,8 @@
                 "title": "Scegli un dispositivo",
                 "description": "Seleziona un dispositivo da configurare in locale. Sono mostrati solo i dispositivi con una local key utilizzabile.",
                 "data": {
-                    "device_id": "Dispositivo Tuya"
+                    "device_id": "Dispositivo Tuya",
+                    "qr_gateway_id": "Gateway per i subdevice selezionati"
                 }
             },
             "qr_mapping_review": {
@@ -225,7 +227,7 @@
         },
         "error": {
             "authentication_failed": "Autenticazione fallita. Errore:\n{msg}",
-            "cannot_connect": "Impossibile connettersi al dispositivo. Verifica che l'indirizzo sia corretto e riprova.",
+            "cannot_connect": "Connessione locale non riuscita. Verifica indirizzo, chiave locale, protocollo e altre connessioni attive al dispositivo.",
             "device_list_failed": "Impossibile recuperare l'elenco dei dispositivi.\n{msg}",
             "invalid_auth": "Impossibile autenticarsi con il dispositivo. Verificare che device_id e local_key siano corretti.",
             "unknown": "Si è verificato un errore sconosciuto. Vedere registro per i dettagli.",
@@ -241,7 +243,8 @@
             "qr_mapping_required": "Seleziona almeno un mapping prima di continuare.",
             "qr_login_error": "Impossibile completare il login QR. {msg}",
             "health_device_not_found": "Il dispositivo LocalTuya selezionato non è più configurato.",
-            "select_at_least_one_device": "Seleziona almeno un dispositivo."
+            "select_at_least_one_device": "Seleziona almeno un dispositivo.",
+            "qr_subdevice_gateway_missing": "Seleziona il gateway collegato a questo subdevice. I dispositivi Wi-Fi diretti non richiedono un gateway."
         },
         "step": {
             "yaml_import": {
@@ -484,7 +487,8 @@
                 "title": "Scegli un nuovo dispositivo Tuya",
                 "description": "L’account è stato aggiornato su richiesta. Seleziona un dispositivo locale non ancora configurato.",
                 "data": {
-                    "device_id": "Dispositivo Tuya"
+                    "device_id": "Dispositivo Tuya",
+                    "qr_gateway_id": "Gateway per i subdevice selezionati"
                 }
             },
             "qr_add_mapping_review": {
@@ -530,7 +534,8 @@
                 "title": "Aggiungi più dispositivi",
                 "description": "Seleziona uno o più dispositivi Tuya. LocalTuya li valida in sequenza; quelli che richiedono revisione del mapping non vengono mai salvati automaticamente.",
                 "data": {
-                    "qr_bulk_device_ids": "Dispositivi Tuya"
+                    "qr_bulk_device_ids": "Dispositivi Tuya",
+                    "qr_gateway_id": "Gateway per i subdevice selezionati"
                 }
             },
             "qr_bulk_summary": {
@@ -610,7 +615,7 @@
             "title": "LocalTuya non è riuscito a ripristinare in sicurezza {device_name}",
             "fix_flow": {
                 "error": {
-                    "cannot_connect": "Il dispositivo non risponde a questo indirizzo. Verifica che sia acceso e raggiungibile da Home Assistant.",
+                    "cannot_connect": "Connessione locale non riuscita. Verifica indirizzo, chiave locale, protocollo e altre connessioni attive al dispositivo.",
                     "invalid_auth": "Il dispositivo risponde, ma le credenziali locali salvate sono state rifiutate. Ricollega o riconfigura le credenziali del dispositivo prima di riprovare.",
                     "empty_dps": "La connessione al dispositivo è riuscita, ma non sono stati restituiti datapoint. Riprova quando il dispositivo è completamente online.",
                     "invalid_host": "Inserisci un indirizzo IP LAN o un nome host valido.",
@@ -643,7 +648,7 @@
             "title": "LocalTuya non riesce a raggiungere {device_name}",
             "fix_flow": {
                 "error": {
-                    "cannot_connect": "Il dispositivo non risponde a questo indirizzo. Verifica che sia acceso e raggiungibile da Home Assistant.",
+                    "cannot_connect": "Connessione locale non riuscita. Verifica indirizzo, chiave locale, protocollo e altre connessioni attive al dispositivo.",
                     "invalid_auth": "Il dispositivo risponde, ma rifiuta le credenziali locali salvate. Aggiorna o riconfigura le credenziali prima di riprovare.",
                     "empty_dps": "La connessione riesce, ma il dispositivo non restituisce datapoint. Riprova quando è completamente online.",
                     "invalid_host": "Inserisci un indirizzo IP LAN o un nome host valido.",
@@ -679,7 +684,7 @@
                     "device_not_found": "Il dispositivo configurato non esiste più."
                 },
                 "error": {
-                    "cannot_connect": "Il dispositivo non è raggiungibile via LAN. Nessuna configurazione è stata modificata.",
+                    "cannot_connect": "Connessione locale non riuscita. Verifica indirizzo, chiave locale, protocollo e altre connessioni attive al dispositivo.",
                     "invalid_auth": "Il dispositivo ha rifiutato le credenziali salvate. Nessuna configurazione è stata modificata.",
                     "empty_dps": "Il dispositivo si connette ma non restituisce datapoint. Nessuna configurazione è stata modificata.",
                     "unknown": "La convalida non è riuscita in sicurezza. La configurazione esistente è rimasta invariata.",
@@ -730,7 +735,7 @@
                     "device_not_found": "Il dispositivo configurato non esiste più."
                 },
                 "error": {
-                    "cannot_connect": "Il dispositivo non è raggiungibile via LAN. Nessuna configurazione è stata modificata.",
+                    "cannot_connect": "Connessione locale non riuscita. Verifica indirizzo, chiave locale, protocollo e altre connessioni attive al dispositivo.",
                     "invalid_auth": "Il dispositivo ha rifiutato le credenziali salvate. Nessuna configurazione è stata modificata.",
                     "empty_dps": "Il dispositivo si connette ma non restituisce datapoint. Nessuna configurazione è stata modificata.",
                     "unknown": "La convalida non è riuscita in sicurezza. La configurazione esistente è rimasta invariata.",
@@ -781,7 +786,7 @@
                     "device_not_found": "Il dispositivo configurato non esiste più."
                 },
                 "error": {
-                    "cannot_connect": "Il dispositivo non è raggiungibile via LAN. Nessuna configurazione è stata modificata.",
+                    "cannot_connect": "Connessione locale non riuscita. Verifica indirizzo, chiave locale, protocollo e altre connessioni attive al dispositivo.",
                     "invalid_auth": "Il dispositivo ha rifiutato le credenziali salvate. Nessuna configurazione è stata modificata.",
                     "empty_dps": "Il dispositivo si connette ma non restituisce datapoint. Nessuna configurazione è stata modificata.",
                     "unknown": "La convalida non è riuscita in sicurezza. La configurazione esistente è rimasta invariata.",
@@ -832,7 +837,7 @@
                     "device_not_found": "Il dispositivo configurato non esiste più."
                 },
                 "error": {
-                    "cannot_connect": "Il dispositivo non è raggiungibile via LAN. Nessuna configurazione è stata modificata.",
+                    "cannot_connect": "Connessione locale non riuscita. Verifica indirizzo, chiave locale, protocollo e altre connessioni attive al dispositivo.",
                     "invalid_auth": "Il dispositivo ha rifiutato le credenziali salvate. Nessuna configurazione è stata modificata.",
                     "empty_dps": "Il dispositivo si connette ma non restituisce datapoint. Nessuna configurazione è stata modificata.",
                     "unknown": "La convalida non è riuscita in sicurezza. La configurazione esistente è rimasta invariata.",
@@ -883,7 +888,7 @@
                     "device_not_found": "Il dispositivo configurato non esiste più."
                 },
                 "error": {
-                    "cannot_connect": "Il dispositivo non è raggiungibile via LAN. Nessuna configurazione è stata modificata.",
+                    "cannot_connect": "Connessione locale non riuscita. Verifica indirizzo, chiave locale, protocollo e altre connessioni attive al dispositivo.",
                     "invalid_auth": "Il dispositivo ha rifiutato le credenziali salvate. Nessuna configurazione è stata modificata.",
                     "empty_dps": "Il dispositivo si connette ma non restituisce datapoint. Nessuna configurazione è stata modificata.",
                     "unknown": "La convalida non è riuscita in sicurezza. La configurazione esistente è rimasta invariata.",

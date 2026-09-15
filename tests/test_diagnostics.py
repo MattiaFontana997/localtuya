@@ -95,6 +95,12 @@ class DiagnosticsTests(
     async def test_config_entry_secrets_are_redacted(self):
         """Account and device secrets never leak into diagnostics."""
         hass, entry = self._objects()
+        entry.data[CONF_DEVICES]["device1"].update({
+            "gateway_local_key": "private-hub-key",
+            "gateway_ip": "10.0.0.254",
+            "gateway_id": "private-gateway-id",
+            "node_id": "private-child-cid",
+        })
 
         result = (
             await async_get_config_entry_diagnostics(
@@ -111,6 +117,10 @@ class DiagnosticsTests(
             "user-secret-value",
             "device-local-secret",
             "cloud-local-secret",
+            "private-hub-key",
+            "10.0.0.254",
+            "private-gateway-id",
+            "private-child-cid",
         ):
             self.assertNotIn(
                 secret,

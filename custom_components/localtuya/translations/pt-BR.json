@@ -25,7 +25,8 @@
             "qr_mapping_required": "Selecione pelo menos um mapeamento antes de continuar.",
             "import_invalid": "O JSON colado não contém uma configuração de dispositivo compatível.",
             "import_missing_credentials": "O dispositivo importado não possui Device ID ou local_key. {msg}",
-            "import_device_not_on_lan": "O dispositivo importado não foi encontrado na LAN do Home Assistant. {msg}"
+            "import_device_not_on_lan": "O dispositivo importado não foi encontrado na LAN do Home Assistant. {msg}",
+            "qr_subdevice_gateway_missing": "Selecione o gateway conectado a este subdispositivo. Dispositivos Wi-Fi diretos não precisam de gateway."
         },
         "step": {
             "user": {
@@ -60,7 +61,8 @@
                 "title": "Escolher um dispositivo",
                 "description": "Selecione um dispositivo para provisionamento local. Apenas dispositivos com local_key utilizável são exibidos.",
                 "data": {
-                    "device_id": "Dispositivo Tuya"
+                    "device_id": "Dispositivo Tuya",
+                    "qr_gateway_id": "Gateway dos subdispositivos selecionados"
                 }
             },
             "qr_mapping_review": {
@@ -241,7 +243,8 @@
             "qr_mapping_required": "Selecione pelo menos um mapeamento antes de continuar.",
             "qr_login_error": "Não foi possível concluir o login por QR. {msg}",
             "health_device_not_found": "O dispositivo LocalTuya selecionado não está mais configurado.",
-            "select_at_least_one_device": "Selecione pelo menos um dispositivo."
+            "select_at_least_one_device": "Selecione pelo menos um dispositivo.",
+            "qr_subdevice_gateway_missing": "Selecione o gateway conectado a este subdispositivo. Dispositivos Wi-Fi diretos não precisam de gateway."
         },
         "step": {
             "yaml_import": {
@@ -484,7 +487,8 @@
                 "title": "Escolher um novo dispositivo Tuya",
                 "description": "A conta foi atualizada sob demanda. Selecione um dispositivo local ainda não configurado.",
                 "data": {
-                    "device_id": "Dispositivo Tuya"
+                    "device_id": "Dispositivo Tuya",
+                    "qr_gateway_id": "Gateway dos subdispositivos selecionados"
                 }
             },
             "qr_add_mapping_review": {
@@ -530,7 +534,8 @@
                 "title": "Adicionar vários dispositivos",
                 "description": "Selecione um ou mais dispositivos Tuya. O LocalTuya valida cada um em sequência; dispositivos que exigem revisão do mapeamento nunca são salvos automaticamente.",
                 "data": {
-                    "qr_bulk_device_ids": "Dispositivos Tuya"
+                    "qr_bulk_device_ids": "Dispositivos Tuya",
+                    "qr_gateway_id": "Gateway dos subdispositivos selecionados"
                 }
             },
             "qr_bulk_summary": {

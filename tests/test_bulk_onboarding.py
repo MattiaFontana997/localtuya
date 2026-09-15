@@ -68,6 +68,24 @@ class BulkOnboardingTests(unittest.IsolatedAsyncioTestCase):
             ["a", "b"],
         )
 
+    async def test_bulk_routes_keyless_children_but_keeps_wifi_direct(self):
+        flow = _FakeBulkFlow()
+        flow._qr_bulk_gateway_id = "hub"
+        flow._qr_devices = {
+            "hub": {"is_hub": True, "local_key": "test-key"},
+            "child": {"id": "child", "node_id": "cid"},
+            "wifi": {"id": "wifi", "local_key": "wifi-key"},
+        }
+        with patch.object(qr_onboarding, "async_prepare_qr_device",
+                          new=AsyncMock(return_value=({}, []))) as prepare:
+            result = await flow._async_bulk_prepare_devices(["child", "wifi"])
+        self.assertEqual(result["failures"], [])
+        child, wifi = [call.args[2] for call in prepare.await_args_list]
+        self.assertEqual(child["gateway_id"], "hub")
+        self.assertEqual(child["gateway_local_key"], "test-key")
+        self.assertNotIn("gateway_id", wifi)
+        self.assertNotIn("gateway_id", flow._qr_devices["child"])
+
     async def test_one_failure_does_not_abort_remaining_devices(self):
         flow = _FakeBulkFlow()
         flow._qr_devices = {

@@ -9,6 +9,8 @@ from custom_components.localtuya.qr_onboarding import (
     TUYA_HUB_CATEGORIES,
     _enrich_gateway_routes,
     _qr_is_locally_eligible,
+    _select_gateway_route,
+    QrProvisioningError,
 )
 
 
@@ -16,7 +18,7 @@ class TuyaLocalGatewayMetadataTests(unittest.TestCase):
     def test_known_bluetooth_gateway_category_is_recognized(self):
         self.assertIn("wg2", TUYA_HUB_CATEGORIES)
 
-    def test_single_hub_recovers_missing_gateway_id_and_prefers_child_key(self):
+    def test_single_hub_requires_selection_and_prefers_child_key(self):
         devices = {
             "gateway-1": {
                 "id": "gateway-1",
@@ -38,6 +40,8 @@ class TuyaLocalGatewayMetadataTests(unittest.TestCase):
 
         result = _enrich_gateway_routes(devices)
         child = result["lamp-1"]
+        self.assertFalse(child.get("gateway_id"))
+        _select_gateway_route(child, devices, {"qr_gateway_id": "gateway-1"})
 
         self.assertEqual(child["gateway_id"], "gateway-1")
         self.assertEqual(child["gateway_local_key"], "child-exposed-gateway-key")
@@ -63,6 +67,8 @@ class TuyaLocalGatewayMetadataTests(unittest.TestCase):
         }
 
         child = _enrich_gateway_routes(devices)["lamp-1"]
+        self.assertTrue(_qr_is_locally_eligible(child))
+        _select_gateway_route(child, devices, {"qr_gateway_id": "gateway-1"})
         self.assertEqual(child["gateway_local_key"], "hub-local-key")
         self.assertTrue(_qr_is_locally_eligible(child))
 
@@ -92,6 +98,30 @@ class TuyaLocalGatewayMetadataTests(unittest.TestCase):
         self.assertFalse(child.get("gateway_id"))
         self.assertEqual(child["gateway_candidates"], ["gateway-1", "gateway-2"])
         self.assertTrue(_qr_is_locally_eligible(child))
+
+    def test_keyless_child_with_two_hubs_remains_selectable(self):
+        devices = {
+            "hub-a": {"is_hub": True, CONF_LOCAL_KEY: "test-a"},
+            "hub-b": {"is_hub": True, CONF_LOCAL_KEY: "test-b"},
+            "child": {"node_id": "cid", CONF_LOCAL_KEY: ""},
+        }
+        child = _enrich_gateway_routes(devices)["child"]
+        self.assertTrue(_qr_is_locally_eligible(child))
+        self.assertFalse(child.get("gateway_id"))
+        _select_gateway_route(child, devices, {"qr_gateway_id": "hub-b"})
+        self.assertEqual(child["gateway_id"], "hub-b")
+        self.assertEqual(child["gateway_local_key"], "test-b")
+
+    def test_direct_device_rejects_gateway_selection(self):
+        device = {"node_id": "", CONF_LOCAL_KEY: "test"}
+        with self.assertRaises(QrProvisioningError):
+            _select_gateway_route(device, {}, {"qr_gateway_id": "hub"})
+        self.assertNotIn("gateway_id", device)
+
+    def test_missing_gateway_choice_does_not_connect(self):
+        device = {"node_id": "cid"}
+        with self.assertRaises(QrProvisioningError):
+            _select_gateway_route(device, {}, {})
 
 
 if __name__ == "__main__":
