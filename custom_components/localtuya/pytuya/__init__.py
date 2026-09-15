@@ -1915,20 +1915,21 @@ async def connect(
     """Connect to a device."""
     loop = asyncio.get_running_loop()
     on_connected = loop.create_future()
-    _, protocol = await loop.create_connection(
-        lambda: TuyaProtocol(
-            device_id,
-            local_key,
-            protocol_version,
-            enable_debug,
-            on_connected,
-            listener or EmptyListener(),
-            cid=cid,
-            gateway_id=gateway_id,
-        ),
-        address,
-        port,
-    )
+    async with asyncio.timeout(timeout):
+        _, protocol = await loop.create_connection(
+            lambda: TuyaProtocol(
+                device_id,
+                local_key,
+                protocol_version,
+                enable_debug,
+                on_connected,
+                listener or EmptyListener(),
+                cid=cid,
+                gateway_id=gateway_id,
+            ),
+            address,
+            port,
+        )
 
-    await asyncio.wait_for(on_connected, timeout=timeout)
+        await on_connected
     return protocol

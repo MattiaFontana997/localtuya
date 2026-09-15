@@ -273,6 +273,11 @@ class SharedGatewayTransport:
         if not isinstance(dps, dict):
             return
         if cid and (child := self.children.get(str(cid))) is not None:
+            # A push can arrive while this child's request is awaiting a reply.
+            # child_context restores the cache from the scoped parent on exit;
+            # keep that cache current too, or it overwrites the newer push.
+            if saved_cid == child.cid:
+                parent.dps_cache.update({str(key): value for key, value in dps.items()})
             child._status_from_gateway(dps)
 
     def start_heartbeat(self) -> None:

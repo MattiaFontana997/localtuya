@@ -4,6 +4,8 @@
 
 - Fixed direct Wi-Fi versus gateway-child classification and explicit parent selection in initial, additional-device and bulk setup.
 - Kept keyless gateway children selectable and preserved child product identity during discovery.
+- Preserved unsolicited child updates during pending requests and bounded TCP socket establishment by the configured timeout.
+- Added six encrypted loopback TCP integration tests; the complete suite now contains 659 passing tests.
 - Redacted gateway routing secrets from diagnostics and clarified connection failures.
 - See [beta release notes](docs/releases/6.7.0b2.md) for installation and hardware-test limitations.
 

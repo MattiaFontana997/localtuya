@@ -50,4 +50,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v6.7.0b2 localtuya-6.7.0b2.zip --target "$GITHUB_SHA" --title "LocalTuya 6.7.0b2" --prerelease --latest=false --notes-file docs/releases/6.7.0b2.md
+          if gh release view v6.7.0b2 >/dev/null 2>&1; then
+            current_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v6.7.0b2" --jq .object.sha)"
+            # Only finish this session's beta, never replace an unrelated tag.
+            if [ "$current_sha" != "$GITHUB_SHA" ] && [ "$current_sha" != "847e099fe1e64b39e1a2ecace565b3c75ec5dd78" ]; then
+              echo "Unexpected beta tag target; refusing to replace it."
+              exit 1
+            fi
+            gh release edit v6.7.0b2 --draft=true
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/v6.7.0b2" -f sha="$GITHUB_SHA" -F force=false
+            gh release upload v6.7.0b2 localtuya-6.7.0b2.zip --clobber
+            gh release edit v6.7.0b2 --draft=false --prerelease --latest=false --target "$GITHUB_SHA" --notes-file docs/releases/6.7.0b2.md
+          else
+            gh release create v6.7.0b2 localtuya-6.7.0b2.zip --target "$GITHUB_SHA" --title "LocalTuya 6.7.0b2" --prerelease --latest=false --notes-file docs/releases/6.7.0b2.md
+          fi
