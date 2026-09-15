@@ -183,6 +183,21 @@ class QrCloudClientTests(unittest.IsolatedAsyncioTestCase):
             "refresh-new",
         )
 
+    async def test_keyless_subdevice_is_not_offered_as_a_gateway(self):
+        cloud = QrCloudClient(_FakeHass(), {})
+        manager = SimpleNamespace(
+            update_device_cache=lambda: None,
+            device_map={
+                "hub": SimpleNamespace(id="hub", category="wg2", local_key="test"),
+                "child": SimpleNamespace(id="child", category="dj", sub=True, uuid="cid"),
+            },
+        )
+        cloud._build_manager = lambda: manager
+        devices = await cloud.async_get_devices()
+        self.assertFalse(devices["child"]["is_hub"])
+        self.assertEqual(devices["child"]["gateway_candidates"], ["hub"])
+        self.assertTrue(_qr_is_locally_eligible(devices["child"]))
+
     def test_root_entry_keeps_runtime_cloud_disabled(self):
         auth = {
             CONF_QR_USER_CODE: "user-code-1",

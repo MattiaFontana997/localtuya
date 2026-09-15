@@ -431,7 +431,7 @@ class QrCloudClient:
                 "gateway_id": gateway_id,
                 "is_hub": (
                     category in TUYA_HUB_CATEGORIES
-                    or not has_local_key_attr
+                    or (not has_local_key_attr and not is_subdevice and not node_id)
                 ),
                 "ip": device_ip,
             }
