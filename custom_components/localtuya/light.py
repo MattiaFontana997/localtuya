@@ -181,13 +181,27 @@ def map_range(value, from_lower, from_upper, to_lower, to_upper):
     return round(min(max(mapped, low), high))
 
 
-def _light_power_scalar(value):
-    """Validate an exact scalar light power value without coercion."""
-    if isinstance(value, (bool, str)):
+def _parse_light_power_literal(value):
+    """Recover the exact scalar type for a configured light power value.
+
+    The config-flow field for this value must be a plain ``str`` so
+    Home Assistant's frontend can serialize the schema (a bare callable
+    validator here breaks schema serialization entirely). Text typed
+    into that field is recovered here into the bool/int/str the raw
+    Tuya DP is expected to match via ``_same_raw_value``.
+    """
+    if not isinstance(value, str):
         return value
-    if isinstance(value, int) and not isinstance(value, bool):
+
+    stripped = value.strip()
+    if stripped.lower() == "true":
+        return True
+    if stripped.lower() == "false":
+        return False
+    try:
+        return int(stripped)
+    except ValueError:
         return value
-    raise vol.Invalid("light power value must be bool, int or str")
 
 
 def _same_raw_value(value, expected) -> bool:
@@ -200,13 +214,12 @@ def flow_schema(dps):
     return {
         vol.Optional(CONF_BRIGHTNESS): vol.In(dps),
         vol.Optional(CONF_COLOR_TEMP): vol.In(dps),
-        vol.Optional(CONF_LIGHT_ON_VALUE): _light_power_scalar,
-        vol.Optional(CONF_LIGHT_OFF_VALUE): _light_power_scalar,
+        vol.Optional(CONF_LIGHT_ON_VALUE): str,
+        vol.Optional(CONF_LIGHT_OFF_VALUE): str,
         vol.Optional(CONF_LIGHT_NULL_VALUE): bool,
         vol.Optional(CONF_LIGHT_POWER_MASK): str,
-        vol.Optional(CONF_BRIGHTNESS_VALUES): dict,
         vol.Optional(CONF_BRIGHTNESS_AS_POWER, default=False): bool,
-        vol.Optional(CONF_BRIGHTNESS_POWER_OFF_VALUE): _light_power_scalar,
+        vol.Optional(CONF_BRIGHTNESS_POWER_OFF_VALUE): str,
         vol.Optional(
             CONF_BRIGHTNESS_LOWER,
             default=DEFAULT_LOWER_BRIGHTNESS,
@@ -265,7 +278,6 @@ def flow_schema(dps):
             vol.Coerce(int),
             vol.Range(min=1, max=10000),
         ),
-        vol.Optional(CONF_COLOR_TEMP_VALUES): dict,
         vol.Optional(CONF_COLOR_SATURATION_UPPER): vol.All(
             vol.Coerce(int),
             vol.Range(min=1, max=65535),
@@ -306,16 +318,20 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         self._attr_color_mode = None
         self._attr_effect = None
 
-        self._power_on_value = self._config.get(CONF_LIGHT_ON_VALUE, True)
-        self._power_off_value = self._config.get(CONF_LIGHT_OFF_VALUE, False)
+        self._power_on_value = _parse_light_power_literal(
+            self._config.get(CONF_LIGHT_ON_VALUE, True)
+        )
+        self._power_off_value = _parse_light_power_literal(
+            self._config.get(CONF_LIGHT_OFF_VALUE, False)
+        )
         self._brightness_as_power = bool(
             self._config.get(CONF_BRIGHTNESS_AS_POWER, False)
         )
         self._brightness_power_off_configured = (
             CONF_BRIGHTNESS_POWER_OFF_VALUE in self._config
         )
-        self._brightness_power_off_value = self._config.get(
-            CONF_BRIGHTNESS_POWER_OFF_VALUE
+        self._brightness_power_off_value = _parse_light_power_literal(
+            self._config.get(CONF_BRIGHTNESS_POWER_OFF_VALUE)
         )
         self._brightness_values = self._configured_brightness_values()
         self._light_power_mask = self._configured_light_power_mask()
