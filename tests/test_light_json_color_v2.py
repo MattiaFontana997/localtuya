@@ -96,8 +96,35 @@ class LightJsonColorV2Tests(unittest.TestCase):
         self.assertEqual(light.config["color_brightness_upper"], 1000)
         self.assertIn("colour_data_v2", light.matched_codes)
 
-    def test_mapper_keeps_legacy_json_color_fail_closed(self):
-        device = {"name": "Ambiguous JSON RGB Light", "category": "dj"}
+    def test_mapper_supports_legacy_json_color_for_dj_lights(self):
+        device = {"name": "Feit RGB Light", "category": "dj"}
+        specification = {
+            "functions": [
+                {"dp_id": 20, "code": "switch_led", "type": "Boolean", "values": "{}"},
+                {"dp_id": 24, "code": "colour_data", "type": "Json", "values": "{}"},
+            ],
+            "status": [
+                {"dp_id": 20, "code": "switch_led", "type": "Boolean", "values": "{}"},
+                {"dp_id": 24, "code": "colour_data", "type": "Json", "values": "{}"},
+            ],
+        }
+
+        candidates = build_entity_candidates(
+            device,
+            specification,
+            available_dps={20, 24},
+        )
+        light = next(candidate for candidate in candidates if candidate.platform == "light")
+
+        self.assertEqual(light.config["color"], 24)
+        self.assertTrue(light.config["color_json_encoding"])
+        self.assertEqual(light.config["color_saturation_upper"], 255)
+        self.assertEqual(light.config["color_brightness_lower"], 0)
+        self.assertEqual(light.config["color_brightness_upper"], 255)
+        self.assertIn("colour_data", light.matched_codes)
+
+    def test_mapper_keeps_legacy_json_color_fail_closed_outside_dj(self):
+        device = {"name": "Ambiguous JSON RGB Light", "category": "other"}
         specification = {
             "functions": [
                 {"dp_id": 20, "code": "switch_led", "type": "Boolean", "values": "{}"},
