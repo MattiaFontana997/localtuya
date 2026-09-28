@@ -172,6 +172,13 @@ _LIGHT_JSON_V2_COLOR_CODES = {
     "color_data_v2",
 }
 
+# Tuya category "dj" also exposes the legacy "colour_data" JSON schema.
+# Unlike colour_data_v2 (S/V 0..1000), the legacy schema uses S/V 0..255.
+# Keep this category-scoped so unrelated ambiguous JSON payloads fail closed.
+_LIGHT_LEGACY_JSON_255_CATEGORIES = {
+    "dj",
+}
+
 _THERMOSTAT_CATEGORIES = {
     "wk",
 }
@@ -746,6 +753,18 @@ def _build_light_candidate(
             config[CONF_COLOR_SATURATION_UPPER] = 1000
             config[CONF_COLOR_BRIGHTNESS_LOWER] = 0
             config[CONF_COLOR_BRIGHTNESS_UPPER] = 1000
+            matched_codes.append(color.code)
+        elif (
+            color.type_name == "json"
+            and color.code in {"colour_data", "color_data"}
+            and str(device.get("category") or "").strip().lower()
+            in _LIGHT_LEGACY_JSON_255_CATEGORIES
+        ):
+            config[CONF_COLOR] = color.id
+            config[CONF_COLOR_JSON_ENCODING] = True
+            config[CONF_COLOR_SATURATION_UPPER] = 255
+            config[CONF_COLOR_BRIGHTNESS_LOWER] = 0
+            config[CONF_COLOR_BRIGHTNESS_UPPER] = 255
             matched_codes.append(color.code)
 
     referenced_dps = [power.id]
